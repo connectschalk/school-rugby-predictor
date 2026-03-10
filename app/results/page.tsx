@@ -18,10 +18,16 @@ type Match = {
   team_b_score: number
 }
 
+type MatchRow = Match & {
+  teamAName: string
+  teamBName: string
+}
+
 export default function ResultsPage() {
   const [teams, setTeams] = useState<Team[]>([])
   const [matches, setMatches] = useState<Match[]>([])
   const [season, setSeason] = useState('2026')
+  const [searchTerm, setSearchTerm] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -55,13 +61,26 @@ export default function ResultsPage() {
     loadData()
   }, [season])
 
-  const rows = useMemo(() => {
+  const rows: MatchRow[] = useMemo(() => {
     return matches.map((match) => ({
       ...match,
       teamAName: teams.find((t) => t.id === match.team_a_id)?.name || `Team ${match.team_a_id}`,
       teamBName: teams.find((t) => t.id === match.team_b_id)?.name || `Team ${match.team_b_id}`,
     }))
   }, [matches, teams])
+
+  const filteredRows = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase()
+
+    if (!query) return rows
+
+    return rows.filter((match) => {
+      const teamA = match.teamAName.toLowerCase()
+      const teamB = match.teamBName.toLowerCase()
+
+      return teamA.includes(query) || teamB.includes(query)
+    })
+  }, [rows, searchTerm])
 
   return (
     <main className="min-h-screen bg-white text-black">
@@ -71,14 +90,27 @@ export default function ResultsPage() {
           All recorded match results for the selected season.
         </p>
 
-        <div className="mt-6 max-w-xs">
-          <label className="mb-2 block text-sm font-medium">Season</label>
-          <input
-            type="number"
-            value={season}
-            onChange={(e) => setSeason(e.target.value)}
-            className="w-full rounded-xl border border-gray-300 px-4 py-3"
-          />
+        <div className="mt-6 grid gap-4 md:grid-cols-2">
+          <div className="max-w-xs">
+            <label className="mb-2 block text-sm font-medium">Season</label>
+            <input
+              type="number"
+              value={season}
+              onChange={(e) => setSeason(e.target.value)}
+              className="w-full rounded-xl border border-gray-300 px-4 py-3"
+            />
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium">Search school</label>
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Type a school name..."
+              className="w-full rounded-xl border border-gray-300 px-4 py-3"
+            />
+          </div>
         </div>
 
         {loading && <p className="mt-6">Loading results...</p>}
@@ -90,40 +122,46 @@ export default function ResultsPage() {
         )}
 
         {!loading && !error && (
-          <div className="mt-8 overflow-hidden rounded-2xl border border-gray-200 shadow-sm">
-            <table className="min-w-full border-collapse">
-              <thead className="bg-gray-50">
-                <tr className="text-left">
-                  <th className="px-4 py-3 text-sm font-semibold">Date</th>
-                  <th className="px-4 py-3 text-sm font-semibold">Team A</th>
-                  <th className="px-4 py-3 text-sm font-semibold">Score</th>
-                  <th className="px-4 py-3 text-sm font-semibold">Team B</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="px-4 py-6 text-sm text-gray-500">
-                      No results found for this season.
-                    </td>
+          <>
+            <div className="mt-6 text-sm text-gray-600">
+              Showing {filteredRows.length} of {rows.length} result(s)
+            </div>
+
+            <div className="mt-4 overflow-hidden rounded-2xl border border-gray-200 shadow-sm">
+              <table className="min-w-full border-collapse">
+                <thead className="bg-gray-50">
+                  <tr className="text-left">
+                    <th className="px-4 py-3 text-sm font-semibold">Date</th>
+                    <th className="px-4 py-3 text-sm font-semibold">Team A</th>
+                    <th className="px-4 py-3 text-sm font-semibold">Score</th>
+                    <th className="px-4 py-3 text-sm font-semibold">Team B</th>
                   </tr>
-                ) : (
-                  rows.map((match) => (
-                    <tr key={match.id} className="border-t border-gray-200">
-                      <td className="px-4 py-3 text-sm">
-                        {new Date(match.match_date).toLocaleDateString()}
+                </thead>
+                <tbody>
+                  {filteredRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-6 text-sm text-gray-500">
+                        No results found for this search.
                       </td>
-                      <td className="px-4 py-3 text-sm">{match.teamAName}</td>
-                      <td className="px-4 py-3 text-sm font-semibold">
-                        {match.team_a_score} - {match.team_b_score}
-                      </td>
-                      <td className="px-4 py-3 text-sm">{match.teamBName}</td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                  ) : (
+                    filteredRows.map((match) => (
+                      <tr key={match.id} className="border-t border-gray-200">
+                        <td className="px-4 py-3 text-sm">
+                          {new Date(match.match_date).toLocaleDateString()}
+                        </td>
+                        <td className="px-4 py-3 text-sm">{match.teamAName}</td>
+                        <td className="px-4 py-3 text-sm font-semibold">
+                          {match.team_a_score} - {match.team_b_score}
+                        </td>
+                        <td className="px-4 py-3 text-sm">{match.teamBName}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
     </main>
