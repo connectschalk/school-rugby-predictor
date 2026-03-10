@@ -306,7 +306,7 @@ export default function NetworkPage() {
           rankings,
         }
       })
-      .sort((a, b) => b.teamIds.length - a.length)
+      .sort((a, b) => b.teamIds.length - a.teamIds.length)
   }, [matches, teams])
 
   const graphData = useMemo(() => {
