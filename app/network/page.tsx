@@ -430,17 +430,25 @@ export default function NetworkPage() {
     }, [matches, teams, pools])
 
     useEffect(() => {
-        if (!graphRef.current) return
+        if (!graphRef.current || graphData.nodes.length === 0) return
 
-        const timer = setTimeout(() => {
+        const runFit = () => {
             try {
-                graphRef.current.zoomToFit(400, 220)
+                graphRef.current.zoomToFit(800, 120)
             } catch {
                 // ignore
             }
-        }, 150)
+        }
 
-        return () => clearTimeout(timer)
+        const t1 = setTimeout(runFit, 150)
+        const t2 = setTimeout(runFit, 500)
+        const t3 = setTimeout(runFit, 1000)
+
+        return () => {
+            clearTimeout(t1)
+            clearTimeout(t2)
+            clearTimeout(t3)
+        }
     }, [graphData, graphSize])
 
     return (
@@ -493,7 +501,7 @@ export default function NetworkPage() {
 
                             <div
                                 ref={containerRef}
-                                className="h-[820px] w-full overflow-hidden rounded-xl border border-gray-200 bg-white"
+                                className="h-[820px] w-full overflow-auto rounded-xl border border-gray-200 bg-white"
                             >
                                 <ForceGraph2D
                                     ref={graphRef}
@@ -501,6 +509,13 @@ export default function NetworkPage() {
                                     width={graphSize.width}
                                     height={graphSize.height}
                                     cooldownTicks={0}
+                                    onEngineStop={() => {
+                                        try {
+                                            graphRef.current?.zoomToFit(800, 120)
+                                        } catch {
+                                            // ignore
+                                        }
+                                    }}
                                     enableNodeDrag={false}
                                     nodeRelSize={6}
                                     linkColor={(link: any) => getPoolColor(link.poolId)}
