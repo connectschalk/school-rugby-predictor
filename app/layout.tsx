@@ -1,9 +1,9 @@
 import './globals.css'
-import Link from 'next/link'
+import Image from 'next/image'
 
 export const metadata = {
-  title: 'School Rugby Predictor',
-  description: 'Predicting school rugby match outcomes using linked margins',
+  title: 'NextPlay Predictor',
+  description: 'School Rugby Predictor',
 }
 
 export default function RootLayout({
@@ -13,62 +13,52 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>
+      <body className="bg-white text-black">
 
-        {/* Top Navigation */}
-        <header className="border-b bg-white">
-          <nav className="flex items-center justify-between px-6 py-4">
+        {/* HEADER */}
 
-            {/* LEFT SIDE - ADMIN */}
-            <div>
-              <Link
-                href="/admin"
-                className="font-semibold text-red-600 hover:underline"
-              >
-                Admin
-              </Link>
+        <header className="border-b border-gray-200">
+          <div className="mx-auto max-w-6xl px-6 py-6 flex items-center justify-between">
+
+            <div className="flex items-center gap-4">
+              <Image
+                src="/nextplay-predictor.png"
+                alt="NextPlay Predictor"
+                width={240}
+                height={80}
+                priority
+              />
             </div>
 
-            {/* RIGHT SIDE - PUBLIC NAV */}
-            <div className="flex items-center gap-6">
+            <nav className="flex gap-6 text-sm font-medium">
+              <a href="/" className="hover:underline">Predictor</a>
+              <a href="/results" className="hover:underline">Results</a>
+              <a href="/rankings" className="hover:underline">Rankings</a>
+              <a href="/network" className="hover:underline">Visual Graph</a>
+            </nav>
 
-              <Link
-                href="/"
-                className="font-medium hover:underline"
-              >
-                Predictor
-              </Link>
-
-              <Link
-                href="/results"
-                className="font-medium hover:underline"
-              >
-                Results
-              </Link>
-
-              <Link
-                href="/rankings"
-                className="font-medium hover:underline"
-              >
-                Rankings
-              </Link>
-
-              <Link
-                href="/network"
-                className="font-medium hover:underline"
-              >
-                Visual Graph
-              </Link>
-
-            </div>
-
-          </nav>
+          </div>
         </header>
 
-        {/* Page Content */}
-        <main className="px-6 py-6">
-          {children}
-        </main>
+
+        {/* PAGE CONTENT */}
+
+        {children}
+
+
+        {/* FOOTER */}
+
+        <footer className="mt-20 border-t border-gray-200">
+          <div className="mx-auto max-w-6xl px-6 py-6 text-sm text-gray-600">
+            Contact: 
+            <a
+              href="mailto:info@thenextplay.co.za"
+              className="ml-1 text-black hover:underline"
+            >
+              info@thenextplay.co.za
+            </a>
+          </div>
+        </footer>
 
       </body>
     </html>
