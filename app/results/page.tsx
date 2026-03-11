@@ -77,10 +77,17 @@ export default function ResultsPage() {
     return rows.filter((match) => {
       const teamA = match.teamAName.toLowerCase()
       const teamB = match.teamBName.toLowerCase()
-
       return teamA.includes(query) || teamB.includes(query)
     })
   }, [rows, searchTerm])
+
+  function handleSchoolClick(name: string) {
+    setSearchTerm(name)
+  }
+
+  function clearSearch() {
+    setSearchTerm('')
+  }
 
   return (
     <main className="min-h-screen bg-white text-black">
@@ -103,13 +110,23 @@ export default function ResultsPage() {
 
           <div>
             <label className="mb-2 block text-sm font-medium">Search school</label>
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Type a school name..."
-              className="w-full rounded-xl border border-gray-300 px-4 py-3"
-            />
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Type a school name..."
+                className="w-full rounded-xl border border-gray-300 px-4 py-3"
+              />
+              {searchTerm && (
+                <button
+                  onClick={clearSearch}
+                  className="rounded-xl border border-gray-300 px-4 py-3 text-sm hover:bg-gray-50"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -125,6 +142,11 @@ export default function ResultsPage() {
           <>
             <div className="mt-6 text-sm text-gray-600">
               Showing {filteredRows.length} of {rows.length} result(s)
+              {searchTerm && (
+                <span className="ml-2">
+                  for <span className="font-medium text-black">{searchTerm}</span>
+                </span>
+              )}
             </div>
 
             <div className="mt-4 overflow-hidden rounded-2xl border border-gray-200 shadow-sm">
@@ -150,11 +172,28 @@ export default function ResultsPage() {
                         <td className="px-4 py-3 text-sm">
                           {new Date(match.match_date).toLocaleDateString()}
                         </td>
-                        <td className="px-4 py-3 text-sm">{match.teamAName}</td>
+
+                        <td className="px-4 py-3 text-sm">
+                          <button
+                            onClick={() => handleSchoolClick(match.teamAName)}
+                            className="text-left text-blue-700 hover:underline"
+                          >
+                            {match.teamAName}
+                          </button>
+                        </td>
+
                         <td className="px-4 py-3 text-sm font-semibold">
                           {match.team_a_score} - {match.team_b_score}
                         </td>
-                        <td className="px-4 py-3 text-sm">{match.teamBName}</td>
+
+                        <td className="px-4 py-3 text-sm">
+                          <button
+                            onClick={() => handleSchoolClick(match.teamBName)}
+                            className="text-left text-blue-700 hover:underline"
+                          >
+                            {match.teamBName}
+                          </button>
+                        </td>
                       </tr>
                     ))
                   )}
