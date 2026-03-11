@@ -527,12 +527,16 @@ export default function NetworkPage() {
                                         ctx.stroke()
 
                                         const neighbourXs = graphData.neighbourXMap.get(String(node.id)) || []
-                                        const averageNeighbourX =
-                                            neighbourXs.length > 0
-                                                ? neighbourXs.reduce((sum, x) => sum + x, 0) / neighbourXs.length
-                                                : (node.x || 0) - 1
 
-                                        let placeLabelLeft = averageNeighbourX > (node.x || 0)
+                                        let placeLabelLeft = false
+
+                                        if (neighbourXs.length > 0) {
+                                            const rightNeighbours = neighbourXs.filter(x => x > (node.x || 0)).length
+                                            const leftNeighbours = neighbourXs.filter(x => x < (node.x || 0)).length
+
+                                            // If most neighbours are to the right, place label left
+                                            placeLabelLeft = rightNeighbours > leftNeighbours
+                                        }
 
                                         const textWidth = ctx.measureText(label).width
                                         const gap = node.val + 10
