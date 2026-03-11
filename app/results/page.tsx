@@ -154,9 +154,9 @@ export default function ResultsPage() {
                 <thead className="bg-gray-50">
                   <tr className="text-left">
                     <th className="px-4 py-3 text-sm font-semibold">Date</th>
-                    <th className="px-4 py-3 text-sm font-semibold">Team A</th>
+                    <th className="px-4 py-3 text-sm font-semibold">Home Team</th>
                     <th className="px-4 py-3 text-sm font-semibold">Score</th>
-                    <th className="px-4 py-3 text-sm font-semibold">Team B</th>
+                    <th className="px-4 py-3 text-sm font-semibold">Away Team</th>
                   </tr>
                 </thead>
                 <tbody>

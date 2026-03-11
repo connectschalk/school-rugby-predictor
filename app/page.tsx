@@ -193,7 +193,7 @@ export default function HomePage() {
             <>
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
-                  <label className="mb-2 block text-sm font-medium">Team A</label>
+                  <label className="mb-2 block text-sm font-medium">Home Team</label>
                   <select
                     value={teamA}
                     onChange={(e) => setTeamA(e.target.value)}
@@ -209,7 +209,7 @@ export default function HomePage() {
                 </div>
 
                 <div>
-                  <label className="mb-2 block text-sm font-medium">Team B</label>
+                  <label className="mb-2 block text-sm font-medium">Away Team</label>
                   <select
                     value={teamB}
                     onChange={(e) => setTeamB(e.target.value)}
