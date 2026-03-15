@@ -26,6 +26,7 @@ type Match = {
 type GraphNode = {
     id: string
     name: string
+    logo?: string
     val: number
     poolId: number
     x?: number
@@ -62,6 +63,15 @@ function getPoolColor(poolId: number) {
     return colors[(poolId - 1) % colors.length]
 }
 
+function slugifyTeamName(name: string) {
+    return name
+        .toLowerCase()
+        .trim()
+        .replace(/&/g, 'and')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+}
+
 function getBaselineLayoutData(
     matches: Match[],
     baselineTeamId: number,
@@ -91,7 +101,6 @@ function getBaselineLayoutData(
         })
     }
 
-    // direct opponents of the baseline must always be depth 1
     const directOpponents = new Set<number>()
 
     for (const match of matches) {
@@ -128,8 +137,6 @@ function getBaselineLayoutData(
                 visited.add(neighbour.opponentId)
 
                 let nextDepth = current.depth + 1
-
-                // force all direct baseline opponents onto depth 1
                 if (directOpponents.has(neighbour.opponentId)) {
                     nextDepth = 1
                 }
@@ -172,6 +179,16 @@ export default function NetworkPage() {
 
     const graphRef = useRef<any>(null)
     const containerRef = useRef<HTMLDivElement | null>(null)
+    const imageCacheRef = useRef<Record<string, HTMLImageElement>>({})
+
+    function getNodeImage(src: string) {
+        if (!imageCacheRef.current[src]) {
+            const img = new Image()
+            img.src = src
+            imageCacheRef.current[src] = img
+        }
+        return imageCacheRef.current[src]
+    }
 
     useEffect(() => {
         function updateSize() {
@@ -288,7 +305,8 @@ export default function NetworkPage() {
             return {
                 id: String(teamId),
                 name: team?.name || `Team ${teamId}`,
-                val: Math.max(7, matchesPlayed * 2),
+                logo: `/team-logos/${slugifyTeamName(team?.name || `team-${teamId}`)}.png`,
+                val: 18,
                 poolId: 1,
                 relativeScore: cumulativeMargin,
                 rankPosition: depthLevel,
@@ -463,7 +481,7 @@ export default function NetworkPage() {
                                     height={graphSize.height}
                                     cooldownTicks={0}
                                     enableNodeDrag={false}
-                                    nodeRelSize={6}
+                                    nodeRelSize={0}
                                     linkColor={(link: any) => getPoolColor(link.poolId)}
                                     linkWidth={2}
                                     linkDirectionalParticles={0}
@@ -483,16 +501,52 @@ export default function NetworkPage() {
                                         const fontSize = 12 / globalScale
                                         ctx.font = `${fontSize}px Sans-Serif`
 
-                                        const color = getPoolColor(node.poolId)
+                                        const imageSize = 34
+                                        const logoSrc = node.logo as string | undefined
 
-                                        ctx.beginPath()
-                                        ctx.arc(node.x, node.y, node.val, 0, 2 * Math.PI, false)
-                                        ctx.fillStyle = color
-                                        ctx.fill()
+                                        if (logoSrc) {
+                                            const img = getNodeImage(logoSrc)
 
-                                        ctx.strokeStyle = '#111827'
-                                        ctx.lineWidth = 1
-                                        ctx.stroke()
+                                            if (img.complete && img.naturalWidth > 0) {
+                                                ctx.save()
+                                                ctx.beginPath()
+                                                ctx.arc(node.x, node.y, imageSize / 2, 0, 2 * Math.PI)
+                                                ctx.closePath()
+                                                ctx.clip()
+
+                                                ctx.drawImage(
+                                                    img,
+                                                    (node.x || 0) - imageSize / 2,
+                                                    (node.y || 0) - imageSize / 2,
+                                                    imageSize,
+                                                    imageSize
+                                                )
+
+                                                ctx.restore()
+
+                                                ctx.beginPath()
+                                                ctx.arc(node.x, node.y, imageSize / 2, 0, 2 * Math.PI)
+                                                ctx.strokeStyle = '#111827'
+                                                ctx.lineWidth = 1.5
+                                                ctx.stroke()
+                                            } else {
+                                                ctx.beginPath()
+                                                ctx.arc(node.x, node.y, 12, 0, 2 * Math.PI, false)
+                                                ctx.fillStyle = getPoolColor(node.poolId)
+                                                ctx.fill()
+                                                ctx.strokeStyle = '#111827'
+                                                ctx.lineWidth = 1
+                                                ctx.stroke()
+                                            }
+                                        } else {
+                                            ctx.beginPath()
+                                            ctx.arc(node.x, node.y, 12, 0, 2 * Math.PI, false)
+                                            ctx.fillStyle = getPoolColor(node.poolId)
+                                            ctx.fill()
+                                            ctx.strokeStyle = '#111827'
+                                            ctx.lineWidth = 1
+                                            ctx.stroke()
+                                        }
 
                                         const currentDepth = baselineTeam
                                             ? baselineReachability.depthMap.get(Number(node.id)) ?? 0
@@ -505,7 +559,7 @@ export default function NetworkPage() {
                                             ctx.textAlign = 'center'
                                             ctx.textBaseline = 'bottom'
 
-                                            const labelY = (node.y || 0) - (node.val + 18)
+                                            const labelY = (node.y || 0) - 28
                                             const textWidth = ctx.measureText(label).width
                                             const paddingX = 6
                                             const paddingY = 4
@@ -539,7 +593,7 @@ export default function NetworkPage() {
                                                 placeLabelLeft = rightNeighbours > leftNeighbours
                                             }
 
-                                            const gap = node.val + 12
+                                            const gap = 24
                                             ctx.textAlign = placeLabelLeft ? 'right' : 'left'
                                             ctx.textBaseline = 'middle'
 
@@ -560,10 +614,13 @@ export default function NetworkPage() {
                                         const dy = end.y - start.y
                                         const length = Math.sqrt(dx * dx + dy * dy) || 1
 
-                                        const offsetStartX = start.x + (dx / length) * start.val
-                                        const offsetStartY = start.y + (dy / length) * start.val
-                                        const offsetEndX = end.x - (dx / length) * end.val
-                                        const offsetEndY = end.y - (dy / length) * end.val
+                                        const startRadius = 17
+                                        const endRadius = 17
+
+                                        const offsetStartX = start.x + (dx / length) * startRadius
+                                        const offsetStartY = start.y + (dy / length) * startRadius
+                                        const offsetEndX = end.x - (dx / length) * endRadius
+                                        const offsetEndY = end.y - (dy / length) * endRadius
 
                                         ctx.strokeStyle = getPoolColor(link.poolId)
                                         ctx.lineWidth = 2
@@ -711,6 +768,7 @@ export default function NetworkPage() {
                                 <p>- Horizontal position reflects cumulative margin from the selected baseline</p>
                                 <p>- Margin labels are shown on the connecting lines</p>
                                 <p>- Baseline row labels appear above the nodes for readability</p>
+                                <p>- Team nodes use PNG logos when matching files exist in public/team-logos</p>
                             </div>
                         </div>
 
