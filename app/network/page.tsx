@@ -398,11 +398,25 @@ export default function NetworkPage() {
             teamIdsInMatches.add(m.team_b_id)
         })
 
+        const baselineId = baselineTeam ? Number(baselineTeam) : null
+
         const xLeaderBaseline = 340
-        const xPixelsPerMargin = 24
+        const xPixelsPerMargin = 10
         const baselineY = 220
         const depthRowGap = 140
         const sameDepthSpread = 36
+
+        const directMarginMap = new Map<number, number>()
+
+        if (baselineId) {
+            filteredMatches.forEach((match) => {
+                if (match.team_a_id === baselineId) {
+                    directMarginMap.set(match.team_b_id, -(match.team_a_score - match.team_b_score))
+                } else if (match.team_b_id === baselineId) {
+                    directMarginMap.set(match.team_a_id, -(match.team_b_score - match.team_a_score))
+                }
+            })
+        }
 
         const nodes: GraphNode[] = [...teamIdsInMatches].map((teamId) => {
             const team = teams.find((t) => t.id === teamId)
@@ -415,7 +429,6 @@ export default function NetworkPage() {
 
             const relativeScore = ranking?.relativeScore || 0
 
-            const baselineId = baselineTeam ? Number(baselineTeam) : null
             const depthLevel = baselineId
                 ? baselineReachability.depthMap.get(teamId) ?? 0
                 : 0
@@ -424,20 +437,29 @@ export default function NetworkPage() {
 
             if (baselineId && teamId === baselineId) {
                 fixedX = xLeaderBaseline
+            } else if (baselineId && depthLevel === 1 && directMarginMap.has(teamId)) {
+                fixedX = xLeaderBaseline + (directMarginMap.get(teamId) || 0) * xPixelsPerMargin
             }
 
-            const sameDepthTeamIds = [...teamIdsInMatches]
-                .filter((id) => (baselineReachability.depthMap.get(id) ?? 0) === depthLevel)
-                .sort((a, b) => a - b)
+            let fixedY = baselineY
 
-            const indexWithinDepth = sameDepthTeamIds.findIndex((id) => id === teamId)
-            const spreadOffset =
-                depthLevel <= 1 ? 0 : (indexWithinDepth - (sameDepthTeamIds.length - 1) / 2) * sameDepthSpread
+            if (baselineId) {
+                if (teamId === baselineId) {
+                    fixedY = baselineY
+                } else if (depthLevel === 1) {
+                    fixedY = baselineY
+                } else {
+                    const sameDepthTeamIds = [...teamIdsInMatches]
+                        .filter((id) => (baselineReachability.depthMap.get(id) ?? 0) === depthLevel)
+                        .sort((a, b) => a - b)
 
-            const fixedY =
-                depthLevel === 0
-                    ? baselineY
-                    : baselineY + (depthLevel - 1) * depthRowGap + spreadOffset
+                    const indexWithinDepth = sameDepthTeamIds.findIndex((id) => id === teamId)
+                    const spreadOffset =
+                        (indexWithinDepth - (sameDepthTeamIds.length - 1) / 2) * sameDepthSpread
+
+                    fixedY = baselineY + (depthLevel - 1) * depthRowGap + spreadOffset
+                }
+            }
 
             return {
                 id: String(teamId),
@@ -491,13 +513,7 @@ export default function NetworkPage() {
 
         const maxNegativeOffset =
             nodes.length > 0
-                ? Math.min(
-                    ...nodes.map(
-                        (n) =>
-                            n.relativeScore -
-                            (pools.find((p) => p.poolId === n.poolId)?.rankings[0]?.relativeScore || 0)
-                    )
-                )
+                ? Math.min(...nodes.map((n) => ((n.x || 0) - xLeaderBaseline) / xPixelsPerMargin))
                 : 0
 
         return {
@@ -512,7 +528,7 @@ export default function NetworkPage() {
                 depthRowGap,
             },
         }
-    }, [filteredMatches, teams, pools])
+    }, [filteredMatches, teams, pools, baselineTeam, baselineReachability])
 
     useEffect(() => {
         if (!graphRef.current || graphData.nodes.length === 0) return
@@ -797,7 +813,7 @@ export default function NetworkPage() {
                                         }
 
                                         for (let d = 0; d <= Number(depth); d++) {
-                                            const y = d === 0 ? baselineY : baselineY + (d - 1) * depthRowGap
+                                            const y = d <= 1 ? baselineY : baselineY + (d - 1) * depthRowGap
 
                                             ctx.strokeStyle = '#e5e7eb'
                                             ctx.beginPath()
@@ -810,6 +826,8 @@ export default function NetworkPage() {
 
                                             if (d === 0) {
                                                 ctx.fillText('Baseline team', 50, y - 8)
+                                            } else if (d === 1) {
+                                                ctx.fillText('Direct opponents', 50, y - 8)
                                             } else {
                                                 ctx.fillText(`Depth ${d}`, 50, y - 8)
                                             }
