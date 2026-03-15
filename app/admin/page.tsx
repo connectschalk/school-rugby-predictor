@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
+import TeamLogoUploader from '@/components/TeamLogoUploader'
 
 const ALLOWED_ADMIN_EMAIL = 'connect.schalk@gmail.com'
 
@@ -680,6 +681,8 @@ export default function AdminPage() {
             </div>
           )}
         </section>
+
+        <TeamLogoUploader />
 
         <section className="mt-10 rounded-2xl border border-gray-200 p-6 shadow-sm">
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
