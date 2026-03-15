@@ -484,7 +484,31 @@ export default function NetworkPage() {
                                         if (currentDepth === 0 || currentDepth === 1) {
                                             ctx.textAlign = 'center'
                                             ctx.textBaseline = 'bottom'
-                                            ctx.fillText(label, node.x || 0, (node.y || 0) - (node.val + 10))
+
+                                            const labelY = (node.y || 0) - (node.val + 18)
+                                            const textWidth = ctx.measureText(label).width
+                                            const paddingX = 6
+                                            const paddingY = 4
+
+                                            ctx.fillStyle = 'rgba(255,255,255,0.95)'
+                                            ctx.fillRect(
+                                                (node.x || 0) - textWidth / 2 - paddingX,
+                                                labelY - fontSize - paddingY,
+                                                textWidth + paddingX * 2,
+                                                fontSize + paddingY * 2
+                                            )
+
+                                            ctx.strokeStyle = '#e5e7eb'
+                                            ctx.lineWidth = 0.5
+                                            ctx.strokeRect(
+                                                (node.x || 0) - textWidth / 2 - paddingX,
+                                                labelY - fontSize - paddingY,
+                                                textWidth + paddingX * 2,
+                                                fontSize + paddingY * 2
+                                            )
+
+                                            ctx.fillStyle = '#111827'
+                                            ctx.fillText(label, node.x || 0, labelY)
                                         } else {
                                             const neighbourXs = graphData.neighbourXMap.get(String(node.id)) || []
                                             let placeLabelLeft = false
@@ -625,9 +649,9 @@ export default function NetworkPage() {
                                             ctx.font = '12px Sans-Serif'
 
                                             if (d === 0) {
-                                                ctx.fillText('Baseline + direct opponents', 50, y - 8)
+                                                ctx.fillText('Baseline + direct opponents', 50, y - 18)
                                             } else {
-                                                ctx.fillText(`Depth ${d}`, 50, y - 8)
+                                                ctx.fillText(`Depth ${d}`, 50, y - 18)
                                             }
                                         }
 
