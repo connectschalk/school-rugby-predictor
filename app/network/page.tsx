@@ -23,26 +23,6 @@ type Match = {
     team_b_score: number
 }
 
-type RankedTeam = {
-    teamId: number
-    teamName: string
-    relativeScore: number
-    matchesPlayed: number
-    pointsFor: number
-    pointsAgainst: number
-    wins: number
-    draws: number
-    losses: number
-    averageMargin: number
-}
-
-type PoolData = {
-    poolId: number
-    teamIds: number[]
-    matches: Match[]
-    rankings: RankedTeam[]
-}
-
 type GraphNode = {
     id: string
     name: string
@@ -65,146 +45,6 @@ type GraphLink = {
     margin: number
 }
 
-function buildAdjacency(matches: Match[]) {
-    const adjacency: Record<number, Set<number>> = {}
-
-    for (const match of matches) {
-        if (!adjacency[match.team_a_id]) adjacency[match.team_a_id] = new Set()
-        if (!adjacency[match.team_b_id]) adjacency[match.team_b_id] = new Set()
-
-        adjacency[match.team_a_id].add(match.team_b_id)
-        adjacency[match.team_b_id].add(match.team_a_id)
-    }
-
-    return adjacency
-}
-
-function findConnectedPools(matches: Match[]): number[][] {
-    const adjacency = buildAdjacency(matches)
-    const visited = new Set<number>()
-    const pools: number[][] = []
-
-    for (const teamIdStr of Object.keys(adjacency)) {
-        const start = Number(teamIdStr)
-        if (visited.has(start)) continue
-
-        const stack = [start]
-        const component: number[] = []
-        visited.add(start)
-
-        while (stack.length > 0) {
-            const current = stack.pop()!
-            component.push(current)
-
-            const neighbours = adjacency[current] || new Set<number>()
-            for (const next of neighbours) {
-                if (!visited.has(next)) {
-                    visited.add(next)
-                    stack.push(next)
-                }
-            }
-        }
-
-        component.sort((a, b) => a - b)
-        pools.push(component)
-    }
-
-    return pools.sort((a, b) => b.length - a.length)
-}
-
-function computePoolRankings(poolTeamIds: number[], matches: Match[], teams: Team[]): RankedTeam[] {
-    const teamSet = new Set(poolTeamIds)
-    const poolMatches = matches.filter(
-        (m) => teamSet.has(m.team_a_id) && teamSet.has(m.team_b_id)
-    )
-
-    const ratings: Record<number, number> = {}
-    const stats: Record<number, RankedTeam> = {}
-
-    for (const teamId of poolTeamIds) {
-        const teamName = teams.find((t) => t.id === teamId)?.name || `Team ${teamId}`
-        ratings[teamId] = 0
-        stats[teamId] = {
-            teamId,
-            teamName,
-            relativeScore: 0,
-            matchesPlayed: 0,
-            pointsFor: 0,
-            pointsAgainst: 0,
-            wins: 0,
-            draws: 0,
-            losses: 0,
-            averageMargin: 0,
-        }
-    }
-
-    for (const match of poolMatches) {
-        const a = stats[match.team_a_id]
-        const b = stats[match.team_b_id]
-        const margin = match.team_a_score - match.team_b_score
-
-        a.matchesPlayed += 1
-        a.pointsFor += match.team_a_score
-        a.pointsAgainst += match.team_b_score
-
-        b.matchesPlayed += 1
-        b.pointsFor += match.team_b_score
-        b.pointsAgainst += match.team_a_score
-
-        if (margin > 0) {
-            a.wins += 1
-            b.losses += 1
-        } else if (margin < 0) {
-            b.wins += 1
-            a.losses += 1
-        } else {
-            a.draws += 1
-            b.draws += 1
-        }
-    }
-
-    const iterations = 1200
-    const learningRate = 0.02
-
-    for (let i = 0; i < iterations; i++) {
-        for (const match of poolMatches) {
-            const a = match.team_a_id
-            const b = match.team_b_id
-            const margin = match.team_a_score - match.team_b_score
-
-            const predicted = ratings[a] - ratings[b]
-            const error = predicted - margin
-
-            ratings[a] -= learningRate * error
-            ratings[b] += learningRate * error
-        }
-
-        const mean =
-            poolTeamIds.reduce((sum, id) => sum + ratings[id], 0) / poolTeamIds.length
-
-        for (const teamId of poolTeamIds) {
-            ratings[teamId] -= mean
-        }
-    }
-
-    const ranked = poolTeamIds.map((teamId) => {
-        const teamStat = stats[teamId]
-        const totalMargin = teamStat.pointsFor - teamStat.pointsAgainst
-        const avgMargin =
-            teamStat.matchesPlayed > 0 ? totalMargin / teamStat.matchesPlayed : 0
-
-        return {
-            ...teamStat,
-            relativeScore: Math.round(ratings[teamId] * 10) / 10,
-            averageMargin: Math.round(avgMargin * 10) / 10,
-        }
-    })
-
-    ranked.sort((a, b) => b.relativeScore - a.relativeScore)
-
-    return ranked
-}
-
 function getPoolColor(poolId: number) {
     const colors = [
         '#2563eb',
@@ -222,42 +62,72 @@ function getPoolColor(poolId: number) {
     return colors[(poolId - 1) % colors.length]
 }
 
-function getReachableTeamsFromBaseline(
+function getBaselineLayoutData(
     matches: Match[],
     baselineTeamId: number,
     maxDepth: number
 ) {
-    const adjacency: Record<number, Set<number>> = {}
+    const adjacency: Record<
+        number,
+        Array<{ opponentId: number; marginFromCurrent: number; matchId: number }>
+    > = {}
 
     for (const match of matches) {
-        if (!adjacency[match.team_a_id]) adjacency[match.team_a_id] = new Set()
-        if (!adjacency[match.team_b_id]) adjacency[match.team_b_id] = new Set()
+        if (!adjacency[match.team_a_id]) adjacency[match.team_a_id] = []
+        if (!adjacency[match.team_b_id]) adjacency[match.team_b_id] = []
 
-        adjacency[match.team_a_id].add(match.team_b_id)
-        adjacency[match.team_b_id].add(match.team_a_id)
+        const margin = match.team_a_score - match.team_b_score
+
+        adjacency[match.team_a_id].push({
+            opponentId: match.team_b_id,
+            marginFromCurrent: -margin,
+            matchId: match.id,
+        })
+
+        adjacency[match.team_b_id].push({
+            opponentId: match.team_a_id,
+            marginFromCurrent: margin,
+            matchId: match.id,
+        })
     }
 
     const visited = new Set<number>([baselineTeamId])
-    const depths = new Map<number, number>()
-    depths.set(baselineTeamId, 0)
+    const depthMap = new Map<number, number>()
+    const marginMap = new Map<number, number>()
+    const parentMap = new Map<number, number | null>()
+    const matchMap = new Map<number, number | null>()
 
-    const queue: Array<{ teamId: number; depth: number }> = [
-        { teamId: baselineTeamId, depth: 0 },
+    depthMap.set(baselineTeamId, 0)
+    marginMap.set(baselineTeamId, 0)
+    parentMap.set(baselineTeamId, null)
+    matchMap.set(baselineTeamId, null)
+
+    const queue: Array<{ teamId: number; depth: number; cumulativeMargin: number }> = [
+        { teamId: baselineTeamId, depth: 0, cumulativeMargin: 0 },
     ]
 
     while (queue.length > 0) {
         const current = queue.shift()!
         if (current.depth >= maxDepth) continue
 
-        const neighbours = adjacency[current.teamId] || new Set<number>()
+        const neighbours = adjacency[current.teamId] || []
 
         for (const neighbour of neighbours) {
-            if (!visited.has(neighbour)) {
-                visited.add(neighbour)
-                depths.set(neighbour, current.depth + 1)
+            if (!visited.has(neighbour.opponentId)) {
+                visited.add(neighbour.opponentId)
+
+                const nextDepth = current.depth + 1
+                const nextMargin = current.cumulativeMargin + neighbour.marginFromCurrent
+
+                depthMap.set(neighbour.opponentId, nextDepth)
+                marginMap.set(neighbour.opponentId, nextMargin)
+                parentMap.set(neighbour.opponentId, current.teamId)
+                matchMap.set(neighbour.opponentId, neighbour.matchId)
+
                 queue.push({
-                    teamId: neighbour,
-                    depth: current.depth + 1,
+                    teamId: neighbour.opponentId,
+                    depth: nextDepth,
+                    cumulativeMargin: nextMargin,
                 })
             }
         }
@@ -265,7 +135,10 @@ function getReachableTeamsFromBaseline(
 
     return {
         reachableTeamIds: visited,
-        depthMap: depths,
+        depthMap,
+        marginMap,
+        parentMap,
+        matchMap,
     }
 }
 
@@ -278,15 +151,15 @@ export default function NetworkPage() {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
     const [selectedInfo, setSelectedInfo] = useState('')
-    const [graphSize, setGraphSize] = useState({ width: 1400, height: 820 })
+    const [graphSize, setGraphSize] = useState({ width: 1800, height: 900 })
 
     const graphRef = useRef<any>(null)
     const containerRef = useRef<HTMLDivElement | null>(null)
 
     useEffect(() => {
         function updateSize() {
-            const width = containerRef.current?.clientWidth || 1400
-            setGraphSize({ width, height: 820 })
+            const width = containerRef.current?.clientWidth || 1800
+            setGraphSize({ width, height: 900 })
         }
 
         updateSize()
@@ -341,14 +214,13 @@ export default function NetworkPage() {
             return {
                 reachableTeamIds: new Set<number>(),
                 depthMap: new Map<number, number>(),
+                marginMap: new Map<number, number>(),
+                parentMap: new Map<number, number | null>(),
+                matchMap: new Map<number, number | null>(),
             }
         }
 
-        return getReachableTeamsFromBaseline(
-            matches,
-            Number(baselineTeam),
-            Number(depth)
-        )
+        return getBaselineLayoutData(matches, Number(baselineTeam), Number(depth))
     }, [matches, baselineTeam, depth])
 
     const filteredMatches = useMemo(() => {
@@ -361,36 +233,8 @@ export default function NetworkPage() {
         )
     }, [matches, baselineTeam, baselineReachability])
 
-    const pools = useMemo<PoolData[]>(() => {
-        const connectedPools = findConnectedPools(filteredMatches)
-
-        return connectedPools
-            .map((teamIds, index) => {
-                const teamSet = new Set(teamIds)
-                const poolMatches = filteredMatches.filter(
-                    (m) => teamSet.has(m.team_a_id) && teamSet.has(m.team_b_id)
-                )
-
-                const rankings = computePoolRankings(teamIds, filteredMatches, teams)
-
-                return {
-                    poolId: index + 1,
-                    teamIds,
-                    matches: poolMatches,
-                    rankings,
-                }
-            })
-            .sort((a, b) => b.teamIds.length - a.teamIds.length)
-    }, [filteredMatches, teams])
-
     const graphData = useMemo(() => {
-        const teamToPool = new Map<number, number>()
-        const teamToRanking = new Map<number, RankedTeam>()
-
-        pools.forEach((pool) => {
-            pool.teamIds.forEach((teamId) => teamToPool.set(teamId, pool.poolId))
-            pool.rankings.forEach((ranking) => teamToRanking.set(ranking.teamId, ranking))
-        })
+        const baselineId = baselineTeam ? Number(baselineTeam) : null
 
         const teamIdsInMatches = new Set<number>()
         filteredMatches.forEach((m) => {
@@ -398,75 +242,35 @@ export default function NetworkPage() {
             teamIdsInMatches.add(m.team_b_id)
         })
 
-        const baselineId = baselineTeam ? Number(baselineTeam) : null
-
-        const xLeaderBaseline = 340
+        const xLeaderBaseline = 900
         const xPixelsPerMargin = 10
         const baselineY = 220
-        const depthRowGap = 140
-        const sameDepthSpread = 36
-
-        const directMarginMap = new Map<number, number>()
-
-        if (baselineId) {
-            filteredMatches.forEach((match) => {
-                if (match.team_a_id === baselineId) {
-                    directMarginMap.set(match.team_b_id, -(match.team_a_score - match.team_b_score))
-                } else if (match.team_b_id === baselineId) {
-                    directMarginMap.set(match.team_a_id, -(match.team_b_score - match.team_a_score))
-                }
-            })
-        }
+        const depthRowGap = 160
 
         const nodes: GraphNode[] = [...teamIdsInMatches].map((teamId) => {
             const team = teams.find((t) => t.id === teamId)
-            const ranking = teamToRanking.get(teamId)
-            const poolId = teamToPool.get(teamId) || 0
-
-            const matchesPlayed = filteredMatches.filter(
-                (m) => m.team_a_id === teamId || m.team_b_id === teamId
-            ).length
-
-            const relativeScore = ranking?.relativeScore || 0
 
             const depthLevel = baselineId
                 ? baselineReachability.depthMap.get(teamId) ?? 0
                 : 0
 
-            let fixedX = xLeaderBaseline + relativeScore * xPixelsPerMargin
+            const cumulativeMargin = baselineId
+                ? baselineReachability.marginMap.get(teamId) ?? 0
+                : 0
 
-            if (baselineId && teamId === baselineId) {
-                fixedX = xLeaderBaseline
-            } else if (baselineId && depthLevel === 1 && directMarginMap.has(teamId)) {
-                fixedX = xLeaderBaseline + (directMarginMap.get(teamId) || 0) * xPixelsPerMargin
-            }
+            const matchesPlayed = filteredMatches.filter(
+                (m) => m.team_a_id === teamId || m.team_b_id === teamId
+            ).length
 
-            let fixedY = baselineY
-
-            if (baselineId) {
-                if (teamId === baselineId) {
-                    fixedY = baselineY
-                } else if (depthLevel === 1) {
-                    fixedY = baselineY
-                } else {
-                    const sameDepthTeamIds = [...teamIdsInMatches]
-                        .filter((id) => (baselineReachability.depthMap.get(id) ?? 0) === depthLevel)
-                        .sort((a, b) => a - b)
-
-                    const indexWithinDepth = sameDepthTeamIds.findIndex((id) => id === teamId)
-                    const spreadOffset =
-                        (indexWithinDepth - (sameDepthTeamIds.length - 1) / 2) * sameDepthSpread
-
-                    fixedY = baselineY + (depthLevel - 1) * depthRowGap + spreadOffset
-                }
-            }
+            const fixedX = xLeaderBaseline + cumulativeMargin * xPixelsPerMargin
+            const fixedY = baselineY + depthLevel * depthRowGap
 
             return {
                 id: String(teamId),
                 name: team?.name || `Team ${teamId}`,
-                val: Math.max(6, matchesPlayed * 2),
-                poolId,
-                relativeScore,
+                val: Math.max(7, matchesPlayed * 2),
+                poolId: 1,
+                relativeScore: cumulativeMargin,
                 rankPosition: depthLevel,
                 x: fixedX,
                 y: fixedY,
@@ -486,7 +290,7 @@ export default function NetworkPage() {
                 label: `${teamA} ${match.team_a_score} - ${match.team_b_score} ${teamB} | margin ${margin > 0 ? '+' : ''
                     }${margin}`,
                 matchId: match.id,
-                poolId: teamToPool.get(match.team_a_id) || 0,
+                poolId: 1,
                 margin,
             }
         })
@@ -495,7 +299,6 @@ export default function NetworkPage() {
         nodes.forEach((node) => nodeById.set(node.id, node))
 
         const neighbourXMap = new Map<string, number[]>()
-
         links.forEach((link) => {
             const sourceId = String(link.source)
             const targetId = String(link.target)
@@ -511,10 +314,9 @@ export default function NetworkPage() {
             neighbourXMap.get(targetId)!.push(sourceNode.x || 0)
         })
 
-        const maxNegativeOffset =
-            nodes.length > 0
-                ? Math.min(...nodes.map((n) => ((n.x || 0) - xLeaderBaseline) / xPixelsPerMargin))
-                : 0
+        const allMargins = nodes.map((n) => n.relativeScore)
+        const minMargin = allMargins.length ? Math.min(...allMargins) : 0
+        const maxMargin = allMargins.length ? Math.max(...allMargins) : 0
 
         return {
             nodes,
@@ -523,12 +325,13 @@ export default function NetworkPage() {
             axis: {
                 xLeaderBaseline,
                 xPixelsPerMargin,
-                maxLeftMargin: Math.floor(Math.abs(maxNegativeOffset)) + 2,
+                minMargin,
+                maxMargin,
                 baselineY,
                 depthRowGap,
             },
         }
-    }, [filteredMatches, teams, pools, baselineTeam, baselineReachability])
+    }, [filteredMatches, teams, baselineTeam, baselineReachability])
 
     useEffect(() => {
         if (!graphRef.current || graphData.nodes.length === 0) return
@@ -557,8 +360,9 @@ export default function NetworkPage() {
             <div className="mx-auto max-w-7xl px-6 py-12">
                 <h1 className="text-3xl font-bold">Visual Graph</h1>
                 <p className="mt-2 text-gray-600">
-                    Choose a baseline team. Direct opponents stay on the first horizontal level, and deeper linked
-                    teams appear on lower levels. Horizontal position reflects margin relative to the selected baseline.
+                    Choose a baseline team. Direct opponents stay on the same horizontal level as the baseline,
+                    while deeper linked teams appear on lower levels. Horizontal position reflects cumulative
+                    margin relative to the selected baseline.
                 </p>
 
                 <div className="mt-6 grid gap-4 md:grid-cols-3">
@@ -621,9 +425,6 @@ export default function NetworkPage() {
                         <div className="mt-8 rounded-2xl border border-gray-200 p-4 shadow-sm">
                             <div className="mb-4 flex flex-wrap gap-4 text-sm text-gray-700">
                                 <div>
-                                    <strong>Pools:</strong> {pools.length}
-                                </div>
-                                <div>
                                     <strong>Teams in graph:</strong> {graphData.nodes.length}
                                 </div>
                                 <div>
@@ -633,7 +434,7 @@ export default function NetworkPage() {
 
                             <div
                                 ref={containerRef}
-                                className="h-[820px] w-full overflow-auto rounded-xl border border-gray-200 bg-white"
+                                className="h-[900px] w-full overflow-auto rounded-xl border border-gray-200 bg-white"
                             >
                                 <ForceGraph2D
                                     ref={graphRef}
@@ -654,12 +455,11 @@ export default function NetworkPage() {
                                         }
                                     }}
                                     nodeLabel={(node: any) =>
-                                        `${node.name} | Pool ${node.poolId} | Score ${node.relativeScore > 0 ? '+' : ''
-                                        }${node.relativeScore} | Rank ${node.rankPosition}`
+                                        `${node.name} | Depth ${node.rankPosition} | Margin ${node.relativeScore > 0 ? '+' : ''
+                                        }${node.relativeScore}`
                                     }
                                     linkLabel={(link: any) => link.label}
                                     nodeCanvasObject={(node: any, ctx, globalScale) => {
-                                        const label = `${node.rankPosition}. ${node.name}`
                                         const fontSize = 12 / globalScale
                                         ctx.font = `${fontSize}px Sans-Serif`
 
@@ -674,41 +474,36 @@ export default function NetworkPage() {
                                         ctx.lineWidth = 1
                                         ctx.stroke()
 
-                                        const neighbourXs = graphData.neighbourXMap.get(String(node.id)) || []
+                                        const currentDepth = baselineTeam
+                                            ? baselineReachability.depthMap.get(Number(node.id)) ?? 0
+                                            : 0
 
-                                        let placeLabelLeft = false
-
-                                        if (neighbourXs.length > 0) {
-                                            const rightNeighbours = neighbourXs.filter((x) => x > (node.x || 0)).length
-                                            const leftNeighbours = neighbourXs.filter((x) => x < (node.x || 0)).length
-                                            placeLabelLeft = rightNeighbours > leftNeighbours
-                                        }
-
-                                        const textWidth = ctx.measureText(label).width
-                                        const gap = node.val + 10
-                                        const canvasWidth = ctx.canvas.width
-                                        const rightMargin = 20
-                                        const leftMargin = 20
-
-                                        const rightEdge = (node.x || 0) + gap + textWidth
-                                        const leftEdge = (node.x || 0) - gap - textWidth
-
-                                        if (rightEdge > canvasWidth - rightMargin) {
-                                            placeLabelLeft = true
-                                        }
-
-                                        if (leftEdge < leftMargin) {
-                                            placeLabelLeft = false
-                                        }
-
+                                        const label = node.name
                                         ctx.fillStyle = '#111827'
-                                        ctx.textAlign = placeLabelLeft ? 'right' : 'left'
-                                        ctx.textBaseline = 'middle'
 
-                                        if (placeLabelLeft) {
-                                            ctx.fillText(label, (node.x || 0) - gap, node.y || 0)
+                                        if (currentDepth === 0 || currentDepth === 1) {
+                                            ctx.textAlign = 'center'
+                                            ctx.textBaseline = 'bottom'
+                                            ctx.fillText(label, node.x || 0, (node.y || 0) - (node.val + 10))
                                         } else {
-                                            ctx.fillText(label, (node.x || 0) + gap, node.y || 0)
+                                            const neighbourXs = graphData.neighbourXMap.get(String(node.id)) || []
+                                            let placeLabelLeft = false
+
+                                            if (neighbourXs.length > 0) {
+                                                const rightNeighbours = neighbourXs.filter((x) => x > (node.x || 0)).length
+                                                const leftNeighbours = neighbourXs.filter((x) => x < (node.x || 0)).length
+                                                placeLabelLeft = rightNeighbours > leftNeighbours
+                                            }
+
+                                            const gap = node.val + 12
+                                            ctx.textAlign = placeLabelLeft ? 'right' : 'left'
+                                            ctx.textBaseline = 'middle'
+
+                                            if (placeLabelLeft) {
+                                                ctx.fillText(label, (node.x || 0) - gap, node.y || 0)
+                                            } else {
+                                                ctx.fillText(label, (node.x || 0) + gap, node.y || 0)
+                                            }
                                         }
                                     }}
                                     linkCanvasObjectMode={() => 'after'}
@@ -744,8 +539,8 @@ export default function NetworkPage() {
                                         const labelY = midY + normalY * offsetDistance
 
                                         const marginText = `${link.margin > 0 ? '+' : ''}${link.margin}`
-                                        const fontSize = 11 / globalScale
-                                        ctx.font = `${fontSize}px Sans-Serif`
+                                        const labelFontSize = 11 / globalScale
+                                        ctx.font = `${labelFontSize}px Sans-Serif`
 
                                         const textWidth = ctx.measureText(marginText).width
                                         const padding = 4
@@ -753,18 +548,18 @@ export default function NetworkPage() {
                                         ctx.fillStyle = 'rgba(255,255,255,0.92)'
                                         ctx.fillRect(
                                             labelX - textWidth / 2 - padding,
-                                            labelY - fontSize,
+                                            labelY - labelFontSize,
                                             textWidth + padding * 2,
-                                            fontSize + padding * 2
+                                            labelFontSize + padding * 2
                                         )
 
                                         ctx.strokeStyle = '#d1d5db'
                                         ctx.lineWidth = 0.5
                                         ctx.strokeRect(
                                             labelX - textWidth / 2 - padding,
-                                            labelY - fontSize,
+                                            labelY - labelFontSize,
                                             textWidth + padding * 2,
-                                            fontSize + padding * 2
+                                            labelFontSize + padding * 2
                                         )
 
                                         ctx.fillStyle = '#111827'
@@ -776,7 +571,8 @@ export default function NetworkPage() {
                                         const {
                                             xLeaderBaseline,
                                             xPixelsPerMargin,
-                                            maxLeftMargin,
+                                            minMargin,
+                                            maxMargin,
                                             baselineY,
                                             depthRowGap,
                                         } = graphData.axis
@@ -797,23 +593,27 @@ export default function NetworkPage() {
 
                                         ctx.fillStyle = '#374151'
                                         ctx.font = '12px Sans-Serif'
-                                        ctx.fillText('Leader baseline (0)', xLeaderBaseline + 6, 32)
+                                        ctx.fillText('Baseline (0)', xLeaderBaseline + 6, 32)
 
-                                        for (let m = 0; m <= maxLeftMargin; m += 2) {
-                                            const x = xLeaderBaseline - m * xPixelsPerMargin
+                                        for (
+                                            let m = Math.floor(minMargin / 10) * 10;
+                                            m <= Math.ceil(maxMargin / 10) * 10;
+                                            m += 10
+                                        ) {
+                                            const x = xLeaderBaseline + m * xPixelsPerMargin
 
-                                            ctx.strokeStyle = '#d1d5db'
+                                            ctx.strokeStyle = '#e5e7eb'
                                             ctx.beginPath()
                                             ctx.moveTo(x, 40)
                                             ctx.lineTo(x, height - 40)
                                             ctx.stroke()
 
                                             ctx.fillStyle = '#6b7280'
-                                            ctx.fillText(`${-m}`, x - 8, height - 18)
+                                            ctx.fillText(`${m}`, x - 8, height - 18)
                                         }
 
                                         for (let d = 0; d <= Number(depth); d++) {
-                                            const y = d <= 1 ? baselineY : baselineY + (d - 1) * depthRowGap
+                                            const y = baselineY + d * depthRowGap
 
                                             ctx.strokeStyle = '#e5e7eb'
                                             ctx.beginPath()
@@ -825,9 +625,7 @@ export default function NetworkPage() {
                                             ctx.font = '12px Sans-Serif'
 
                                             if (d === 0) {
-                                                ctx.fillText('Baseline team', 50, y - 8)
-                                            } else if (d === 1) {
-                                                ctx.fillText('Direct opponents', 50, y - 8)
+                                                ctx.fillText('Baseline + direct opponents', 50, y - 8)
                                             } else {
                                                 ctx.fillText(`Depth ${d}`, 50, y - 8)
                                             }
@@ -835,20 +633,20 @@ export default function NetworkPage() {
 
                                         ctx.fillStyle = '#111827'
                                         ctx.font = '13px Sans-Serif'
-                                        ctx.fillText('Relative margin from pool leader', width / 2 - 80, height - 4)
+                                        ctx.fillText('Margin relative to selected baseline', width / 2 - 90, height - 4)
 
                                         ctx.save()
                                         ctx.translate(12, height / 2 + 80)
                                         ctx.rotate(-Math.PI / 2)
-                                        ctx.fillText('Rank in pool', 0, 0)
+                                        ctx.fillText('Linked depth', 0, 0)
                                         ctx.restore()
 
                                         ctx.restore()
                                     }}
                                     onNodeClick={(node: any) => {
                                         setSelectedInfo(
-                                            `Team: ${node.name} | Pool: ${node.poolId} | Relative score: ${node.relativeScore > 0 ? '+' : ''
-                                            }${node.relativeScore} | Rank in pool: ${node.rankPosition}`
+                                            `Team: ${node.name} | Depth: ${node.rankPosition} | Margin from baseline: ${node.relativeScore > 0 ? '+' : ''
+                                            }${node.relativeScore}`
                                         )
                                     }}
                                     onLinkClick={(link: any) => {
@@ -861,15 +659,11 @@ export default function NetworkPage() {
                         <div className="mt-6 rounded-2xl border border-gray-200 p-6 shadow-sm">
                             <h2 className="text-xl font-semibold">How to read this graph</h2>
                             <div className="mt-3 space-y-2 text-sm text-gray-700">
-                                <p>- All pool leaders share the same global x baseline at 0</p>
-                                <p>- Teams further left are weaker relative to the leader in that pool</p>
-                                <p>- Rank 1 is at the top of each pool, then rank 2, rank 3, and so on lower down</p>
-                                <p>- All match links have the same thickness</p>
-                                <p>- Margin labels are offset slightly above each connecting line</p>
-                                <p>- Team names move left or right depending on where the node sits in the line</p>
-                                <p>- Far-right labels automatically flip left if they would be cut off</p>
-                                <p>- Vertical tick lines show margin difference from the pool leader</p>
-                                <p>- Rank markers on the left show the y-axis ranking levels</p>
+                                <p>- Baseline team and direct opponents stay on the same horizontal line</p>
+                                <p>- Deeper linked teams appear on lower rows</p>
+                                <p>- Horizontal position reflects cumulative margin from the selected baseline</p>
+                                <p>- Margin labels are shown on the connecting lines</p>
+                                <p>- Baseline row labels appear above the nodes for readability</p>
                             </div>
                         </div>
 
