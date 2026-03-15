@@ -184,9 +184,23 @@ export default function NetworkPage() {
     function getNodeImage(src: string) {
         if (!imageCacheRef.current[src]) {
             const img = new Image()
+
+            img.onload = () => {
+                try {
+                    graphRef.current?.refresh()
+                } catch {
+                    // ignore if refresh not available
+                }
+            }
+
+            img.onerror = () => {
+                console.warn("Logo failed to load:", src)
+            }
+
             img.src = src
             imageCacheRef.current[src] = img
         }
+
         return imageCacheRef.current[src]
     }
 
@@ -501,19 +515,13 @@ export default function NetworkPage() {
                                         const fontSize = 12 / globalScale
                                         ctx.font = `${fontSize}px Sans-Serif`
 
-                                        const imageSize = 34
+                                        const imageSize = 42
                                         const logoSrc = node.logo as string | undefined
 
                                         if (logoSrc) {
                                             const img = getNodeImage(logoSrc)
 
                                             if (img.complete && img.naturalWidth > 0) {
-                                                ctx.save()
-                                                ctx.beginPath()
-                                                ctx.arc(node.x, node.y, imageSize / 2, 0, 2 * Math.PI)
-                                                ctx.closePath()
-                                                ctx.clip()
-
                                                 ctx.drawImage(
                                                     img,
                                                     (node.x || 0) - imageSize / 2,
@@ -521,31 +529,17 @@ export default function NetworkPage() {
                                                     imageSize,
                                                     imageSize
                                                 )
-
-                                                ctx.restore()
-
-                                                ctx.beginPath()
-                                                ctx.arc(node.x, node.y, imageSize / 2, 0, 2 * Math.PI)
-                                                ctx.strokeStyle = '#111827'
-                                                ctx.lineWidth = 1.5
-                                                ctx.stroke()
                                             } else {
                                                 ctx.beginPath()
                                                 ctx.arc(node.x, node.y, 12, 0, 2 * Math.PI, false)
                                                 ctx.fillStyle = getPoolColor(node.poolId)
                                                 ctx.fill()
-                                                ctx.strokeStyle = '#111827'
-                                                ctx.lineWidth = 1
-                                                ctx.stroke()
                                             }
                                         } else {
                                             ctx.beginPath()
                                             ctx.arc(node.x, node.y, 12, 0, 2 * Math.PI, false)
                                             ctx.fillStyle = getPoolColor(node.poolId)
                                             ctx.fill()
-                                            ctx.strokeStyle = '#111827'
-                                            ctx.lineWidth = 1
-                                            ctx.stroke()
                                         }
 
                                         const currentDepth = baselineTeam
