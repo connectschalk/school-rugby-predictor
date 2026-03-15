@@ -91,6 +91,17 @@ function getBaselineLayoutData(
         })
     }
 
+    // direct opponents of the baseline must always be depth 1
+    const directOpponents = new Set<number>()
+
+    for (const match of matches) {
+        if (match.team_a_id === baselineTeamId) {
+            directOpponents.add(match.team_b_id)
+        } else if (match.team_b_id === baselineTeamId) {
+            directOpponents.add(match.team_a_id)
+        }
+    }
+
     const visited = new Set<number>([baselineTeamId])
     const depthMap = new Map<number, number>()
     const marginMap = new Map<number, number>()
@@ -116,7 +127,13 @@ function getBaselineLayoutData(
             if (!visited.has(neighbour.opponentId)) {
                 visited.add(neighbour.opponentId)
 
-                const nextDepth = current.depth + 1
+                let nextDepth = current.depth + 1
+
+                // force all direct baseline opponents onto depth 1
+                if (directOpponents.has(neighbour.opponentId)) {
+                    nextDepth = 1
+                }
+
                 const nextMargin = current.cumulativeMargin + neighbour.marginFromCurrent
 
                 depthMap.set(neighbour.opponentId, nextDepth)
