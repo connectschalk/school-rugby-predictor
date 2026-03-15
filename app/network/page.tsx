@@ -280,7 +280,10 @@ export default function NetworkPage() {
             ).length
 
             const fixedX = xLeaderBaseline + cumulativeMargin * xPixelsPerMargin
-            const fixedY = baselineY + depthLevel * depthRowGap
+            const fixedY =
+                depthLevel <= 1
+                    ? baselineY
+                    : baselineY + (depthLevel - 1) * depthRowGap
 
             return {
                 id: String(teamId),
@@ -654,7 +657,10 @@ export default function NetworkPage() {
                                         }
 
                                         for (let d = 0; d <= Number(depth); d++) {
-                                            const y = baselineY + d * depthRowGap
+                                            const y =
+                                                d <= 1
+                                                    ? baselineY
+                                                    : baselineY + (d - 1) * depthRowGap
 
                                             ctx.strokeStyle = '#e5e7eb'
                                             ctx.beginPath()
