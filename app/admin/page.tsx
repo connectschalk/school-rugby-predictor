@@ -55,6 +55,9 @@ export default function AdminPage() {
   const [uploadRows, setUploadRows] = useState<UploadPreviewRow[]>([])
   const [uploading, setUploading] = useState(false)
 
+  const [consistencyMessage, setConsistencyMessage] = useState('')
+  const [recalculatingConsistency, setRecalculatingConsistency] = useState(false)
+
   const [form, setForm] = useState({
     match_date: '',
     team_a_id: '',
@@ -457,6 +460,267 @@ export default function AdminPage() {
     }
   }
 
+  function getWeekNumberInSeason(dateStr: string) {
+    const date = new Date(dateStr)
+    const startOfYear = new Date(date.getFullYear(), 0, 1)
+    const diffMs = date.getTime() - startOfYear.getTime()
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+    return Math.floor(diffDays / 7) + 1
+  }
+
+  function buildGraphWithoutMatch(matches: MatchRow[], excludedMatchId: number) {
+    const graph = new Map<number, Array<{ to: number; margin: number }>>()
+
+    for (const match of matches) {
+      if (match.id === excludedMatchId) continue
+
+      if (!graph.has(match.team_a_id)) graph.set(match.team_a_id, [])
+      if (!graph.has(match.team_b_id)) graph.set(match.team_b_id, [])
+
+      const margin = match.team_a_score - match.team_b_score
+
+      graph.get(match.team_a_id)!.push({
+        to: match.team_b_id,
+        margin,
+      })
+
+      graph.get(match.team_b_id)!.push({
+        to: match.team_a_id,
+        margin: -margin,
+      })
+    }
+
+    return graph
+  }
+
+  function findPredictionPaths(
+    graph: Map<number, Array<{ to: number; margin: number }>>,
+    start: number,
+    end: number,
+    maxDepth: number
+  ) {
+    const results: Array<{ margin: number; depth: number }> = []
+
+    function dfs(
+      current: number,
+      target: number,
+      depth: number,
+      visited: Set<number>,
+      totalMargin: number
+    ) {
+      if (depth > maxDepth) return
+
+      if (current === target && depth > 0) {
+        results.push({ margin: totalMargin, depth })
+        return
+      }
+
+      const neighbours = graph.get(current) || []
+
+      for (const edge of neighbours) {
+        if (visited.has(edge.to)) continue
+        visited.add(edge.to)
+        dfs(edge.to, target, depth + 1, visited, totalMargin + edge.margin)
+        visited.delete(edge.to)
+      }
+    }
+
+    const visited = new Set<number>([start])
+    dfs(start, end, 0, visited, 0)
+
+    return results
+  }
+
+  function averagePredictionFromPaths(paths: Array<{ margin: number; depth: number }>) {
+    if (!paths.length) return null
+
+    let weightedSum = 0
+    let totalWeight = 0
+
+    for (const path of paths) {
+      const weight = 1 / path.depth
+      weightedSum += path.margin * weight
+      totalWeight += weight
+    }
+
+    if (totalWeight === 0) return null
+
+    return weightedSum / totalWeight
+  }
+
+  async function handleRecalculateConsistency() {
+    setConsistencyMessage('')
+    setRecalculatingConsistency(true)
+
+    try {
+      const season = Number(seasonFilter)
+
+      const { data: rawMatches, error: matchesError } = await supabase
+        .from('matches')
+        .select(`
+          id,
+          season,
+          match_date,
+          team_a_id,
+          team_b_id,
+          team_a_score,
+          team_b_score,
+          team_a:teams!matches_team_a_id_fkey(name),
+          team_b:teams!matches_team_b_id_fkey(name)
+        `)
+        .eq('season', season)
+        .order('match_date', { ascending: true })
+
+      if (matchesError) {
+        setConsistencyMessage(`Could not load matches: ${matchesError.message}`)
+        setRecalculatingConsistency(false)
+        return
+      }
+
+      const matchesForSeason: MatchRow[] = (rawMatches || []).map((m: any) => ({
+        id: m.id,
+        season: m.season,
+        match_date: m.match_date,
+        team_a_id: m.team_a_id,
+        team_b_id: m.team_b_id,
+        team_a_score: m.team_a_score,
+        team_b_score: m.team_b_score,
+        team_a_name: m.team_a.name,
+        team_b_name: m.team_b.name,
+      }))
+
+      if (matchesForSeason.length === 0) {
+        setConsistencyMessage('No matches found for this season.')
+        setRecalculatingConsistency(false)
+        return
+      }
+
+      const latestWeek = Math.max(...matchesForSeason.map((m) => getWeekNumberInSeason(m.match_date)))
+      const fullSeasonMode = latestWeek >= 5
+      const maxDepth = fullSeasonMode ? 3 : 2
+
+      const teamStats = new Map<
+        number,
+        {
+          prediction_error: number
+          matches_evaluated: number
+        }
+      >()
+
+      for (const team of teams) {
+        teamStats.set(team.id, {
+          prediction_error: 0,
+          matches_evaluated: 0,
+        })
+      }
+
+      for (const match of matchesForSeason) {
+        const graph = buildGraphWithoutMatch(matchesForSeason, match.id)
+        const paths = findPredictionPaths(
+          graph,
+          match.team_a_id,
+          match.team_b_id,
+          maxDepth
+        )
+
+        const prediction = averagePredictionFromPaths(paths)
+        if (prediction === null) continue
+
+        const actualMargin = match.team_a_score - match.team_b_score
+        const error = Math.abs(actualMargin - prediction)
+
+        const teamAStats = teamStats.get(match.team_a_id)
+        const teamBStats = teamStats.get(match.team_b_id)
+
+        if (teamAStats) {
+          teamAStats.prediction_error += error
+          teamAStats.matches_evaluated += 1
+        }
+
+        if (teamBStats) {
+          teamBStats.prediction_error += error
+          teamBStats.matches_evaluated += 1
+        }
+      }
+
+      const rowsToUpsert = teams.map((team) => {
+        const stats = teamStats.get(team.id) || {
+          prediction_error: 0,
+          matches_evaluated: 0,
+        }
+
+        const avgError =
+          stats.matches_evaluated > 0
+            ? stats.prediction_error / stats.matches_evaluated
+            : 999
+
+        const consistencyScore =
+          stats.matches_evaluated > 0
+            ? Math.max(0, Math.min(1, 1 - avgError / 30))
+            : 0
+
+        const sampleConfidence = fullSeasonMode
+          ? 1
+          : Math.min(stats.matches_evaluated / 5, 1)
+
+        const adjustedConsistency = consistencyScore * sampleConfidence
+
+        let anchorStatus = 'provisional'
+
+        if (fullSeasonMode) {
+          if (stats.matches_evaluated >= 5 && adjustedConsistency >= 0.85) {
+            anchorStatus = 'trusted_anchor'
+          } else if (stats.matches_evaluated >= 3 && adjustedConsistency >= 0.7) {
+            anchorStatus = 'usable_reference'
+          } else if (stats.matches_evaluated >= 2) {
+            anchorStatus = 'unstable'
+          } else {
+            anchorStatus = 'provisional'
+          }
+        } else {
+          if (stats.matches_evaluated >= 3 && adjustedConsistency >= 0.8) {
+            anchorStatus = 'emerging'
+          } else {
+            anchorStatus = 'provisional'
+          }
+        }
+
+        return {
+          team_id: team.id,
+          season,
+          prediction_error: Math.round(stats.prediction_error * 100) / 100,
+          matches_evaluated: stats.matches_evaluated,
+          consistency_score: Math.round(consistencyScore * 1000) / 1000,
+          sample_confidence: Math.round(sampleConfidence * 1000) / 1000,
+          adjusted_consistency: Math.round(adjustedConsistency * 1000) / 1000,
+          is_anchor: anchorStatus === 'trusted_anchor' || anchorStatus === 'usable_reference',
+          anchor_status: anchorStatus,
+          updated_at: new Date().toISOString(),
+        }
+      })
+
+      const { error: upsertError } = await supabase
+        .from('team_consistency')
+        .upsert(rowsToUpsert, {
+          onConflict: 'team_id,season',
+        })
+
+      if (upsertError) {
+        setConsistencyMessage(`Could not save consistency results: ${upsertError.message}`)
+        setRecalculatingConsistency(false)
+        return
+      }
+
+      setConsistencyMessage(
+        fullSeasonMode
+          ? 'Consistency recalculated using full-season mode.'
+          : 'Consistency recalculated using early-season cautious mode.'
+      )
+    } finally {
+      setRecalculatingConsistency(false)
+    }
+  }
+
   const teamOptions = useMemo(() => teams, [teams])
 
   if (!authChecked) {
@@ -489,7 +753,7 @@ export default function AdminPage() {
         </div>
 
         <p className="mt-4 text-gray-600">
-          Add schools, add results, upload weekly Excel scores, view results, and delete incorrect scores.
+          Add schools, add results, upload weekly Excel scores, upload team logos, view results, delete incorrect scores, and recalculate team consistency.
         </p>
 
         <div className="mt-8 grid gap-8 lg:grid-cols-2">
@@ -683,6 +947,27 @@ export default function AdminPage() {
         </section>
 
         <TeamLogoUploader />
+
+        <section className="mt-8 rounded-2xl border border-gray-200 p-6 shadow-sm">
+          <h2 className="text-xl font-semibold">Recalculate Team Consistency</h2>
+          <p className="mt-2 text-sm text-gray-600">
+            Weeks 1-4 use cautious mode. From week 5 onward, all season data is used and anchor teams update automatically.
+          </p>
+
+          <button
+            onClick={handleRecalculateConsistency}
+            disabled={recalculatingConsistency}
+            className="mt-4 rounded-xl bg-black px-5 py-3 text-white hover:opacity-90 disabled:opacity-50"
+          >
+            {recalculatingConsistency ? 'Recalculating...' : 'Recalculate consistency'}
+          </button>
+
+          {consistencyMessage && (
+            <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm">
+              {consistencyMessage}
+            </div>
+          )}
+        </section>
 
         <section className="mt-10 rounded-2xl border border-gray-200 p-6 shadow-sm">
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
