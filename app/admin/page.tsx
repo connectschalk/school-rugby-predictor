@@ -371,7 +371,22 @@ export default function AdminPage() {
 
     try {
       const teamMap = new Map<string, number>()
-      teams.forEach((team) => teamMap.set(team.name.trim().toLowerCase(), team.id))
+
+      teams.forEach((team: any) => {
+        const mainName = team.name.trim().toLowerCase()
+        teamMap.set(mainName, team.id)
+
+        if (team.synonyms) {
+          const parts = team.synonyms.split(',')
+
+          parts.forEach((syn: string) => {
+            const cleaned = syn.trim().toLowerCase()
+            if (cleaned) {
+              teamMap.set(cleaned, team.id)
+            }
+          })
+        }
+      })
 
       const validRows: any[] = []
       const failedRows: string[] = []
