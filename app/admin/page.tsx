@@ -970,6 +970,27 @@ export default function AdminPage() {
         </section>
 
         <section className="mt-10 rounded-2xl border border-gray-200 p-6 shadow-sm">
+          <h2 className="text-xl font-semibold">Recalculate Team Consistency</h2>
+          <p className="mt-2 text-sm text-gray-600">
+            Weeks 1-4 use cautious mode. From week 5 onward, all season data is used and anchor teams update automatically.
+          </p>
+
+          <button
+            onClick={handleRecalculateConsistency}
+            disabled={recalculatingConsistency}
+            className="mt-4 rounded-xl bg-black px-5 py-3 text-white hover:opacity-90 disabled:opacity-50"
+          >
+            {recalculatingConsistency ? 'Recalculating...' : 'Recalculate consistency'}
+          </button>
+
+          {consistencyMessage && (
+            <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm">
+              {consistencyMessage}
+            </div>
+          )}
+        </section>
+
+        <section className="mt-10 rounded-2xl border border-gray-200 p-6 shadow-sm">
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
               <h2 className="text-xl font-semibold">Scores Added</h2>
