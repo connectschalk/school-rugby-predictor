@@ -111,7 +111,6 @@ function computePoolRankings(poolTeamIds: number[], matches: Match[], teams: Tea
     }
   }
 
-  // Basic stats
   for (const match of poolMatches) {
     const a = stats[match.team_a_id]
     const b = stats[match.team_b_id]
@@ -137,9 +136,6 @@ function computePoolRankings(poolTeamIds: number[], matches: Match[], teams: Tea
     }
   }
 
-  // Solve relative scores from linked margins
-  // We want rating[A] - rating[B] ~= match margin
-  // Iterative least-squares style relaxation
   const iterations = 1200
   const learningRate = 0.02
 
@@ -156,7 +152,6 @@ function computePoolRankings(poolTeamIds: number[], matches: Match[], teams: Tea
       ratings[b] += learningRate * error
     }
 
-    // Re-center so scores stay relative to pool average
     const mean =
       poolTeamIds.reduce((sum, id) => sum + ratings[id], 0) / poolTeamIds.length
 
@@ -189,6 +184,7 @@ export default function RankingsPage() {
   const [season, setSeason] = useState('2026')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [searchTerm, setSearchTerm] = useState('')
 
   useEffect(() => {
     async function loadTeams() {
@@ -249,6 +245,39 @@ export default function RankingsPage() {
       .sort((a, b) => b.teamIds.length - a.teamIds.length)
   }, [matches, teams])
 
+  const normalizedSearch = searchTerm.trim().toLowerCase()
+
+  const orderedPools = useMemo(() => {
+    if (!normalizedSearch) return pools
+
+    const matchingPools: Pool[] = []
+    const otherPools: Pool[] = []
+
+    for (const pool of pools) {
+      const hasMatch = pool.rankings.some((team) =>
+        team.teamName.toLowerCase().includes(normalizedSearch)
+      )
+
+      if (hasMatch) {
+        matchingPools.push(pool)
+      } else {
+        otherPools.push(pool)
+      }
+    }
+
+    return [...matchingPools, ...otherPools]
+  }, [pools, normalizedSearch])
+
+  const hasAnyMatch = useMemo(() => {
+    if (!normalizedSearch) return true
+
+    return pools.some((pool) =>
+      pool.rankings.some((team) =>
+        team.teamName.toLowerCase().includes(normalizedSearch)
+      )
+    )
+  }, [pools, normalizedSearch])
+
   return (
     <main className="min-h-screen bg-white text-black">
       <div className="mx-auto max-w-7xl px-6 py-12">
@@ -258,15 +287,35 @@ export default function RankingsPage() {
           they merge automatically and rankings are recalculated using all linked margins.
         </p>
 
-        <div className="mt-6 max-w-xs">
-          <label className="mb-2 block text-sm font-medium">Season</label>
-          <input
-            type="number"
-            value={season}
-            onChange={(e) => setSeason(e.target.value)}
-            className="w-full rounded-xl border border-gray-300 px-4 py-3"
-          />
+        <div className="mt-6 grid gap-4 md:grid-cols-2">
+          <div className="max-w-xs">
+            <label className="mb-2 block text-sm font-medium">Season</label>
+            <input
+              type="number"
+              value={season}
+              onChange={(e) => setSeason(e.target.value)}
+              className="w-full rounded-xl border border-gray-300 px-4 py-3"
+            />
+          </div>
+
+          <div className="max-w-md">
+            <label className="mb-2 block text-sm font-medium">Search Team</label>
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Type a school name to highlight it"
+              className="w-full rounded-xl border border-gray-300 px-4 py-3"
+            />
+          </div>
         </div>
+
+        {normalizedSearch && (
+          <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+            Matching pool(s) moved to the top. Highlighting teams matching:{' '}
+            <span className="font-semibold">{searchTerm}</span>
+          </div>
+        )}
 
         {loading && <p className="mt-6">Loading rankings...</p>}
 
@@ -282,117 +331,166 @@ export default function RankingsPage() {
           </div>
         )}
 
-        {!loading && !error && pools.length > 0 && (
+        {!loading && !error && pools.length > 0 && normalizedSearch && !hasAnyMatch && (
+          <div className="mt-8 rounded-xl border border-gray-200 bg-gray-50 p-6">
+            No teams found for that search.
+          </div>
+        )}
+
+        {!loading && !error && orderedPools.length > 0 && (
           <div className="mt-8 space-y-10">
-            {pools.map((pool) => (
-              <section
-                key={pool.poolId}
-                className="rounded-2xl border border-gray-200 p-6 shadow-sm"
-              >
-                <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-                  <div>
-                    <h2 className="text-2xl font-semibold">Pool {pool.poolId}</h2>
-                    <p className="mt-1 text-sm text-gray-600">
-                      {pool.teamIds.length} team(s), {pool.matches.length} match(es)
-                    </p>
+            {orderedPools.map((pool) => {
+              const poolHasMatch =
+                normalizedSearch.length > 0 &&
+                pool.rankings.some((team) =>
+                  team.teamName.toLowerCase().includes(normalizedSearch)
+                )
+
+              return (
+                <section
+                  key={pool.poolId}
+                  className={`rounded-2xl border p-6 shadow-sm ${
+                    poolHasMatch ? 'border-yellow-400 bg-yellow-50/40' : 'border-gray-200'
+                  }`}
+                >
+                  <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                    <div>
+                      <h2 className="text-2xl font-semibold">Pool {pool.poolId}</h2>
+                      <p className="mt-1 text-sm text-gray-600">
+                        {pool.teamIds.length} team(s), {pool.matches.length} match(es)
+                      </p>
+                    </div>
+
+                    <div className="text-sm text-gray-600">
+                      Linked teams are ranked relative to each other using actual match margins.
+                    </div>
                   </div>
 
-                  <div className="text-sm text-gray-600">
-                    Linked teams are ranked relative to each other using actual match margins.
-                  </div>
-                </div>
-
-                <div className="mt-6 overflow-x-auto rounded-2xl border border-gray-200">
-                  <table className="min-w-full bg-white">
-                    <thead className="bg-gray-100">
-                      <tr>
-                        <th className="p-3 text-left">Rank</th>
-                        <th className="p-3 text-left">Team</th>
-                        <th className="p-3 text-left">Relative Score</th>
-                        <th className="p-3 text-left">Played</th>
-                        <th className="p-3 text-left">W</th>
-                        <th className="p-3 text-left">D</th>
-                        <th className="p-3 text-left">L</th>
-                        <th className="p-3 text-left">PF</th>
-                        <th className="p-3 text-left">PA</th>
-                        <th className="p-3 text-left">Avg Margin</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {pool.rankings.map((team, index) => (
-                        <tr key={team.teamId} className="border-t">
-                          <td className="p-3 font-semibold">{index + 1}</td>
-                          <td className="p-3">{team.teamName}</td>
-                          <td className="p-3 font-semibold">
-                            {team.relativeScore > 0 ? `+${team.relativeScore}` : team.relativeScore}
-                          </td>
-                          <td className="p-3">{team.matchesPlayed}</td>
-                          <td className="p-3">{team.wins}</td>
-                          <td className="p-3">{team.draws}</td>
-                          <td className="p-3">{team.losses}</td>
-                          <td className="p-3">{team.pointsFor}</td>
-                          <td className="p-3">{team.pointsAgainst}</td>
-                          <td className="p-3">
-                            {team.averageMargin > 0 ? `+${team.averageMargin}` : team.averageMargin}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="mt-6">
-                  <h3 className="text-lg font-semibold">Teams in this pool</h3>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {pool.rankings.map((team) => (
-                      <span
-                        key={team.teamId}
-                        className="rounded-full border border-gray-300 px-3 py-1 text-sm"
-                      >
-                        {team.teamName}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="mt-6">
-                  <h3 className="text-lg font-semibold">Matches linking this pool</h3>
-                  <div className="mt-3 overflow-x-auto rounded-2xl border border-gray-200">
+                  <div className="mt-6 overflow-x-auto rounded-2xl border border-gray-200">
                     <table className="min-w-full bg-white">
                       <thead className="bg-gray-100">
                         <tr>
-                          <th className="p-3 text-left">Date</th>
-                          <th className="p-3 text-left">Team A</th>
-                          <th className="p-3 text-left">Score</th>
-                          <th className="p-3 text-left">Team B</th>
+                          <th className="p-3 text-left">Rank</th>
+                          <th className="p-3 text-left">Team</th>
+                          <th className="p-3 text-left">Relative Score</th>
+                          <th className="p-3 text-left">Played</th>
+                          <th className="p-3 text-left">W</th>
+                          <th className="p-3 text-left">D</th>
+                          <th className="p-3 text-left">L</th>
+                          <th className="p-3 text-left">PF</th>
+                          <th className="p-3 text-left">PA</th>
+                          <th className="p-3 text-left">Avg Margin</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {pool.matches.map((match) => {
-                          const teamAName =
-                            teams.find((t) => t.id === match.team_a_id)?.name || `Team ${match.team_a_id}`
-                          const teamBName =
-                            teams.find((t) => t.id === match.team_b_id)?.name || `Team ${match.team_b_id}`
+                        {pool.rankings.map((team, index) => {
+                          const isMatch =
+                            normalizedSearch.length > 0 &&
+                            team.teamName.toLowerCase().includes(normalizedSearch)
 
                           return (
-                            <tr key={match.id} className="border-t">
-                              <td className="p-3">
-                                {new Date(match.match_date).toLocaleDateString()}
+                            <tr
+                              key={team.teamId}
+                              className={`border-t ${isMatch ? 'bg-yellow-100' : ''}`}
+                            >
+                              <td className="p-3 font-semibold">{index + 1}</td>
+                              <td className={`p-3 ${isMatch ? 'font-bold' : ''}`}>
+                                {team.teamName}
                               </td>
-                              <td className="p-3">{teamAName}</td>
                               <td className="p-3 font-semibold">
-                                {match.team_a_score} - {match.team_b_score}
+                                {team.relativeScore > 0 ? `+${team.relativeScore}` : team.relativeScore}
                               </td>
-                              <td className="p-3">{teamBName}</td>
+                              <td className="p-3">{team.matchesPlayed}</td>
+                              <td className="p-3">{team.wins}</td>
+                              <td className="p-3">{team.draws}</td>
+                              <td className="p-3">{team.losses}</td>
+                              <td className="p-3">{team.pointsFor}</td>
+                              <td className="p-3">{team.pointsAgainst}</td>
+                              <td className="p-3">
+                                {team.averageMargin > 0 ? `+${team.averageMargin}` : team.averageMargin}
+                              </td>
                             </tr>
                           )
                         })}
                       </tbody>
                     </table>
                   </div>
-                </div>
-              </section>
-            ))}
+
+                  <div className="mt-6">
+                    <h3 className="text-lg font-semibold">Teams in this pool</h3>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {pool.rankings.map((team) => {
+                        const isMatch =
+                          normalizedSearch.length > 0 &&
+                          team.teamName.toLowerCase().includes(normalizedSearch)
+
+                        return (
+                          <span
+                            key={team.teamId}
+                            className={`rounded-full border px-3 py-1 text-sm ${
+                              isMatch
+                                ? 'border-yellow-400 bg-yellow-100 font-semibold'
+                                : 'border-gray-300'
+                            }`}
+                          >
+                            {team.teamName}
+                          </span>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="mt-6">
+                    <h3 className="text-lg font-semibold">Matches linking this pool</h3>
+                    <div className="mt-3 overflow-x-auto rounded-2xl border border-gray-200">
+                      <table className="min-w-full bg-white">
+                        <thead className="bg-gray-100">
+                          <tr>
+                            <th className="p-3 text-left">Date</th>
+                            <th className="p-3 text-left">Team A</th>
+                            <th className="p-3 text-left">Score</th>
+                            <th className="p-3 text-left">Team B</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pool.matches.map((match) => {
+                            const teamAName =
+                              teams.find((t) => t.id === match.team_a_id)?.name || `Team ${match.team_a_id}`
+                            const teamBName =
+                              teams.find((t) => t.id === match.team_b_id)?.name || `Team ${match.team_b_id}`
+
+                            const teamAMatch =
+                              normalizedSearch.length > 0 &&
+                              teamAName.toLowerCase().includes(normalizedSearch)
+
+                            const teamBMatch =
+                              normalizedSearch.length > 0 &&
+                              teamBName.toLowerCase().includes(normalizedSearch)
+
+                            return (
+                              <tr key={match.id} className="border-t">
+                                <td className="p-3">
+                                  {new Date(match.match_date).toLocaleDateString()}
+                                </td>
+                                <td className={`p-3 ${teamAMatch ? 'bg-yellow-100 font-semibold' : ''}`}>
+                                  {teamAName}
+                                </td>
+                                <td className="p-3 font-semibold">
+                                  {match.team_a_score} - {match.team_b_score}
+                                </td>
+                                <td className={`p-3 ${teamBMatch ? 'bg-yellow-100 font-semibold' : ''}`}>
+                                  {teamBName}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </section>
+              )
+            })}
           </div>
         )}
       </div>
