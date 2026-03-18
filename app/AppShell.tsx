@@ -10,9 +10,9 @@ export default function AppShell({
   children: React.ReactNode
 }) {
   const pathname = usePathname()
-  const isHomePage = pathname === '/' || pathname === '/predictor'
+  const isLandingPage = pathname === '/'
 
-  if (isHomePage) {
+  if (isLandingPage) {
     return <>{children}</>
   }
 
