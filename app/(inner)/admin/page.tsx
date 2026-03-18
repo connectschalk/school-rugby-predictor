@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { trackEvent } from '@/lib/trackEvent'
 import * as XLSX from 'xlsx'
 import TeamLogoUploader from '@/components/TeamLogoUploader'
 
@@ -33,6 +34,16 @@ type UploadPreviewRow = {
   team_b_score: number
 }
 
+type UsageEvent = {
+  id: number
+  created_at: string
+  event_type: string
+  page: string | null
+  details: Record<string, any> | null
+  user_email: string | null
+  session_id: string | null
+}
+
 export default function AdminPage() {
   const router = useRouter()
 
@@ -57,6 +68,10 @@ export default function AdminPage() {
 
   const [consistencyMessage, setConsistencyMessage] = useState('')
   const [recalculatingConsistency, setRecalculatingConsistency] = useState(false)
+
+  const [usageEvents, setUsageEvents] = useState<UsageEvent[]>([])
+  const [loadingUsage, setLoadingUsage] = useState(true)
+  const [usageMessage, setUsageMessage] = useState('')
 
   const [form, setForm] = useState({
     match_date: '',
@@ -98,6 +113,11 @@ export default function AdminPage() {
       subscription.unsubscribe()
     }
   }, [router])
+
+  useEffect(() => {
+    if (!authChecked) return
+    trackEvent('page_view', 'admin')
+  }, [authChecked])
 
   async function loadTeams() {
     setLoadingTeams(true)
@@ -154,9 +174,30 @@ export default function AdminPage() {
     setLoadingMatches(false)
   }
 
+  async function loadUsageEvents() {
+    setLoadingUsage(true)
+    setUsageMessage('')
+
+    const { data, error } = await supabase
+      .from('usage_events')
+      .select('id, created_at, event_type, page, details, user_email, session_id')
+      .order('created_at', { ascending: false })
+      .limit(100)
+
+    if (error) {
+      setUsageMessage(`Could not load usage events: ${error.message}`)
+      setUsageEvents([])
+    } else {
+      setUsageEvents((data as UsageEvent[]) || [])
+    }
+
+    setLoadingUsage(false)
+  }
+
   useEffect(() => {
     if (!authChecked) return
     loadTeams()
+    loadUsageEvents()
   }, [authChecked])
 
   useEffect(() => {
@@ -190,6 +231,11 @@ export default function AdminPage() {
     setSchoolMessage('School added successfully.')
     setSchoolName('')
     await loadTeams()
+
+    await trackEvent('admin_add_school', 'admin', {
+      schoolName: cleanedName,
+    })
+    await loadUsageEvents()
   }
 
   async function handleAddMatch(e: React.FormEvent) {
@@ -242,6 +288,10 @@ export default function AdminPage() {
     }
 
     setMatchMessage('Match saved successfully.')
+
+    const homeName = teams.find((t) => String(t.id) === form.team_a_id)?.name || form.team_a_id
+    const awayName = teams.find((t) => String(t.id) === form.team_b_id)?.name || form.team_b_id
+
     setForm({
       match_date: '',
       team_a_id: '',
@@ -255,6 +305,14 @@ export default function AdminPage() {
     } else {
       await loadMatches()
     }
+
+    await trackEvent('admin_add_match', 'admin', {
+      season,
+      match_date: form.match_date,
+      homeTeam: homeName,
+      awayTeam: awayName,
+    })
+    await loadUsageEvents()
   }
 
   async function handleDeleteMatch(matchId: number) {
@@ -262,6 +320,8 @@ export default function AdminPage() {
     if (!confirmed) return
 
     setDeleteMessage('')
+
+    const matchToDelete = matches.find((m) => m.id === matchId)
 
     const { error } = await supabase
       .from('matches')
@@ -275,6 +335,14 @@ export default function AdminPage() {
 
     setDeleteMessage('Match deleted successfully.')
     await loadMatches()
+
+    await trackEvent('admin_delete_match', 'admin', {
+      matchId,
+      fixture: matchToDelete
+        ? `${matchToDelete.team_a_name} ${matchToDelete.team_a_score} - ${matchToDelete.team_b_score} ${matchToDelete.team_b_name}`
+        : null,
+    })
+    await loadUsageEvents()
   }
 
   function excelDateToIso(value: any): string {
@@ -371,22 +439,7 @@ export default function AdminPage() {
 
     try {
       const teamMap = new Map<string, number>()
-
-      teams.forEach((team: any) => {
-        const mainName = team.name.trim().toLowerCase()
-        teamMap.set(mainName, team.id)
-
-        if (team.synonyms) {
-          const parts = team.synonyms.split(',')
-
-          parts.forEach((syn: string) => {
-            const cleaned = syn.trim().toLowerCase()
-            if (cleaned) {
-              teamMap.set(cleaned, team.id)
-            }
-          })
-        }
-      })
+      teams.forEach((team) => teamMap.set(team.name.trim().toLowerCase(), team.id))
 
       const validRows: any[] = []
       const failedRows: string[] = []
@@ -470,6 +523,14 @@ export default function AdminPage() {
 
       setUploadRows([])
       await loadMatches()
+
+      await trackEvent('admin_bulk_upload', 'admin', {
+        season: seasonFilter,
+        rowsAdded: validRows.length,
+        duplicateRows: duplicateCount,
+        failedRows: failedRows.length,
+      })
+      await loadUsageEvents()
     } finally {
       setUploading(false)
     }
@@ -731,12 +792,38 @@ export default function AdminPage() {
           ? 'Consistency recalculated using full-season mode.'
           : 'Consistency recalculated using early-season cautious mode.'
       )
+
+      await trackEvent('admin_recalculate_consistency', 'admin', {
+        season,
+        mode: fullSeasonMode ? 'full-season' : 'early-season',
+      })
+      await loadUsageEvents()
     } finally {
       setRecalculatingConsistency(false)
     }
   }
 
   const teamOptions = useMemo(() => teams, [teams])
+
+  const usageSummary = useMemo(() => {
+    const totalEvents = usageEvents.length
+    const pageViews = usageEvents.filter((e) => e.event_type === 'page_view').length
+    const predictions = usageEvents.filter((e) => e.event_type === 'prediction_run').length
+    const adminActions = usageEvents.filter((e) => e.page === 'admin').length
+
+    return {
+      totalEvents,
+      pageViews,
+      predictions,
+      adminActions,
+    }
+  }, [usageEvents])
+
+  function formatDetails(details: Record<string, any> | null) {
+    if (!details || Object.keys(details).length === 0) return '-'
+    const text = JSON.stringify(details)
+    return text.length > 120 ? `${text.slice(0, 120)}...` : text
+  }
 
   if (!authChecked) {
     return (
@@ -754,9 +841,7 @@ export default function AdminPage() {
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-3xl font-bold">Admin</h1>
-            <p className="mt-2 text-gray-600">
-              Logged in as {adminEmail}
-            </p>
+            <p className="mt-2 text-gray-600">Logged in as {adminEmail}</p>
           </div>
 
           <button
@@ -768,7 +853,8 @@ export default function AdminPage() {
         </div>
 
         <p className="mt-4 text-gray-600">
-          Add schools, add results, upload weekly Excel scores, upload team logos, view results, delete incorrect scores, and recalculate team consistency.
+          Add schools, add results, upload weekly Excel scores, upload team logos, view results,
+          delete incorrect scores, recalculate team consistency, and monitor usage.
         </p>
 
         <div className="mt-8 grid gap-8 lg:grid-cols-2">
@@ -984,25 +1070,95 @@ export default function AdminPage() {
           )}
         </section>
 
-        <section className="mt-10 rounded-2xl border border-gray-200 p-6 shadow-sm">
-          <h2 className="text-xl font-semibold">Recalculate Team Consistency</h2>
-          <p className="mt-2 text-sm text-gray-600">
-            Weeks 1-4 use cautious mode. From week 5 onward, all season data is used and anchor teams update automatically.
-          </p>
+        <section className="mt-8 rounded-2xl border border-gray-200 p-6 shadow-sm">
+          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div>
+              <h2 className="text-xl font-semibold">Usage Dashboard</h2>
+              <p className="mt-1 text-sm text-gray-600">
+                Track page views, predictions, and admin activity.
+              </p>
+            </div>
 
-          <button
-            onClick={handleRecalculateConsistency}
-            disabled={recalculatingConsistency}
-            className="mt-4 rounded-xl bg-black px-5 py-3 text-white hover:opacity-90 disabled:opacity-50"
-          >
-            {recalculatingConsistency ? 'Recalculating...' : 'Recalculate consistency'}
-          </button>
+            <button
+              onClick={loadUsageEvents}
+              className="rounded-xl border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+            >
+              Refresh usage
+            </button>
+          </div>
 
-          {consistencyMessage && (
+          {usageMessage && (
             <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm">
-              {consistencyMessage}
+              {usageMessage}
             </div>
           )}
+
+          <div className="mt-6 grid gap-4 md:grid-cols-4">
+            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-5">
+              <div className="text-sm text-gray-500">Total Events</div>
+              <div className="mt-2 text-3xl font-bold">{usageSummary.totalEvents}</div>
+            </div>
+
+            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-5">
+              <div className="text-sm text-gray-500">Page Views</div>
+              <div className="mt-2 text-3xl font-bold">{usageSummary.pageViews}</div>
+            </div>
+
+            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-5">
+              <div className="text-sm text-gray-500">Predictions Run</div>
+              <div className="mt-2 text-3xl font-bold">{usageSummary.predictions}</div>
+            </div>
+
+            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-5">
+              <div className="text-sm text-gray-500">Admin Actions</div>
+              <div className="mt-2 text-3xl font-bold">{usageSummary.adminActions}</div>
+            </div>
+          </div>
+
+          <div className="mt-6">
+            <h3 className="text-lg font-semibold">Recent Activity</h3>
+
+            {loadingUsage ? (
+              <p className="mt-4">Loading usage events...</p>
+            ) : (
+              <div className="mt-4 overflow-x-auto rounded-2xl border border-gray-200">
+                <table className="min-w-full bg-white">
+                  <thead className="bg-gray-100">
+                    <tr>
+                      <th className="p-3 text-left">Date</th>
+                      <th className="p-3 text-left">Event</th>
+                      <th className="p-3 text-left">Page</th>
+                      <th className="p-3 text-left">User</th>
+                      <th className="p-3 text-left">Details</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {usageEvents.map((event) => (
+                      <tr key={event.id} className="border-t align-top">
+                        <td className="p-3 text-sm">
+                          {new Date(event.created_at).toLocaleString()}
+                        </td>
+                        <td className="p-3 text-sm font-medium">{event.event_type}</td>
+                        <td className="p-3 text-sm">{event.page || '-'}</td>
+                        <td className="p-3 text-sm">{event.user_email || '-'}</td>
+                        <td className="p-3 text-xs text-gray-600">
+                          {formatDetails(event.details)}
+                        </td>
+                      </tr>
+                    ))}
+
+                    {usageEvents.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="p-4 text-center text-sm text-gray-500">
+                          No usage events found.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </section>
 
         <section className="mt-10 rounded-2xl border border-gray-200 p-6 shadow-sm">
