@@ -1,21 +1,11 @@
-'use client'
-
 import Image from 'next/image'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
 
-export default function AppShell({
+export default function InnerLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const pathname = usePathname()
-  const isLandingPage = pathname === '/'
-
-  if (isLandingPage) {
-    return <>{children}</>
-  }
-
   return (
     <>
       <header className="border-b border-gray-200">
