@@ -662,7 +662,7 @@ export default function NetworkPage() {
                                         ctx.textBaseline = 'alphabetic'
                                         ctx.fillText(marginText, labelX - textWidth / 2, labelY + 2)
                                     }}
-                                    onRenderFramePost={(ctx) => {
+                                    onRenderFramePre={(ctx) => {
                                         const {
                                             xLeaderBaseline,
                                             xPixelsPerMargin,
@@ -677,7 +677,7 @@ export default function NetworkPage() {
 
                                         ctx.save()
 
-                                        ctx.strokeStyle = '#9ca3af'
+                                        ctx.strokeStyle = '#d1d5db'
                                         ctx.lineWidth = 1
                                         ctx.setLineDash([6, 6])
                                         ctx.beginPath()
@@ -686,7 +686,7 @@ export default function NetworkPage() {
                                         ctx.stroke()
                                         ctx.setLineDash([])
 
-                                        ctx.fillStyle = '#374151'
+                                        ctx.fillStyle = '#6b7280'
                                         ctx.font = '12px Sans-Serif'
                                         ctx.fillText('Baseline (0)', xLeaderBaseline + 6, 32)
 
@@ -729,7 +729,7 @@ export default function NetworkPage() {
                                             }
                                         }
 
-                                        ctx.fillStyle = '#111827'
+                                        ctx.fillStyle = '#6b7280'
                                         ctx.font = '13px Sans-Serif'
                                         ctx.fillText('Margin relative to selected baseline', width / 2 - 90, height - 4)
 
