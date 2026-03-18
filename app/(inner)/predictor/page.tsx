@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { trackEvent } from '@/lib/trackEvent'
 
 type Team = {
   id: number
@@ -142,7 +143,6 @@ function findAllPathsWithWeights(
       })
 
       const namesInPath = [...teamIdsInPath].map((id) => getTeamName(teams, id))
-
       const baselineCount = namesInPath.filter((name) => BASELINE_TEAMS.has(name)).length
 
       const consistencyValues = [...teamIdsInPath]
@@ -157,7 +157,6 @@ function findAllPathsWithWeights(
       const lengthWeight = 1 / path.length
       const baselineBoost = 1 + baselineCount * 0.2
       const consistencyWeight = avgConsistency
-
       const weight = lengthWeight * baselineBoost * consistencyWeight
 
       results.push({
@@ -234,7 +233,7 @@ function formatFixture(match: Match, teams: Team[]) {
   return `${teamAName} ${match.team_a_score} - ${match.team_b_score} ${teamBName}`
 }
 
-export default function HomePage() {
+export default function PredictorPage() {
   const [teams, setTeams] = useState<Team[]>([])
   const [matches, setMatches] = useState<Match[]>([])
   const [season, setSeason] = useState('2026')
@@ -243,6 +242,10 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [result, setResult] = useState<PredictionResult | null>(null)
+
+  useEffect(() => {
+    trackEvent('page_view', 'predictor')
+  }, [])
 
   useEffect(() => {
     async function loadTeams() {
@@ -297,17 +300,27 @@ export default function HomePage() {
   const homeTeamName = getTeamName(teams, homeTeam)
   const awayTeamName = getTeamName(teams, awayTeam)
 
-  function runPrediction() {
+  async function runPrediction() {
     setError('')
     setResult(null)
 
     if (!homeTeam || !awayTeam) {
       setError('Please choose two teams.')
+      await trackEvent('prediction_error', 'predictor', {
+        reason: 'missing_team_selection',
+        season,
+      })
       return
     }
 
     if (homeTeam === awayTeam) {
       setError('Please choose two different teams.')
+      await trackEvent('prediction_error', 'predictor', {
+        reason: 'same_team_selected',
+        season,
+        homeTeam,
+        awayTeam,
+      })
       return
     }
 
@@ -323,7 +336,7 @@ export default function HomePage() {
           ? directMatch.team_a_score - directMatch.team_b_score
           : directMatch.team_b_score - directMatch.team_a_score
 
-      setResult({
+      const directResult: PredictionResult = {
         type: 'direct',
         averageMargin: margin,
         pathCount: 1,
@@ -331,7 +344,23 @@ export default function HomePage() {
         paths: [],
         directMatch,
         relevantMatches: [directMatch],
+      }
+
+      setResult(directResult)
+
+      await trackEvent('prediction_run', 'predictor', {
+        season,
+        homeTeamId: homeTeam,
+        awayTeamId: awayTeam,
+        homeTeamName,
+        awayTeamName,
+        resultType: 'direct',
+        confidence: 'High',
+        averageMargin: margin,
+        linksUsed: 1,
+        relevantMatches: 1,
       })
+
       return
     }
 
@@ -346,6 +375,14 @@ export default function HomePage() {
 
     if (allPaths.length === 0) {
       setError('Not enough data.')
+      await trackEvent('prediction_error', 'predictor', {
+        reason: 'not_enough_data',
+        season,
+        homeTeamId: homeTeam,
+        awayTeamId: awayTeam,
+        homeTeamName,
+        awayTeamName,
+      })
       return
     }
 
@@ -364,13 +401,31 @@ export default function HomePage() {
       .map((id) => matchesById[id])
       .filter(Boolean)
 
-    setResult({
+    const confidence = getConfidence('indirect', allPaths.length, totalWeight)
+
+    const indirectResult: PredictionResult = {
       type: 'indirect',
       averageMargin: Math.round(weightedAverage * 10) / 10,
       pathCount: allPaths.length,
-      confidence: getConfidence('indirect', allPaths.length, totalWeight),
+      confidence,
       paths: topPathsToShow,
       relevantMatches,
+    }
+
+    setResult(indirectResult)
+
+    await trackEvent('prediction_run', 'predictor', {
+      season,
+      homeTeamId: homeTeam,
+      awayTeamId: awayTeam,
+      homeTeamName,
+      awayTeamName,
+      resultType: 'indirect',
+      confidence,
+      averageMargin: indirectResult.averageMargin,
+      linksUsed: allPaths.length,
+      shownPaths: topPathsToShow.length,
+      relevantMatches: relevantMatches.length,
     })
   }
 
