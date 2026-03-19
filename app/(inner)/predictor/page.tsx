@@ -45,6 +45,7 @@ type PredictionResult = {
 }
 
 const MAX_LINKS = 5
+const HOME_ADVANTAGE = 4
 
 const BASELINE_TEAMS = new Set([
   'Afrikaans Hoër Seuns',
@@ -239,6 +240,7 @@ export default function PredictorPage() {
   const [season, setSeason] = useState('2026')
   const [homeTeam, setHomeTeam] = useState('')
   const [awayTeam, setAwayTeam] = useState('')
+  const [location, setLocation] = useState('neutral')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [result, setResult] = useState<PredictionResult | null>(null)
@@ -486,6 +488,19 @@ export default function PredictorPage() {
                 </div>
               </div>
 
+              <div className="mt-4">
+                <label className="mb-2 block text-sm font-medium">Match Location</label>
+                <select
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                >
+                  <option value="neutral">Neutral</option>
+                  <option value="home">Home team at home</option>
+                  <option value="away">Away team at home</option>
+                </select>
+              </div>
+
               <button
                 onClick={runPrediction}
                 className="mt-5 rounded-xl bg-black px-5 py-3 text-white hover:opacity-90"
@@ -510,9 +525,69 @@ export default function PredictorPage() {
                       {result.averageMargin > 0
                         ? `${homeTeamName} by ${Math.abs(result.averageMargin)}`
                         : result.averageMargin < 0
-                        ? `${awayTeamName} by ${Math.abs(result.averageMargin)}`
-                        : 'Projected draw'}
+                          ? `${awayTeamName} by ${Math.abs(result.averageMargin)}`
+                          : 'Projected draw'}
                     </p>
+
+                    {location !== 'neutral' && (
+                      <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-gray-700">
+                        <p>
+                          Home-field context:{' '}
+                          {location === 'home'
+                            ? `${homeTeamName} at home may add about ${HOME_ADVANTAGE} points`
+                            : `${awayTeamName} at home may add about ${HOME_ADVANTAGE} points`}
+                        </p>
+
+                        <p className="mt-2 font-medium">
+                          Expected match range:{' '}
+                          {(() => {
+                            const base = result.averageMargin
+
+                            if (base === 0) {
+                              return location === 'home'
+                                ? `${homeTeamName} by 0 to ${HOME_ADVANTAGE}`
+                                : `${awayTeamName} by 0 to ${HOME_ADVANTAGE}`
+                            }
+
+                            if (location === 'home') {
+                              const low = base
+                              const high = base + HOME_ADVANTAGE
+
+                              if (high <= 0) {
+                                return `${awayTeamName} by ${Math.abs(Math.round(high))} to ${Math.abs(
+                                  Math.round(low)
+                                )}`
+                              }
+
+                              if (low >= 0) {
+                                return `${homeTeamName} by ${Math.round(low)} to ${Math.round(high)}`
+                              }
+
+                              return `${awayTeamName} by 0 to ${Math.abs(Math.round(low))}, or ${homeTeamName} by 0 to ${Math.round(
+                                high
+                              )}`
+                            }
+
+                            const low = base - HOME_ADVANTAGE
+                            const high = base
+
+                            if (high <= 0) {
+                              return `${awayTeamName} by ${Math.abs(Math.round(high))} to ${Math.abs(
+                                Math.round(low)
+                              )}`
+                            }
+
+                            if (low >= 0) {
+                              return `${homeTeamName} by ${Math.round(low)} to ${Math.round(high)}`
+                            }
+
+                            return `${awayTeamName} by 0 to ${Math.abs(Math.round(low))}, or ${homeTeamName} by 0 to ${Math.round(
+                              high
+                            )}`
+                          })()}
+                        </p>
+                      </div>
+                    )}
 
                     <p className="mt-2 text-sm text-gray-600">
                       Confidence: {result.confidence}
@@ -569,8 +644,8 @@ export default function PredictorPage() {
                               {pathResult.totalMargin > 0
                                 ? `${homeTeamName} by ${Math.abs(pathResult.totalMargin)}`
                                 : pathResult.totalMargin < 0
-                                ? `${awayTeamName} by ${Math.abs(pathResult.totalMargin)}`
-                                : 'Draw'}
+                                  ? `${awayTeamName} by ${Math.abs(pathResult.totalMargin)}`
+                                  : 'Draw'}
                             </p>
 
                             <p className="mt-1 text-sm text-gray-600">
