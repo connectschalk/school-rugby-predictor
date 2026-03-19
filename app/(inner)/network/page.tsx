@@ -409,16 +409,13 @@ export default function NetworkPage() {
                     return
                 }
 
-                // Step 1: fit everything nicely first
                 graphRef.current.zoomToFit(800, 120)
 
-                // Step 2: zoom in slightly
-                const zoomLevel = 1.05
+                const zoomLevel = 0.95
                 graphRef.current.zoom(zoomLevel, 0)
 
-                // Step 3: shift so Grey moves toward top-right
-                const offsetX = graphSize.width * 0.18 / zoomLevel
-                const offsetY = graphSize.height * 0.18 / zoomLevel
+                const offsetX = graphSize.width * 0.30 / zoomLevel
+                const offsetY = graphSize.height * 0.16 / zoomLevel
 
                 graphRef.current.centerAt(
                     (baselineNode.x || 0) - offsetX,
@@ -763,15 +760,17 @@ return (
                                         ctx.moveTo(40, y)
                                         ctx.lineTo(width - 40, y)
                                         ctx.stroke()
+                                    }
 
-                                        ctx.fillStyle = '#6b7280'
-                                        ctx.font = '12px Sans-Serif'
+                                    ctx.fillStyle = '#6b7280'
+                                    ctx.font = '12px Sans-Serif'
+                                    ctx.textAlign = 'center'
+                                    ctx.fillText('Baseline + direct opponents', width / 2, baselineY - 18)
 
-                                        if (d === 0) {
-                                            ctx.fillText('Baseline + direct opponents', 50, y - 18)
-                                        } else {
-                                            ctx.fillText(`Depth ${d}`, 50, y - 18)
-                                        }
+                                    for (let d = 2; d <= Number(depth); d++) {
+                                        const y = baselineY + (d - 1) * depthRowGap
+                                        ctx.textAlign = 'left'
+                                        ctx.fillText(`Depth ${d}`, 50, y - 18)
                                     }
 
                                     ctx.fillStyle = '#6b7280'
