@@ -438,17 +438,6 @@ export default function NetworkPage() {
         }
     }, [graphData, graphSize, baselineTeam])
 
-    const t1 = setTimeout(runPosition, 150)
-    const t2 = setTimeout(runPosition, 500)
-    const t3 = setTimeout(runPosition, 1000)
-
-    return () => {
-        clearTimeout(t1)
-        clearTimeout(t2)
-        clearTimeout(t3)
-    }
-}, [graphData, graphSize, baselineTeam])
-
 return (
     <main className="min-h-screen bg-white text-black">
         <div className="mx-auto max-w-7xl px-6 py-12">
