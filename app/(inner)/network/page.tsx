@@ -409,15 +409,15 @@ export default function NetworkPage() {
                     return
                 }
 
-                const zoomLevel = 1.15
+                const zoomLevel = 0.92
 
                 graphRef.current.zoom(zoomLevel, 0)
 
                 const targetCenterX =
-                    (baselineNode.x || 0) - graphSize.width * 0.24 / zoomLevel
+                    (baselineNode.x || 0) - graphSize.width * 0.42 / zoomLevel
 
                 const targetCenterY =
-                    (baselineNode.y || 0) + graphSize.height * 0.20 / zoomLevel
+                    (baselineNode.y || 0) + graphSize.height * 0.22 / zoomLevel
 
                 graphRef.current.centerAt(targetCenterX, targetCenterY, 0)
             } catch {
@@ -436,374 +436,385 @@ export default function NetworkPage() {
         }
     }, [graphData, graphSize, baselineTeam])
 
-    return (
-        <main className="min-h-screen bg-white text-black">
-            <div className="mx-auto max-w-7xl px-6 py-12">
-                <h1 className="text-3xl font-bold">Visual Graph</h1>
-                <p className="mt-2 text-gray-600">
-                    Choose a baseline team. Direct opponents stay on the same horizontal level as the baseline,
-                    while deeper linked teams appear on lower levels. Horizontal position reflects cumulative
-                    margin relative to the selected baseline.
-                </p>
+    const t1 = setTimeout(runPosition, 150)
+    const t2 = setTimeout(runPosition, 500)
+    const t3 = setTimeout(runPosition, 1000)
 
-                <div className="mt-6 grid gap-4 md:grid-cols-3">
-                    <div>
-                        <label className="mb-2 block text-sm font-medium">Season</label>
-                        <input
-                            type="number"
-                            value={season}
-                            onChange={(e) => setSeason(e.target.value)}
-                            className="w-full rounded-xl border border-gray-300 px-4 py-3"
-                        />
-                    </div>
+    return () => {
+        clearTimeout(t1)
+        clearTimeout(t2)
+        clearTimeout(t3)
+    }
+}, [graphData, graphSize, baselineTeam])
 
-                    <div>
-                        <label className="mb-2 block text-sm font-medium">Baseline Team</label>
-                        <select
-                            value={baselineTeam}
-                            onChange={(e) => setBaselineTeam(e.target.value)}
-                            className="w-full rounded-xl border border-gray-300 px-4 py-3"
-                        >
-                            <option value="">Choose Baseline Team</option>
-                            {teams.map((team) => (
-                                <option key={team.id} value={team.id}>
-                                    {team.name}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
+return (
+    <main className="min-h-screen bg-white text-black">
+        <div className="mx-auto max-w-7xl px-6 py-12">
+            <h1 className="text-3xl font-bold">Visual Graph</h1>
+            <p className="mt-2 text-gray-600">
+                Choose a baseline team. Direct opponents stay on the same horizontal level as the baseline,
+                while deeper linked teams appear on lower levels. Horizontal position reflects cumulative
+                margin relative to the selected baseline.
+            </p>
 
-                    <div>
-                        <label className="mb-2 block text-sm font-medium">Depth</label>
-                        <select
-                            value={depth}
-                            onChange={(e) => setDepth(e.target.value)}
-                            className="w-full rounded-xl border border-gray-300 px-4 py-3"
-                        >
-                            <option value="1">1</option>
-                            <option value="2">2</option>
-                            <option value="3">3</option>
-                        </select>
-                    </div>
+            <div className="mt-6 grid gap-4 md:grid-cols-3">
+                <div>
+                    <label className="mb-2 block text-sm font-medium">Season</label>
+                    <input
+                        type="number"
+                        value={season}
+                        onChange={(e) => setSeason(e.target.value)}
+                        className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                    />
                 </div>
 
-                {loading && <p className="mt-6">Loading visual graph...</p>}
+                <div>
+                    <label className="mb-2 block text-sm font-medium">Baseline Team</label>
+                    <select
+                        value={baselineTeam}
+                        onChange={(e) => setBaselineTeam(e.target.value)}
+                        className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                    >
+                        <option value="">Choose Baseline Team</option>
+                        {teams.map((team) => (
+                            <option key={team.id} value={team.id}>
+                                {team.name}
+                            </option>
+                        ))}
+                    </select>
+                </div>
 
-                {error && (
-                    <div className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-red-700">
-                        {error}
-                    </div>
-                )}
+                <div>
+                    <label className="mb-2 block text-sm font-medium">Depth</label>
+                    <select
+                        value={depth}
+                        onChange={(e) => setDepth(e.target.value)}
+                        className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                    >
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                    </select>
+                </div>
+            </div>
 
-                {!loading && !error && graphData.nodes.length === 0 && (
-                    <div className="mt-8 rounded-xl border border-gray-200 bg-gray-50 p-6">
-                        No connected matches found for this season.
-                    </div>
-                )}
+            {loading && <p className="mt-6">Loading visual graph...</p>}
 
-                {!loading && !error && graphData.nodes.length > 0 && (
-                    <>
-                        <div className="mt-8 rounded-2xl border border-gray-200 p-4 shadow-sm">
-                            <div className="mb-4 flex flex-wrap gap-4 text-sm text-gray-700">
-                                <div>
-                                    <strong>Teams in graph:</strong> {graphData.nodes.length}
-                                </div>
-                                <div>
-                                    <strong>Matches:</strong> {graphData.links.length}
-                                </div>
+            {error && (
+                <div className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-red-700">
+                    {error}
+                </div>
+            )}
+
+            {!loading && !error && graphData.nodes.length === 0 && (
+                <div className="mt-8 rounded-xl border border-gray-200 bg-gray-50 p-6">
+                    No connected matches found for this season.
+                </div>
+            )}
+
+            {!loading && !error && graphData.nodes.length > 0 && (
+                <>
+                    <div className="mt-8 rounded-2xl border border-gray-200 p-4 shadow-sm">
+                        <div className="mb-4 flex flex-wrap gap-4 text-sm text-gray-700">
+                            <div>
+                                <strong>Teams in graph:</strong> {graphData.nodes.length}
                             </div>
+                            <div>
+                                <strong>Matches:</strong> {graphData.links.length}
+                            </div>
+                        </div>
 
-                            <div
-                                ref={containerRef}
-                                className="h-[900px] w-full overflow-auto rounded-xl border border-gray-200 bg-white"
-                            >
-                                <ForceGraph2D
-                                    ref={graphRef}
-                                    graphData={graphData}
-                                    width={graphSize.width}
-                                    height={graphSize.height}
-                                    cooldownTicks={0}
-                                    enableNodeDrag={false}
-                                    nodeRelSize={0}
-                                    linkColor={(link: any) => getPoolColor(link.poolId)}
-                                    linkWidth={2}
-                                    linkDirectionalParticles={0}
-                                    onEngineStop={() => {
-                                        try {
-                                            graphRef.current?.zoomToFit(800, 120)
-                                        } catch {
-                                            // ignore
-                                        }
-                                    }}
-                                    nodeLabel={(node: any) =>
-                                        `${node.name} | Depth ${node.rankPosition} | Margin ${node.relativeScore > 0 ? '+' : ''
-                                        }${node.relativeScore}`
+                        <div
+                            ref={containerRef}
+                            className="h-[900px] w-full overflow-auto rounded-xl border border-gray-200 bg-white"
+                        >
+                            <ForceGraph2D
+                                ref={graphRef}
+                                graphData={graphData}
+                                width={graphSize.width}
+                                height={graphSize.height}
+                                cooldownTicks={0}
+                                enableNodeDrag={false}
+                                nodeRelSize={0}
+                                linkColor={(link: any) => getPoolColor(link.poolId)}
+                                linkWidth={2}
+                                linkDirectionalParticles={0}
+                                onEngineStop={() => {
+                                    try {
+                                        graphRef.current?.zoomToFit(800, 120)
+                                    } catch {
+                                        // ignore
                                     }
-                                    linkLabel={(link: any) => link.label}
-                                    nodeCanvasObject={(node: any, ctx, globalScale) => {
-                                        const fontSize = 12 / globalScale
-                                        ctx.font = `${fontSize}px Sans-Serif`
+                                }}
+                                nodeLabel={(node: any) =>
+                                    `${node.name} | Depth ${node.rankPosition} | Margin ${node.relativeScore > 0 ? '+' : ''
+                                    }${node.relativeScore}`
+                                }
+                                linkLabel={(link: any) => link.label}
+                                nodeCanvasObject={(node: any, ctx, globalScale) => {
+                                    const fontSize = 12 / globalScale
+                                    ctx.font = `${fontSize}px Sans-Serif`
 
-                                        const imageSize = 42
-                                        const logoSrc = node.logo as string | undefined
+                                    const imageSize = 42
+                                    const logoSrc = node.logo as string | undefined
 
-                                        if (logoSrc) {
-                                            const img = getNodeImage(logoSrc)
+                                    if (logoSrc) {
+                                        const img = getNodeImage(logoSrc)
 
-                                            if (img.complete && img.naturalWidth > 0) {
-                                                ctx.drawImage(
-                                                    img,
-                                                    (node.x || 0) - imageSize / 2,
-                                                    (node.y || 0) - imageSize / 2,
-                                                    imageSize,
-                                                    imageSize
-                                                )
-                                            } else {
-                                                ctx.beginPath()
-                                                ctx.arc(node.x, node.y, 12, 0, 2 * Math.PI, false)
-                                                ctx.fillStyle = getPoolColor(node.poolId)
-                                                ctx.fill()
-                                            }
+                                        if (img.complete && img.naturalWidth > 0) {
+                                            ctx.drawImage(
+                                                img,
+                                                (node.x || 0) - imageSize / 2,
+                                                (node.y || 0) - imageSize / 2,
+                                                imageSize,
+                                                imageSize
+                                            )
                                         } else {
                                             ctx.beginPath()
                                             ctx.arc(node.x, node.y, 12, 0, 2 * Math.PI, false)
                                             ctx.fillStyle = getPoolColor(node.poolId)
                                             ctx.fill()
                                         }
-
-                                        const currentDepth = baselineTeam
-                                            ? baselineReachability.depthMap.get(Number(node.id)) ?? 0
-                                            : 0
-
-                                        const label = node.name
-                                        ctx.fillStyle = '#111827'
-
-                                        if (currentDepth === 0 || currentDepth === 1) {
-                                            ctx.textAlign = 'center'
-                                            ctx.textBaseline = 'bottom'
-
-                                            const labelY = (node.y || 0) - 28
-                                            const textWidth = ctx.measureText(label).width
-                                            const paddingX = 6
-                                            const paddingY = 4
-
-                                            ctx.fillStyle = 'rgba(255,255,255,0.95)'
-                                            ctx.fillRect(
-                                                (node.x || 0) - textWidth / 2 - paddingX,
-                                                labelY - fontSize - paddingY,
-                                                textWidth + paddingX * 2,
-                                                fontSize + paddingY * 2
-                                            )
-
-                                            ctx.strokeStyle = '#e5e7eb'
-                                            ctx.lineWidth = 0.5
-                                            ctx.strokeRect(
-                                                (node.x || 0) - textWidth / 2 - paddingX,
-                                                labelY - fontSize - paddingY,
-                                                textWidth + paddingX * 2,
-                                                fontSize + paddingY * 2
-                                            )
-
-                                            ctx.fillStyle = '#111827'
-                                            ctx.fillText(label, node.x || 0, labelY)
-                                        } else {
-                                            const neighbourXs = graphData.neighbourXMap.get(String(node.id)) || []
-                                            let placeLabelLeft = false
-
-                                            if (neighbourXs.length > 0) {
-                                                const rightNeighbours = neighbourXs.filter((x) => x > (node.x || 0)).length
-                                                const leftNeighbours = neighbourXs.filter((x) => x < (node.x || 0)).length
-                                                placeLabelLeft = rightNeighbours > leftNeighbours
-                                            }
-
-                                            const gap = 24
-                                            ctx.textAlign = placeLabelLeft ? 'right' : 'left'
-                                            ctx.textBaseline = 'middle'
-
-                                            if (placeLabelLeft) {
-                                                ctx.fillText(label, (node.x || 0) - gap, node.y || 0)
-                                            } else {
-                                                ctx.fillText(label, (node.x || 0) + gap, node.y || 0)
-                                            }
-                                        }
-                                    }}
-                                    linkCanvasObjectMode={() => 'after'}
-                                    linkCanvasObject={(link: any, ctx, globalScale) => {
-                                        const start = link.source
-                                        const end = link.target
-                                        if (!start || !end || typeof start !== 'object' || typeof end !== 'object') return
-
-                                        const dx = end.x - start.x
-                                        const dy = end.y - start.y
-                                        const length = Math.sqrt(dx * dx + dy * dy) || 1
-
-                                        const startRadius = 17
-                                        const endRadius = 17
-
-                                        const offsetStartX = start.x + (dx / length) * startRadius
-                                        const offsetStartY = start.y + (dy / length) * startRadius
-                                        const offsetEndX = end.x - (dx / length) * endRadius
-                                        const offsetEndY = end.y - (dy / length) * endRadius
-
-                                        ctx.strokeStyle = getPoolColor(link.poolId)
-                                        ctx.lineWidth = 2
+                                    } else {
                                         ctx.beginPath()
-                                        ctx.moveTo(offsetStartX, offsetStartY)
-                                        ctx.lineTo(offsetEndX, offsetEndY)
-                                        ctx.stroke()
+                                        ctx.arc(node.x, node.y, 12, 0, 2 * Math.PI, false)
+                                        ctx.fillStyle = getPoolColor(node.poolId)
+                                        ctx.fill()
+                                    }
 
-                                        const midX = (offsetStartX + offsetEndX) / 2
-                                        const midY = (offsetStartY + offsetEndY) / 2
+                                    const currentDepth = baselineTeam
+                                        ? baselineReachability.depthMap.get(Number(node.id)) ?? 0
+                                        : 0
 
-                                        const normalX = -dy / length
-                                        const normalY = dx / length
-                                        const offsetDistance = 14
+                                    const label = node.name
+                                    ctx.fillStyle = '#111827'
 
-                                        const labelX = midX + normalX * offsetDistance
-                                        const labelY = midY + normalY * offsetDistance
+                                    if (currentDepth === 0 || currentDepth === 1) {
+                                        ctx.textAlign = 'center'
+                                        ctx.textBaseline = 'bottom'
 
-                                        const marginText = `${link.margin > 0 ? '+' : ''}${link.margin}`
-                                        const labelFontSize = 11 / globalScale
-                                        ctx.font = `${labelFontSize}px Sans-Serif`
+                                        const labelY = (node.y || 0) - 28
+                                        const textWidth = ctx.measureText(label).width
+                                        const paddingX = 6
+                                        const paddingY = 4
 
-                                        const textWidth = ctx.measureText(marginText).width
-                                        const padding = 4
-
-                                        ctx.fillStyle = 'rgba(255,255,255,0.92)'
+                                        ctx.fillStyle = 'rgba(255,255,255,0.95)'
                                         ctx.fillRect(
-                                            labelX - textWidth / 2 - padding,
-                                            labelY - labelFontSize,
-                                            textWidth + padding * 2,
-                                            labelFontSize + padding * 2
+                                            (node.x || 0) - textWidth / 2 - paddingX,
+                                            labelY - fontSize - paddingY,
+                                            textWidth + paddingX * 2,
+                                            fontSize + paddingY * 2
                                         )
 
-                                        ctx.strokeStyle = '#d1d5db'
+                                        ctx.strokeStyle = '#e5e7eb'
                                         ctx.lineWidth = 0.5
                                         ctx.strokeRect(
-                                            labelX - textWidth / 2 - padding,
-                                            labelY - labelFontSize,
-                                            textWidth + padding * 2,
-                                            labelFontSize + padding * 2
+                                            (node.x || 0) - textWidth / 2 - paddingX,
+                                            labelY - fontSize - paddingY,
+                                            textWidth + paddingX * 2,
+                                            fontSize + paddingY * 2
                                         )
 
                                         ctx.fillStyle = '#111827'
-                                        ctx.textAlign = 'left'
-                                        ctx.textBaseline = 'alphabetic'
-                                        ctx.fillText(marginText, labelX - textWidth / 2, labelY + 2)
-                                    }}
-                                    onRenderFramePre={(ctx) => {
-                                        const {
-                                            xLeaderBaseline,
-                                            xPixelsPerMargin,
-                                            minMargin,
-                                            maxMargin,
-                                            baselineY,
-                                            depthRowGap,
-                                        } = graphData.axis
+                                        ctx.fillText(label, node.x || 0, labelY)
+                                    } else {
+                                        const neighbourXs = graphData.neighbourXMap.get(String(node.id)) || []
+                                        let placeLabelLeft = false
 
-                                        const width = ctx.canvas.width
-                                        const height = ctx.canvas.height
+                                        if (neighbourXs.length > 0) {
+                                            const rightNeighbours = neighbourXs.filter((x) => x > (node.x || 0)).length
+                                            const leftNeighbours = neighbourXs.filter((x) => x < (node.x || 0)).length
+                                            placeLabelLeft = rightNeighbours > leftNeighbours
+                                        }
 
-                                        ctx.save()
+                                        const gap = 24
+                                        ctx.textAlign = placeLabelLeft ? 'right' : 'left'
+                                        ctx.textBaseline = 'middle'
 
-                                        ctx.strokeStyle = '#d1d5db'
-                                        ctx.lineWidth = 1
-                                        ctx.setLineDash([6, 6])
+                                        if (placeLabelLeft) {
+                                            ctx.fillText(label, (node.x || 0) - gap, node.y || 0)
+                                        } else {
+                                            ctx.fillText(label, (node.x || 0) + gap, node.y || 0)
+                                        }
+                                    }
+                                }}
+                                linkCanvasObjectMode={() => 'after'}
+                                linkCanvasObject={(link: any, ctx, globalScale) => {
+                                    const start = link.source
+                                    const end = link.target
+                                    if (!start || !end || typeof start !== 'object' || typeof end !== 'object') return
+
+                                    const dx = end.x - start.x
+                                    const dy = end.y - start.y
+                                    const length = Math.sqrt(dx * dx + dy * dy) || 1
+
+                                    const startRadius = 17
+                                    const endRadius = 17
+
+                                    const offsetStartX = start.x + (dx / length) * startRadius
+                                    const offsetStartY = start.y + (dy / length) * startRadius
+                                    const offsetEndX = end.x - (dx / length) * endRadius
+                                    const offsetEndY = end.y - (dy / length) * endRadius
+
+                                    ctx.strokeStyle = getPoolColor(link.poolId)
+                                    ctx.lineWidth = 2
+                                    ctx.beginPath()
+                                    ctx.moveTo(offsetStartX, offsetStartY)
+                                    ctx.lineTo(offsetEndX, offsetEndY)
+                                    ctx.stroke()
+
+                                    const midX = (offsetStartX + offsetEndX) / 2
+                                    const midY = (offsetStartY + offsetEndY) / 2
+
+                                    const normalX = -dy / length
+                                    const normalY = dx / length
+                                    const offsetDistance = 14
+
+                                    const labelX = midX + normalX * offsetDistance
+                                    const labelY = midY + normalY * offsetDistance
+
+                                    const marginText = `${link.margin > 0 ? '+' : ''}${link.margin}`
+                                    const labelFontSize = 11 / globalScale
+                                    ctx.font = `${labelFontSize}px Sans-Serif`
+
+                                    const textWidth = ctx.measureText(marginText).width
+                                    const padding = 4
+
+                                    ctx.fillStyle = 'rgba(255,255,255,0.92)'
+                                    ctx.fillRect(
+                                        labelX - textWidth / 2 - padding,
+                                        labelY - labelFontSize,
+                                        textWidth + padding * 2,
+                                        labelFontSize + padding * 2
+                                    )
+
+                                    ctx.strokeStyle = '#d1d5db'
+                                    ctx.lineWidth = 0.5
+                                    ctx.strokeRect(
+                                        labelX - textWidth / 2 - padding,
+                                        labelY - labelFontSize,
+                                        textWidth + padding * 2,
+                                        labelFontSize + padding * 2
+                                    )
+
+                                    ctx.fillStyle = '#111827'
+                                    ctx.textAlign = 'left'
+                                    ctx.textBaseline = 'alphabetic'
+                                    ctx.fillText(marginText, labelX - textWidth / 2, labelY + 2)
+                                }}
+                                onRenderFramePre={(ctx) => {
+                                    const {
+                                        xLeaderBaseline,
+                                        xPixelsPerMargin,
+                                        minMargin,
+                                        maxMargin,
+                                        baselineY,
+                                        depthRowGap,
+                                    } = graphData.axis
+
+                                    const width = ctx.canvas.width
+                                    const height = ctx.canvas.height
+
+                                    ctx.save()
+
+                                    ctx.strokeStyle = '#d1d5db'
+                                    ctx.lineWidth = 1
+                                    ctx.setLineDash([6, 6])
+                                    ctx.beginPath()
+                                    ctx.moveTo(xLeaderBaseline, 40)
+                                    ctx.lineTo(xLeaderBaseline, height - 40)
+                                    ctx.stroke()
+                                    ctx.setLineDash([])
+
+                                    ctx.fillStyle = '#6b7280'
+                                    ctx.font = '12px Sans-Serif'
+                                    ctx.fillText('Baseline (0)', xLeaderBaseline + 6, 32)
+
+                                    for (
+                                        let m = Math.floor(minMargin / 10) * 10;
+                                        m <= Math.ceil(maxMargin / 10) * 10;
+                                        m += 10
+                                    ) {
+                                        const x = xLeaderBaseline + m * xPixelsPerMargin
+
+                                        ctx.strokeStyle = '#e5e7eb'
                                         ctx.beginPath()
-                                        ctx.moveTo(xLeaderBaseline, 40)
-                                        ctx.lineTo(xLeaderBaseline, height - 40)
+                                        ctx.moveTo(x, 40)
+                                        ctx.lineTo(x, height - 40)
                                         ctx.stroke()
-                                        ctx.setLineDash([])
+
+                                        ctx.fillStyle = '#6b7280'
+                                        ctx.fillText(`${m}`, x - 8, height - 18)
+                                    }
+
+                                    for (let d = 0; d <= Number(depth); d++) {
+                                        const y =
+                                            d <= 1
+                                                ? baselineY
+                                                : baselineY + (d - 1) * depthRowGap
+
+                                        ctx.strokeStyle = '#e5e7eb'
+                                        ctx.beginPath()
+                                        ctx.moveTo(40, y)
+                                        ctx.lineTo(width - 40, y)
+                                        ctx.stroke()
 
                                         ctx.fillStyle = '#6b7280'
                                         ctx.font = '12px Sans-Serif'
-                                        ctx.fillText('Baseline (0)', xLeaderBaseline + 6, 32)
 
-                                        for (
-                                            let m = Math.floor(minMargin / 10) * 10;
-                                            m <= Math.ceil(maxMargin / 10) * 10;
-                                            m += 10
-                                        ) {
-                                            const x = xLeaderBaseline + m * xPixelsPerMargin
-
-                                            ctx.strokeStyle = '#e5e7eb'
-                                            ctx.beginPath()
-                                            ctx.moveTo(x, 40)
-                                            ctx.lineTo(x, height - 40)
-                                            ctx.stroke()
-
-                                            ctx.fillStyle = '#6b7280'
-                                            ctx.fillText(`${m}`, x - 8, height - 18)
+                                        if (d === 0) {
+                                            ctx.fillText('Baseline + direct opponents', 50, y - 18)
+                                        } else {
+                                            ctx.fillText(`Depth ${d}`, 50, y - 18)
                                         }
+                                    }
 
-                                        for (let d = 0; d <= Number(depth); d++) {
-                                            const y =
-                                                d <= 1
-                                                    ? baselineY
-                                                    : baselineY + (d - 1) * depthRowGap
+                                    ctx.fillStyle = '#6b7280'
+                                    ctx.font = '13px Sans-Serif'
+                                    ctx.fillText('Margin relative to selected baseline', width / 2 - 90, height - 4)
 
-                                            ctx.strokeStyle = '#e5e7eb'
-                                            ctx.beginPath()
-                                            ctx.moveTo(40, y)
-                                            ctx.lineTo(width - 40, y)
-                                            ctx.stroke()
+                                    ctx.save()
+                                    ctx.translate(12, height / 2 + 80)
+                                    ctx.rotate(-Math.PI / 2)
+                                    ctx.fillText('Linked depth', 0, 0)
+                                    ctx.restore()
 
-                                            ctx.fillStyle = '#6b7280'
-                                            ctx.font = '12px Sans-Serif'
-
-                                            if (d === 0) {
-                                                ctx.fillText('Baseline + direct opponents', 50, y - 18)
-                                            } else {
-                                                ctx.fillText(`Depth ${d}`, 50, y - 18)
-                                            }
-                                        }
-
-                                        ctx.fillStyle = '#6b7280'
-                                        ctx.font = '13px Sans-Serif'
-                                        ctx.fillText('Margin relative to selected baseline', width / 2 - 90, height - 4)
-
-                                        ctx.save()
-                                        ctx.translate(12, height / 2 + 80)
-                                        ctx.rotate(-Math.PI / 2)
-                                        ctx.fillText('Linked depth', 0, 0)
-                                        ctx.restore()
-
-                                        ctx.restore()
-                                    }}
-                                    onNodeClick={(node: any) => {
-                                        setSelectedInfo(
-                                            `Team: ${node.name} | Depth: ${node.rankPosition} | Margin from baseline: ${node.relativeScore > 0 ? '+' : ''
-                                            }${node.relativeScore}`
-                                        )
-                                    }}
-                                    onLinkClick={(link: any) => {
-                                        setSelectedInfo(`Match: ${link.label}`)
-                                    }}
-                                />
-                            </div>
+                                    ctx.restore()
+                                }}
+                                onNodeClick={(node: any) => {
+                                    setSelectedInfo(
+                                        `Team: ${node.name} | Depth: ${node.rankPosition} | Margin from baseline: ${node.relativeScore > 0 ? '+' : ''
+                                        }${node.relativeScore}`
+                                    )
+                                }}
+                                onLinkClick={(link: any) => {
+                                    setSelectedInfo(`Match: ${link.label}`)
+                                }}
+                            />
                         </div>
+                    </div>
 
-                        <div className="mt-6 rounded-2xl border border-gray-200 p-6 shadow-sm">
-                            <h2 className="text-xl font-semibold">How to read this graph</h2>
-                            <div className="mt-3 space-y-2 text-sm text-gray-700">
-                                <p>- Baseline team and direct opponents stay on the same horizontal line</p>
-                                <p>- Deeper linked teams appear on lower rows</p>
-                                <p>- Horizontal position reflects cumulative margin from the selected baseline</p>
-                                <p>- Margin labels are shown on the connecting lines</p>
-                                <p>- Baseline row labels appear above the nodes for readability</p>
-                                <p>- Team nodes use PNG logos when matching files exist in public/team-logos</p>
-                            </div>
+                    <div className="mt-6 rounded-2xl border border-gray-200 p-6 shadow-sm">
+                        <h2 className="text-xl font-semibold">How to read this graph</h2>
+                        <div className="mt-3 space-y-2 text-sm text-gray-700">
+                            <p>- Baseline team and direct opponents stay on the same horizontal line</p>
+                            <p>- Deeper linked teams appear on lower rows</p>
+                            <p>- Horizontal position reflects cumulative margin from the selected baseline</p>
+                            <p>- Margin labels are shown on the connecting lines</p>
+                            <p>- Baseline row labels appear above the nodes for readability</p>
+                            <p>- Team nodes use PNG logos when matching files exist in public/team-logos</p>
                         </div>
+                    </div>
 
-                        <div className="mt-6 rounded-2xl border border-gray-200 p-6 shadow-sm">
-                            <h2 className="text-xl font-semibold">Selected Item</h2>
-                            <p className="mt-2 text-gray-700">
-                                {selectedInfo || 'Click a team or a match in the graph.'}
-                            </p>
-                        </div>
-                    </>
-                )}
-            </div>
-        </main>
-    )
+                    <div className="mt-6 rounded-2xl border border-gray-200 p-6 shadow-sm">
+                        <h2 className="text-xl font-semibold">Selected Item</h2>
+                        <p className="mt-2 text-gray-700">
+                            {selectedInfo || 'Click a team or a match in the graph.'}
+                        </p>
+                    </div>
+                </>
+            )}
+        </div>
+    </main>
+)
 }
