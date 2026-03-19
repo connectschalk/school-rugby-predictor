@@ -414,8 +414,8 @@ export default function NetworkPage() {
                 const zoomLevel = 0.95
                 graphRef.current.zoom(zoomLevel, 0)
 
-                const offsetX = graphSize.width * 0.30 / zoomLevel
-                const offsetY = graphSize.height * 0.16 / zoomLevel
+                const offsetX = (graphSize.width * 0.30) / zoomLevel
+                const offsetY = (graphSize.height * 0.16) / zoomLevel
 
                 graphRef.current.centerAt(
                     (baselineNode.x || 0) - offsetX,
