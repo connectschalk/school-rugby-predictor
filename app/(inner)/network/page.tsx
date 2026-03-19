@@ -171,7 +171,7 @@ export default function NetworkPage() {
     const [matches, setMatches] = useState<Match[]>([])
     const [season, setSeason] = useState('2026')
     const [baselineTeam, setBaselineTeam] = useState('')
-    const [depth, setDepth] = useState('2')
+    const [depth, setDepth] = useState('3')
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
     const [selectedInfo, setSelectedInfo] = useState('')
@@ -227,7 +227,16 @@ export default function NetworkPage() {
                 return
             }
 
-            setTeams((data as Team[]) || [])
+            const loadedTeams = (data as Team[]) || []
+            setTeams(loadedTeams)
+
+            const greyCollege = loadedTeams.find(
+                (team) => team.name.trim().toLowerCase() === 'grey college'
+            )
+
+            if (greyCollege) {
+                setBaselineTeam(String(greyCollege.id))
+            }
         }
 
         loadTeams()
@@ -388,24 +397,44 @@ export default function NetworkPage() {
     useEffect(() => {
         if (!graphRef.current || graphData.nodes.length === 0) return
 
-        const runFit = () => {
+        const runPosition = () => {
             try {
-                graphRef.current.zoomToFit(800, 120)
+                const baselineId = baselineTeam ? String(baselineTeam) : null
+                const baselineNode = baselineId
+                    ? graphData.nodes.find((node) => node.id === baselineId)
+                    : null
+
+                if (!baselineNode) {
+                    graphRef.current.zoomToFit(800, 120)
+                    return
+                }
+
+                const zoomLevel = 1.15
+
+                graphRef.current.zoom(zoomLevel, 0)
+
+                const targetCenterX =
+                    (baselineNode.x || 0) - graphSize.width * 0.24 / zoomLevel
+
+                const targetCenterY =
+                    (baselineNode.y || 0) + graphSize.height * 0.20 / zoomLevel
+
+                graphRef.current.centerAt(targetCenterX, targetCenterY, 0)
             } catch {
                 // ignore
             }
         }
 
-        const t1 = setTimeout(runFit, 150)
-        const t2 = setTimeout(runFit, 500)
-        const t3 = setTimeout(runFit, 1000)
+        const t1 = setTimeout(runPosition, 150)
+        const t2 = setTimeout(runPosition, 500)
+        const t3 = setTimeout(runPosition, 1000)
 
         return () => {
             clearTimeout(t1)
             clearTimeout(t2)
             clearTimeout(t3)
         }
-    }, [graphData, graphSize])
+    }, [graphData, graphSize, baselineTeam])
 
     return (
         <main className="min-h-screen bg-white text-black">
