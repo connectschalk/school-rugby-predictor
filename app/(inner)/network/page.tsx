@@ -409,25 +409,30 @@ export default function NetworkPage() {
                     return
                 }
 
-                const zoomLevel = 0.92
+                // Step 1: fit everything nicely first
+                graphRef.current.zoomToFit(800, 120)
 
+                // Step 2: zoom in slightly
+                const zoomLevel = 1.05
                 graphRef.current.zoom(zoomLevel, 0)
 
-                const targetCenterX =
-                    (baselineNode.x || 0) - graphSize.width * 0.42 / zoomLevel
+                // Step 3: shift so Grey moves toward top-right
+                const offsetX = graphSize.width * 0.18 / zoomLevel
+                const offsetY = graphSize.height * 0.18 / zoomLevel
 
-                const targetCenterY =
-                    (baselineNode.y || 0) + graphSize.height * 0.22 / zoomLevel
-
-                graphRef.current.centerAt(targetCenterX, targetCenterY, 0)
+                graphRef.current.centerAt(
+                    (baselineNode.x || 0) - offsetX,
+                    (baselineNode.y || 0) + offsetY,
+                    0
+                )
             } catch {
                 // ignore
             }
         }
 
-        const t1 = setTimeout(runPosition, 150)
-        const t2 = setTimeout(runPosition, 500)
-        const t3 = setTimeout(runPosition, 1000)
+        const t1 = setTimeout(runPosition, 200)
+        const t2 = setTimeout(runPosition, 600)
+        const t3 = setTimeout(runPosition, 1200)
 
         return () => {
             clearTimeout(t1)
