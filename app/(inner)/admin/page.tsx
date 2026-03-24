@@ -73,6 +73,10 @@ export default function AdminPage() {
   const [loadingUsage, setLoadingUsage] = useState(true)
   const [usageMessage, setUsageMessage] = useState('')
 
+  const [activeAdminTab, setActiveAdminTab] = useState<'add-delete' | 'usage' | 'scores'>('add-delete')
+  const [activeAddDeleteTab, setActiveAddDeleteTab] = useState<'school' | 'match' | 'bulk' | 'logo'>('school')
+  const [showRecentActivity, setShowRecentActivity] = useState(false)
+
   const [form, setForm] = useState({
     match_date: '',
     team_a_id: '',
@@ -857,384 +861,494 @@ export default function AdminPage() {
           delete incorrect scores, recalculate team consistency, and monitor usage.
         </p>
 
-        <div className="mt-8 grid gap-8 lg:grid-cols-2">
-          <section className="rounded-2xl border border-gray-200 p-6 shadow-sm">
-            <h2 className="text-xl font-semibold">Add School</h2>
-
-            <form onSubmit={handleAddSchool} className="mt-4 grid gap-4">
-              <div>
-                <label className="mb-2 block text-sm font-medium">School name</label>
-                <input
-                  type="text"
-                  value={schoolName}
-                  onChange={(e) => setSchoolName(e.target.value)}
-                  className="w-full rounded-xl border border-gray-300 px-4 py-3"
-                  placeholder="Enter school name"
-                />
-              </div>
-
-              <button
-                type="submit"
-                className="rounded-xl bg-black px-5 py-3 text-white hover:opacity-90"
-              >
-                Add school
-              </button>
-            </form>
-
-            {schoolMessage && (
-              <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm">
-                {schoolMessage}
-              </div>
-            )}
-          </section>
-
-          <section className="rounded-2xl border border-gray-200 p-6 shadow-sm">
-            <h2 className="text-xl font-semibold">Add Match Result</h2>
-
-            <form onSubmit={handleAddMatch} className="mt-4 grid gap-4">
-              <div>
-                <label className="mb-2 block text-sm font-medium">Match date</label>
-                <input
-                  type="date"
-                  value={form.match_date}
-                  onChange={(e) =>
-                    setForm({ ...form, match_date: e.target.value })
-                  }
-                  className="w-full rounded-xl border border-gray-300 px-4 py-3"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium">Team A</label>
-                <select
-                  value={form.team_a_id}
-                  onChange={(e) =>
-                    setForm({ ...form, team_a_id: e.target.value })
-                  }
-                  className="w-full rounded-xl border border-gray-300 px-4 py-3"
-                  disabled={loadingTeams}
-                >
-                  <option value="">Choose Team A</option>
-                  {teamOptions.map((team) => (
-                    <option key={team.id} value={team.id}>
-                      {team.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium">Team B</label>
-                <select
-                  value={form.team_b_id}
-                  onChange={(e) =>
-                    setForm({ ...form, team_b_id: e.target.value })
-                  }
-                  className="w-full rounded-xl border border-gray-300 px-4 py-3"
-                  disabled={loadingTeams}
-                >
-                  <option value="">Choose Team B</option>
-                  {teamOptions.map((team) => (
-                    <option key={team.id} value={team.id}>
-                      {team.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium">Team A score</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={form.team_a_score}
-                  onChange={(e) =>
-                    setForm({ ...form, team_a_score: e.target.value })
-                  }
-                  className="w-full rounded-xl border border-gray-300 px-4 py-3"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium">Team B score</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={form.team_b_score}
-                  onChange={(e) =>
-                    setForm({ ...form, team_b_score: e.target.value })
-                  }
-                  className="w-full rounded-xl border border-gray-300 px-4 py-3"
-                />
-              </div>
-
-              <button
-                type="submit"
-                className="rounded-xl bg-black px-5 py-3 text-white hover:opacity-90"
-              >
-                Save result
-              </button>
-            </form>
-
-            {matchMessage && (
-              <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm">
-                {matchMessage}
-              </div>
-            )}
-          </section>
-        </div>
-
-        <section className="mt-8 rounded-2xl border border-gray-200 p-6 shadow-sm">
-          <h2 className="text-xl font-semibold">Bulk Upload Weekly Scores</h2>
-          <p className="mt-2 text-sm text-gray-600">
-            Upload an Excel file with columns: match_date, team_a, team_b, team_a_score, team_b_score
-          </p>
-
-          <div className="mt-4 flex flex-col gap-4">
-            <input
-              type="file"
-              accept=".xlsx,.xls"
-              onChange={handleFileUpload}
-              className="block w-full rounded-xl border border-gray-300 px-4 py-3"
-            />
-
-            {uploadRows.length > 0 && (
-              <div className="overflow-x-auto rounded-2xl border border-gray-200">
-                <table className="min-w-full bg-white">
-                  <thead className="bg-gray-100">
-                    <tr>
-                      <th className="p-3 text-left">Date</th>
-                      <th className="p-3 text-left">Team A</th>
-                      <th className="p-3 text-left">Score</th>
-                      <th className="p-3 text-left">Team B</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {uploadRows.slice(0, 20).map((row, index) => (
-                      <tr key={index} className="border-t">
-                        <td className="p-3">{row.match_date}</td>
-                        <td className="p-3">{row.team_a}</td>
-                        <td className="p-3 font-semibold">
-                          {row.team_a_score} - {row.team_b_score}
-                        </td>
-                        <td className="p-3">{row.team_b}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            {uploadRows.length > 20 && (
-              <p className="text-sm text-gray-500">
-                Preview showing first 20 rows of {uploadRows.length} loaded rows.
-              </p>
-            )}
-
-            <button
-              onClick={handleImportRows}
-              disabled={!uploadRows.length || uploading}
-              className="w-fit rounded-xl bg-black px-5 py-3 text-white hover:opacity-90 disabled:opacity-50"
-            >
-              {uploading ? 'Importing...' : 'Import weekly scores'}
-            </button>
-          </div>
-
-          {uploadMessage && (
-            <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm">
-              {uploadMessage}
-            </div>
-          )}
-        </section>
-
-        <TeamLogoUploader />
-
-        <section className="mt-8 rounded-2xl border border-gray-200 p-6 shadow-sm">
-          <h2 className="text-xl font-semibold">Recalculate Team Consistency</h2>
-          <p className="mt-2 text-sm text-gray-600">
-            Weeks 1-4 use cautious mode. From week 5 onward, all season data is used and anchor teams update automatically.
-          </p>
-
+        <div className="mt-8 flex flex-wrap gap-3">
           <button
-            onClick={handleRecalculateConsistency}
-            disabled={recalculatingConsistency}
-            className="mt-4 rounded-xl bg-black px-5 py-3 text-white hover:opacity-90 disabled:opacity-50"
+            onClick={() => setActiveAdminTab('add-delete')}
+            className={`rounded-xl px-4 py-3 text-sm font-medium ${
+              activeAdminTab === 'add-delete'
+                ? 'bg-black text-white'
+                : 'border border-gray-300 bg-white text-black hover:bg-gray-50'
+            }`}
           >
-            {recalculatingConsistency ? 'Recalculating...' : 'Recalculate consistency'}
+            Add & Delete
           </button>
 
-          {consistencyMessage && (
-            <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm">
-              {consistencyMessage}
+          <button
+            onClick={() => setActiveAdminTab('usage')}
+            className={`rounded-xl px-4 py-3 text-sm font-medium ${
+              activeAdminTab === 'usage'
+                ? 'bg-black text-white'
+                : 'border border-gray-300 bg-white text-black hover:bg-gray-50'
+            }`}
+          >
+            Usage Dashboard
+          </button>
+
+          <button
+            onClick={() => setActiveAdminTab('scores')}
+            className={`rounded-xl px-4 py-3 text-sm font-medium ${
+              activeAdminTab === 'scores'
+                ? 'bg-black text-white'
+                : 'border border-gray-300 bg-white text-black hover:bg-gray-50'
+            }`}
+          >
+            Scores
+          </button>
+        </div>
+
+        {activeAdminTab === 'add-delete' && (
+          <>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <button
+                onClick={() => setActiveAddDeleteTab('school')}
+                className={`rounded-xl px-4 py-2 text-sm font-medium ${
+                  activeAddDeleteTab === 'school'
+                    ? 'bg-black text-white'
+                    : 'border border-gray-300 bg-white text-black hover:bg-gray-50'
+                }`}
+              >
+                Add School
+              </button>
+
+              <button
+                onClick={() => setActiveAddDeleteTab('match')}
+                className={`rounded-xl px-4 py-2 text-sm font-medium ${
+                  activeAddDeleteTab === 'match'
+                    ? 'bg-black text-white'
+                    : 'border border-gray-300 bg-white text-black hover:bg-gray-50'
+                }`}
+              >
+                Add Match Results
+              </button>
+
+              <button
+                onClick={() => setActiveAddDeleteTab('bulk')}
+                className={`rounded-xl px-4 py-2 text-sm font-medium ${
+                  activeAddDeleteTab === 'bulk'
+                    ? 'bg-black text-white'
+                    : 'border border-gray-300 bg-white text-black hover:bg-gray-50'
+                }`}
+              >
+                Bulk Uploads
+              </button>
+
+              <button
+                onClick={() => setActiveAddDeleteTab('logo')}
+                className={`rounded-xl px-4 py-2 text-sm font-medium ${
+                  activeAddDeleteTab === 'logo'
+                    ? 'bg-black text-white'
+                    : 'border border-gray-300 bg-white text-black hover:bg-gray-50'
+                }`}
+              >
+                Add Team Logo
+              </button>
             </div>
-          )}
-        </section>
 
-        <section className="mt-8 rounded-2xl border border-gray-200 p-6 shadow-sm">
-          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-            <div>
-              <h2 className="text-xl font-semibold">Usage Dashboard</h2>
-              <p className="mt-1 text-sm text-gray-600">
-                Track page views, predictions, and admin activity.
-              </p>
-            </div>
+            {activeAddDeleteTab === 'school' && (
+              <section className="mt-6 rounded-2xl border border-gray-200 p-6 shadow-sm">
+                <h2 className="text-xl font-semibold">Add School</h2>
 
-            <button
-              onClick={loadUsageEvents}
-              className="rounded-xl border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-            >
-              Refresh usage
-            </button>
-          </div>
+                <form onSubmit={handleAddSchool} className="mt-4 grid gap-4">
+                  <div>
+                    <label className="mb-2 block text-sm font-medium">School name</label>
+                    <input
+                      type="text"
+                      value={schoolName}
+                      onChange={(e) => setSchoolName(e.target.value)}
+                      className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                      placeholder="Enter school name"
+                    />
+                  </div>
 
-          {usageMessage && (
-            <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm">
-              {usageMessage}
-            </div>
-          )}
+                  <button
+                    type="submit"
+                    className="w-fit rounded-xl bg-black px-5 py-3 text-white hover:opacity-90"
+                  >
+                    Add school
+                  </button>
+                </form>
 
-          <div className="mt-6 grid gap-4 md:grid-cols-4">
-            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-5">
-              <div className="text-sm text-gray-500">Total Events</div>
-              <div className="mt-2 text-3xl font-bold">{usageSummary.totalEvents}</div>
-            </div>
+                {schoolMessage && (
+                  <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm">
+                    {schoolMessage}
+                  </div>
+                )}
+              </section>
+            )}
 
-            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-5">
-              <div className="text-sm text-gray-500">Page Views</div>
-              <div className="mt-2 text-3xl font-bold">{usageSummary.pageViews}</div>
-            </div>
+            {activeAddDeleteTab === 'match' && (
+              <section className="mt-6 rounded-2xl border border-gray-200 p-6 shadow-sm">
+                <h2 className="text-xl font-semibold">Add Match Result</h2>
 
-            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-5">
-              <div className="text-sm text-gray-500">Predictions Run</div>
-              <div className="mt-2 text-3xl font-bold">{usageSummary.predictions}</div>
-            </div>
+                <form onSubmit={handleAddMatch} className="mt-4 grid gap-4">
+                  <div>
+                    <label className="mb-2 block text-sm font-medium">Match date</label>
+                    <input
+                      type="date"
+                      value={form.match_date}
+                      onChange={(e) =>
+                        setForm({ ...form, match_date: e.target.value })
+                      }
+                      className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                    />
+                  </div>
 
-            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-5">
-              <div className="text-sm text-gray-500">Admin Actions</div>
-              <div className="mt-2 text-3xl font-bold">{usageSummary.adminActions}</div>
-            </div>
-          </div>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium">Team A</label>
+                    <select
+                      value={form.team_a_id}
+                      onChange={(e) =>
+                        setForm({ ...form, team_a_id: e.target.value })
+                      }
+                      className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                      disabled={loadingTeams}
+                    >
+                      <option value="">Choose Team A</option>
+                      {teamOptions.map((team) => (
+                        <option key={team.id} value={team.id}>
+                          {team.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-          <div className="mt-6">
-            <h3 className="text-lg font-semibold">Recent Activity</h3>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium">Team B</label>
+                    <select
+                      value={form.team_b_id}
+                      onChange={(e) =>
+                        setForm({ ...form, team_b_id: e.target.value })
+                      }
+                      className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                      disabled={loadingTeams}
+                    >
+                      <option value="">Choose Team B</option>
+                      {teamOptions.map((team) => (
+                        <option key={team.id} value={team.id}>
+                          {team.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-            {loadingUsage ? (
-              <p className="mt-4">Loading usage events...</p>
-            ) : (
-              <div className="mt-4 overflow-x-auto rounded-2xl border border-gray-200">
-                <table className="min-w-full bg-white">
-                  <thead className="bg-gray-100">
-                    <tr>
-                      <th className="p-3 text-left">Date</th>
-                      <th className="p-3 text-left">Event</th>
-                      <th className="p-3 text-left">Page</th>
-                      <th className="p-3 text-left">User</th>
-                      <th className="p-3 text-left">Details</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {usageEvents.map((event) => (
-                      <tr key={event.id} className="border-t align-top">
-                        <td className="p-3 text-sm">
-                          {new Date(event.created_at).toLocaleString()}
-                        </td>
-                        <td className="p-3 text-sm font-medium">{event.event_type}</td>
-                        <td className="p-3 text-sm">{event.page || '-'}</td>
-                        <td className="p-3 text-sm">{event.user_email || '-'}</td>
-                        <td className="p-3 text-xs text-gray-600">
-                          {formatDetails(event.details)}
-                        </td>
-                      </tr>
-                    ))}
+                  <div>
+                    <label className="mb-2 block text-sm font-medium">Team A score</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={form.team_a_score}
+                      onChange={(e) =>
+                        setForm({ ...form, team_a_score: e.target.value })
+                      }
+                      className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                    />
+                  </div>
 
-                    {usageEvents.length === 0 && (
-                      <tr>
-                        <td colSpan={5} className="p-4 text-center text-sm text-gray-500">
-                          No usage events found.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium">Team B score</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={form.team_b_score}
+                      onChange={(e) =>
+                        setForm({ ...form, team_b_score: e.target.value })
+                      }
+                      className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-fit rounded-xl bg-black px-5 py-3 text-white hover:opacity-90"
+                  >
+                    Save result
+                  </button>
+                </form>
+
+                {matchMessage && (
+                  <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm">
+                    {matchMessage}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {activeAddDeleteTab === 'bulk' && (
+              <section className="mt-6 rounded-2xl border border-gray-200 p-6 shadow-sm">
+                <h2 className="text-xl font-semibold">Bulk Upload Weekly Scores</h2>
+                <p className="mt-2 text-sm text-gray-600">
+                  Upload an Excel file with columns: match_date, team_a, team_b, team_a_score, team_b_score
+                </p>
+
+                <div className="mt-4 flex flex-col gap-4">
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls"
+                    onChange={handleFileUpload}
+                    className="block w-full rounded-xl border border-gray-300 px-4 py-3"
+                  />
+
+                  {uploadRows.length > 0 && (
+                    <div className="overflow-x-auto rounded-2xl border border-gray-200">
+                      <table className="min-w-full bg-white">
+                        <thead className="bg-gray-100">
+                          <tr>
+                            <th className="p-3 text-left">Date</th>
+                            <th className="p-3 text-left">Team A</th>
+                            <th className="p-3 text-left">Score</th>
+                            <th className="p-3 text-left">Team B</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {uploadRows.slice(0, 20).map((row, index) => (
+                            <tr key={index} className="border-t">
+                              <td className="p-3">{row.match_date}</td>
+                              <td className="p-3">{row.team_a}</td>
+                              <td className="p-3 font-semibold">
+                                {row.team_a_score} - {row.team_b_score}
+                              </td>
+                              <td className="p-3">{row.team_b}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {uploadRows.length > 20 && (
+                    <p className="text-sm text-gray-500">
+                      Preview showing first 20 rows of {uploadRows.length} loaded rows.
+                    </p>
+                  )}
+
+                  <button
+                    onClick={handleImportRows}
+                    disabled={!uploadRows.length || uploading}
+                    className="w-fit rounded-xl bg-black px-5 py-3 text-white hover:opacity-90 disabled:opacity-50"
+                  >
+                    {uploading ? 'Importing...' : 'Import weekly scores'}
+                  </button>
+                </div>
+
+                {uploadMessage && (
+                  <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm">
+                    {uploadMessage}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {activeAddDeleteTab === 'logo' && (
+              <div className="mt-6">
+                <TeamLogoUploader />
               </div>
             )}
-          </div>
-        </section>
+          </>
+        )}
 
-        <section className="mt-10 rounded-2xl border border-gray-200 p-6 shadow-sm">
-          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-            <div>
-              <h2 className="text-xl font-semibold">Scores Added</h2>
-              <p className="mt-1 text-sm text-gray-600">
-                View and delete scores for the selected season.
+        {activeAdminTab === 'usage' && (
+          <section className="mt-6 rounded-2xl border border-gray-200 p-6 shadow-sm">
+            <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+              <div>
+                <h2 className="text-xl font-semibold">Usage Dashboard</h2>
+                <p className="mt-1 text-sm text-gray-600">
+                  Track page views, predictions, and admin activity.
+                </p>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={loadUsageEvents}
+                  className="rounded-xl border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+                >
+                  Refresh usage
+                </button>
+
+                <button
+                  onClick={() => setShowRecentActivity((prev) => !prev)}
+                  className="rounded-xl bg-black px-4 py-2 text-sm text-white hover:opacity-90"
+                >
+                  {showRecentActivity ? 'Hide recent activity' : 'Show recent activity'}
+                </button>
+              </div>
+            </div>
+
+            {usageMessage && (
+              <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm">
+                {usageMessage}
+              </div>
+            )}
+
+            <div className="mt-6 grid gap-4 md:grid-cols-4">
+              <div className="rounded-2xl border border-gray-200 bg-gray-50 p-5">
+                <div className="text-sm text-gray-500">Total Events</div>
+                <div className="mt-2 text-3xl font-bold">{usageSummary.totalEvents}</div>
+              </div>
+
+              <div className="rounded-2xl border border-gray-200 bg-gray-50 p-5">
+                <div className="text-sm text-gray-500">Page Views</div>
+                <div className="mt-2 text-3xl font-bold">{usageSummary.pageViews}</div>
+              </div>
+
+              <div className="rounded-2xl border border-gray-200 bg-gray-50 p-5">
+                <div className="text-sm text-gray-500">Predictions Run</div>
+                <div className="mt-2 text-3xl font-bold">{usageSummary.predictions}</div>
+              </div>
+
+              <div className="rounded-2xl border border-gray-200 bg-gray-50 p-5">
+                <div className="text-sm text-gray-500">Admin Actions</div>
+                <div className="mt-2 text-3xl font-bold">{usageSummary.adminActions}</div>
+              </div>
+            </div>
+
+            {showRecentActivity && (
+              <div className="mt-6">
+                <h3 className="text-lg font-semibold">Recent Activity</h3>
+
+                {loadingUsage ? (
+                  <p className="mt-4">Loading usage events...</p>
+                ) : (
+                  <div className="mt-4 overflow-x-auto rounded-2xl border border-gray-200">
+                    <table className="min-w-full bg-white">
+                      <thead className="bg-gray-100">
+                        <tr>
+                          <th className="p-3 text-left">Date</th>
+                          <th className="p-3 text-left">Event</th>
+                          <th className="p-3 text-left">Page</th>
+                          <th className="p-3 text-left">User</th>
+                          <th className="p-3 text-left">Details</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {usageEvents.map((event) => (
+                          <tr key={event.id} className="border-t align-top">
+                            <td className="p-3 text-sm">
+                              {new Date(event.created_at).toLocaleString()}
+                            </td>
+                            <td className="p-3 text-sm font-medium">{event.event_type}</td>
+                            <td className="p-3 text-sm">{event.page || '-'}</td>
+                            <td className="p-3 text-sm">{event.user_email || '-'}</td>
+                            <td className="p-3 text-xs text-gray-600">
+                              {formatDetails(event.details)}
+                            </td>
+                          </tr>
+                        ))}
+
+                        {usageEvents.length === 0 && (
+                          <tr>
+                            <td colSpan={5} className="p-4 text-center text-sm text-gray-500">
+                              No usage events found.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        )}
+
+        {activeAdminTab === 'scores' && (
+          <>
+            <section className="mt-6 rounded-2xl border border-gray-200 p-6 shadow-sm">
+              <h2 className="text-xl font-semibold">Recalculate Team Consistency</h2>
+              <p className="mt-2 text-sm text-gray-600">
+                Weeks 1-4 use cautious mode. From week 5 onward, all season data is used and anchor teams update automatically.
               </p>
-            </div>
 
-            <div className="w-full max-w-xs">
-              <label className="mb-2 block text-sm font-medium">Season</label>
-              <input
-                type="number"
-                value={seasonFilter}
-                onChange={(e) => setSeasonFilter(e.target.value)}
-                className="w-full rounded-xl border border-gray-300 px-4 py-3"
-              />
-            </div>
-          </div>
+              <button
+                onClick={handleRecalculateConsistency}
+                disabled={recalculatingConsistency}
+                className="mt-4 rounded-xl bg-black px-5 py-3 text-white hover:opacity-90 disabled:opacity-50"
+              >
+                {recalculatingConsistency ? 'Recalculating...' : 'Recalculate consistency'}
+              </button>
 
-          {deleteMessage && (
-            <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm">
-              {deleteMessage}
-            </div>
-          )}
+              {consistencyMessage && (
+                <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm">
+                  {consistencyMessage}
+                </div>
+              )}
+            </section>
 
-          {loadingMatches ? (
-            <p className="mt-6">Loading scores...</p>
-          ) : (
-            <div className="mt-6 overflow-x-auto rounded-2xl border border-gray-200">
-              <table className="min-w-full bg-white">
-                <thead className="bg-gray-100">
-                  <tr>
-                    <th className="p-3 text-left">Date</th>
-                    <th className="p-3 text-left">Team A</th>
-                    <th className="p-3 text-left">Score</th>
-                    <th className="p-3 text-left">Team B</th>
-                    <th className="p-3 text-left">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {matches.map((match) => (
-                    <tr key={match.id} className="border-t">
-                      <td className="p-3">
-                        {new Date(match.match_date).toLocaleDateString()}
-                      </td>
-                      <td className="p-3">{match.team_a_name}</td>
-                      <td className="p-3 font-semibold">
-                        {match.team_a_score} - {match.team_b_score}
-                      </td>
-                      <td className="p-3">{match.team_b_name}</td>
-                      <td className="p-3">
-                        <button
-                          onClick={() => handleDeleteMatch(match.id)}
-                          className="rounded-lg border border-red-300 px-3 py-2 text-sm text-red-700 hover:bg-red-50"
-                        >
-                          Delete
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+            <section className="mt-6 rounded-2xl border border-gray-200 p-6 shadow-sm">
+              <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+                <div>
+                  <h2 className="text-xl font-semibold">Scores Added</h2>
+                  <p className="mt-1 text-sm text-gray-600">
+                    View and delete scores for the selected season.
+                  </p>
+                </div>
 
-                  {matches.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="p-4 text-center text-sm text-gray-500">
-                        No scores found for this season.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
+                <div className="w-full max-w-xs">
+                  <label className="mb-2 block text-sm font-medium">Season</label>
+                  <input
+                    type="number"
+                    value={seasonFilter}
+                    onChange={(e) => setSeasonFilter(e.target.value)}
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                  />
+                </div>
+              </div>
+
+              {deleteMessage && (
+                <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm">
+                  {deleteMessage}
+                </div>
+              )}
+
+              {loadingMatches ? (
+                <p className="mt-6">Loading scores...</p>
+              ) : (
+                <div className="mt-6 overflow-x-auto rounded-2xl border border-gray-200">
+                  <table className="min-w-full bg-white">
+                    <thead className="bg-gray-100">
+                      <tr>
+                        <th className="p-3 text-left">Date</th>
+                        <th className="p-3 text-left">Team A</th>
+                        <th className="p-3 text-left">Score</th>
+                        <th className="p-3 text-left">Team B</th>
+                        <th className="p-3 text-left">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {matches.map((match) => (
+                        <tr key={match.id} className="border-t">
+                          <td className="p-3">
+                            {new Date(match.match_date).toLocaleDateString()}
+                          </td>
+                          <td className="p-3">{match.team_a_name}</td>
+                          <td className="p-3 font-semibold">
+                            {match.team_a_score} - {match.team_b_score}
+                          </td>
+                          <td className="p-3">{match.team_b_name}</td>
+                          <td className="p-3">
+                            <button
+                              onClick={() => handleDeleteMatch(match.id)}
+                              className="rounded-lg border border-red-300 px-3 py-2 text-sm text-red-700 hover:bg-red-50"
+                            >
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+
+                      {matches.length === 0 && (
+                        <tr>
+                          <td colSpan={5} className="p-4 text-center text-sm text-gray-500">
+                            No scores found for this season.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          </>
+        )}
       </div>
     </main>
   )
