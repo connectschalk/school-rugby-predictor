@@ -24,6 +24,7 @@ type PositionedNode = {
   x: number
   y: number
   pinned: boolean
+  logoSrc: string
 }
 
 const PINNED_TEAM_NAMES = new Set([
@@ -41,6 +42,16 @@ const CHART_HEIGHT = 860
 const CHART_MARGIN = { left: 120, right: 80, top: 80, bottom: 80 }
 const ROW_Y = [220, 430, 640]
 const NODE_RADIUS = 9
+const MAX_LEVEL = 3
+
+function slugifyTeamName(name: string) {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
 
 function getBaselineLayoutData(matches: Match[], baselineTeamId: number, maxDepth: number) {
   const adjacency: Record<
@@ -136,13 +147,13 @@ export default function NetworkPage() {
   const [matches, setMatches] = useState<Match[]>([])
   const [season, setSeason] = useState('2026')
   const [baselineTeam, setBaselineTeam] = useState('')
-  const [depth, setDepth] = useState('3')
-  const [revealedDepth, setRevealedDepth] = useState(1)
+  const [viewLevel, setViewLevel] = useState(3)
   const [searchTerm, setSearchTerm] = useState('')
   const [compareMode, setCompareMode] = useState(false)
   const [compareA, setCompareA] = useState('')
   const [compareB, setCompareB] = useState('')
   const [activeTeamId, setActiveTeamId] = useState<number | null>(null)
+  const [logoStatus, setLogoStatus] = useState<Record<string, 'loaded' | 'failed'>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -190,9 +201,9 @@ export default function NetworkPage() {
   }, [season])
 
   useEffect(() => {
-    setRevealedDepth(1)
+    setViewLevel(3)
     setActiveTeamId(null)
-  }, [baselineTeam, depth, season])
+  }, [baselineTeam, season])
 
   const teamById = useMemo(() => new Map(teams.map((team) => [team.id, team])), [teams])
 
@@ -206,8 +217,8 @@ export default function NetworkPage() {
         matchMap: new Map<number, number | null>(),
       }
     }
-    return getBaselineLayoutData(matches, Number(baselineTeam), Number(depth))
-  }, [matches, baselineTeam, depth])
+    return getBaselineLayoutData(matches, Number(baselineTeam), viewLevel)
+  }, [matches, baselineTeam, viewLevel])
 
   const reachableMatches = useMemo(() => {
     if (!baselineTeam) return []
@@ -255,7 +266,7 @@ export default function NetworkPage() {
     const byDepth = new Set<number>()
     for (const teamId of teamIdsInScope) {
       const d = baselineReachability.depthMap.get(teamId) ?? 99
-      if (d <= revealedDepth || d <= 1) byDepth.add(teamId)
+      if (d <= viewLevel || d <= 1) byDepth.add(teamId)
     }
 
     const visible = new Set<number>(byDepth)
@@ -283,7 +294,7 @@ export default function NetworkPage() {
     baselineReachability.depthMap,
     baselineReachability.parentMap,
     comparisonRelevantSet,
-    revealedDepth,
+    viewLevel,
     searchedIds,
     teamIdsInScope,
   ])
@@ -305,6 +316,7 @@ export default function NetworkPage() {
       return {
         margin: baselineReachability.marginMap.get(id) ?? 0,
         pinned: PINNED_TEAM_NAMES.has(name) || String(id) === baselineTeam,
+        logoSrc: `/team-logos/${slugifyTeamName(name)}.png`,
       }
     })
 
@@ -335,6 +347,7 @@ export default function NetworkPage() {
         depth: baselineReachability.depthMap.get(id) ?? 0,
         row: rowFromDepth(baselineReachability.depthMap.get(id) ?? 0),
         pinned: PINNED_TEAM_NAMES.has(name) || String(id) === baselineTeam,
+        logoSrc: `/team-logos/${slugifyTeamName(name)}.png`,
       }
     })
 
@@ -361,6 +374,24 @@ export default function NetworkPage() {
     chartDomain.max,
     chartDomain.min,
   ])
+
+  useEffect(() => {
+    positionedNodes.forEach((node) => {
+      if (logoStatus[node.logoSrc]) return
+      const img = new Image()
+      img.onload = () =>
+        setLogoStatus((prev) => {
+          if (prev[node.logoSrc]) return prev
+          return { ...prev, [node.logoSrc]: 'loaded' }
+        })
+      img.onerror = () =>
+        setLogoStatus((prev) => {
+          if (prev[node.logoSrc]) return prev
+          return { ...prev, [node.logoSrc]: 'failed' }
+        })
+      img.src = node.logoSrc
+    })
+  }, [positionedNodes, logoStatus])
 
   const nodeById = useMemo(
     () => new Map(positionedNodes.map((node) => [node.id, node])),
@@ -433,7 +464,7 @@ export default function NetworkPage() {
     return ticks.sort((a, b) => a - b)
   }, [positionedNodes])
 
-  const canExpand = revealedDepth < Number(depth)
+  const canExpand = viewLevel < MAX_LEVEL
 
   return (
     <main className="min-h-screen bg-white text-black">
@@ -469,16 +500,23 @@ export default function NetworkPage() {
             </select>
           </div>
           <div>
-            <label className="mb-2 block text-sm font-medium">Depth</label>
-            <select
-              value={depth}
-              onChange={(e) => setDepth(e.target.value)}
-              className="w-full rounded-xl border border-gray-300 px-4 py-3"
-            >
-              <option value="1">1</option>
-              <option value="2">2</option>
-              <option value="3">3</option>
-            </select>
+            <label className="mb-2 block text-sm font-medium">Graph Level</label>
+            <div className="inline-flex w-full rounded-xl border border-gray-300 p-1">
+              {[1, 2, 3].map((level) => (
+                <button
+                  key={level}
+                  type="button"
+                  onClick={() => setViewLevel(level)}
+                  className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition ${
+                    viewLevel === level
+                      ? 'bg-black text-white shadow-sm'
+                      : 'text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  Level {level}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -541,16 +579,16 @@ export default function NetworkPage() {
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button
             type="button"
-            onClick={() => setRevealedDepth((d) => Math.min(Number(depth), d + 1))}
+            onClick={() => setViewLevel((d) => Math.min(MAX_LEVEL, d + 1))}
             disabled={!canExpand}
             className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Expand View (Depth {revealedDepth}/{depth})
+            Expand View (Level {viewLevel}/{MAX_LEVEL})
           </button>
           <button
             type="button"
             onClick={() => {
-              setRevealedDepth(1)
+              setViewLevel(3)
               setActiveTeamId(null)
               setSearchTerm('')
             }}
@@ -639,20 +677,58 @@ export default function NetworkPage() {
                     const isBaseline = String(node.id) === baselineTeam
                     const isDimmed = relatedToActive ? !relatedToActive.has(node.id) : false
                     const isActive = activeTeamId === node.id
+                    const hasLogo = logoStatus[node.logoSrc] === 'loaded'
+                    const nodeRadius = NODE_RADIUS + (isActive ? 2 : 0)
                     return (
                       <g key={node.id} onClick={() => setActiveTeamId((prev) => (prev === node.id ? null : node.id))} style={{ cursor: 'pointer' }}>
                         {node.pinned && !isBaseline && (
                           <rect x={node.x - 4} y={node.y - 18} width={8} height={8} fill="#0f766e" opacity={isDimmed ? 0.2 : 1} />
                         )}
-                        <circle
-                          cx={node.x}
-                          cy={node.y}
-                          r={NODE_RADIUS + (isActive ? 2 : 0)}
-                          fill={isBaseline ? '#111827' : '#2563eb'}
-                          opacity={isDimmed ? 0.2 : 1}
-                          stroke="#ffffff"
-                          strokeWidth={1.5}
-                        />
+                        {hasLogo ? (
+                          <>
+                            <defs>
+                              <clipPath id={`node-logo-clip-${node.id}`}>
+                                <circle cx={node.x} cy={node.y} r={nodeRadius} />
+                              </clipPath>
+                            </defs>
+                            <circle
+                              cx={node.x}
+                              cy={node.y}
+                              r={nodeRadius + (isBaseline ? 3 : 1)}
+                              fill={isBaseline ? '#111827' : '#dbeafe'}
+                              opacity={isDimmed ? 0.25 : 1}
+                            />
+                            <image
+                              href={node.logoSrc}
+                              x={node.x - nodeRadius}
+                              y={node.y - nodeRadius}
+                              width={nodeRadius * 2}
+                              height={nodeRadius * 2}
+                              preserveAspectRatio="xMidYMid slice"
+                              clipPath={`url(#node-logo-clip-${node.id})`}
+                              opacity={isDimmed ? 0.25 : 1}
+                            />
+                            <circle
+                              cx={node.x}
+                              cy={node.y}
+                              r={nodeRadius}
+                              fill="none"
+                              stroke={isBaseline ? '#111827' : '#ffffff'}
+                              strokeWidth={isBaseline ? 2.5 : 1.5}
+                              opacity={isDimmed ? 0.25 : 1}
+                            />
+                          </>
+                        ) : (
+                          <circle
+                            cx={node.x}
+                            cy={node.y}
+                            r={nodeRadius}
+                            fill={isBaseline ? '#111827' : '#2563eb'}
+                            opacity={isDimmed ? 0.2 : 1}
+                            stroke="#ffffff"
+                            strokeWidth={1.5}
+                          />
+                        )}
                       </g>
                     )
                   })}
