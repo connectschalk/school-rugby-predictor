@@ -18,7 +18,7 @@ export function getTeamLogo(teamName: string) {
   return `/team-logos/${normalizeTeamName(teamName)}.png`
 }
 
-function RugbyBallIcon() {
+export function RugbyBallIcon() {
   return (
     <svg
       viewBox="0 0 64 64"
@@ -60,21 +60,33 @@ function RugbyBallIcon() {
   )
 }
 
-function TeamLogoCircle({ teamName }: { teamName: string }) {
+export function TeamLogoCircle({
+  teamName,
+  sizeClassName = 'h-32 w-32 md:h-36 md:w-36',
+  imageSizeClassName = 'h-[82%] w-[82%]',
+}: {
+  teamName: string
+  sizeClassName?: string
+  imageSizeClassName?: string
+}) {
   const [failed, setFailed] = useState(false)
   const logoSrc = useMemo(() => getTeamLogo(teamName), [teamName])
 
   return (
-    <div className="flex h-32 w-32 items-center justify-center rounded-full border border-gray-200 bg-gray-50 md:h-36 md:w-36">
+    <div
+      className={`flex items-center justify-center rounded-full border border-gray-200 bg-gray-50 ${sizeClassName}`}
+    >
       {!failed && teamName ? (
         <img
           src={logoSrc}
           alt={`${teamName} logo`}
-          className="h-20 w-20 object-contain md:h-24 md:w-24"
+          className={`${imageSizeClassName} object-contain`}
           onError={() => setFailed(true)}
         />
       ) : (
-        <RugbyBallIcon />
+        <div className="scale-110">
+          <RugbyBallIcon />
+        </div>
       )}
     </div>
   )

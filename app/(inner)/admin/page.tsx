@@ -8,6 +8,7 @@ import * as XLSX from 'xlsx'
 import { toPng } from 'html-to-image'
 import TeamLogoUploader from '@/components/TeamLogoUploader'
 import PredictionCard from '@/components/admin/PredictionCard'
+import PredictedVsActualCard from '@/components/admin/PredictedVsActualCard'
 
 const ALLOWED_ADMIN_EMAIL = 'connect.schalk@gmail.com'
 
@@ -2118,11 +2119,12 @@ export default function AdminPage() {
                     className="mx-auto rounded-3xl border border-gray-200 bg-white p-10 shadow-sm"
                     style={cardDimensions(rankingsImageForm.format)}
                   >
-                    <img src="/nextplay-predictor.png" alt="NextPlay Predictor" className="h-14 w-auto" />
-                    <p className="mt-6 text-xs uppercase tracking-[0.18em] text-gray-500">Network Rankings</p>
-                    <p className="mt-2 text-xl font-semibold text-gray-800">
-                      Season {seasonFilter}
-                      {selectedRankingPool ? ` - Pool ${selectedRankingPool.poolId}` : ''}
+                    <img src="/nextplay-predictor.png" alt="NextPlay Predictor" className="mx-auto h-14 w-auto" />
+                    <p className="mt-4 text-center text-sm text-gray-500">
+                      {new Date().toLocaleDateString()}
+                    </p>
+                    <p className="mt-6 text-center text-xs uppercase tracking-[0.18em] text-gray-500">
+                      Network Rankings
                     </p>
                     <div className="mt-6 space-y-2">
                       {rankingListForImage.map((team, index) => (
@@ -2134,9 +2136,6 @@ export default function AdminPage() {
                       {rankingListForImage.length === 0 && (
                         <p className="text-sm text-gray-500">No ranking data found for this season.</p>
                       )}
-                    </div>
-                    <div className="mt-8 border-t border-gray-200 pt-4 text-sm text-gray-500">
-                      Generated {new Date().toLocaleDateString()}
                     </div>
                   </div>
                   <button
@@ -2257,44 +2256,31 @@ export default function AdminPage() {
                   <h3 className="text-lg font-semibold">Live Preview</h3>
                   <div
                     ref={pvaCardRef}
-                    className="mx-auto rounded-3xl border border-gray-200 bg-white p-10 shadow-sm"
+                    className="mx-auto flex items-center justify-center"
                     style={cardDimensions(pvaImageForm.format)}
                   >
-                    <img src="/nextplay-predictor.png" alt="NextPlay Predictor" className="h-14 w-auto" />
-                    <p className="mt-6 text-xs uppercase tracking-[0.18em] text-gray-500">Predicted vs Actual</p>
-                    <p className="mt-2 text-3xl font-bold text-gray-900">
-                      {pvaImageForm.teamA && pvaImageForm.teamB
-                        ? `${getTeamNameById(Number(pvaImageForm.teamA))} vs ${getTeamNameById(
-                            Number(pvaImageForm.teamB)
-                          )}`
-                        : 'Select teams'}
-                    </p>
-                    <div className="mt-7 space-y-3 text-sm">
-                      <p className="rounded-lg bg-gray-50 px-3 py-2">
-                        <span className="text-gray-500">Predicted:</span>{' '}
-                        <span className="font-semibold text-gray-900">
-                          {pvaImageForm.predictedMargin === ''
-                            ? '-'
-                            : `${Number(pvaImageForm.predictedMargin) > 0 ? 'Team A' : 'Team B'} by ${Math.abs(
-                                Number(pvaImageForm.predictedMargin)
-                              )}`}
-                        </span>
-                      </p>
-                      <p className="rounded-lg bg-gray-50 px-3 py-2">
-                        <span className="text-gray-500">Actual:</span>{' '}
-                        <span className="font-semibold text-gray-900">
-                          {pvaImageForm.actualTeamAScore === '' || pvaImageForm.actualTeamBScore === ''
-                            ? '-'
-                            : `${pvaImageForm.actualTeamAScore} - ${pvaImageForm.actualTeamBScore}`}
-                        </span>
-                      </p>
-                    </div>
-                    <p className="mt-5 text-sm text-gray-600">
-                      {pvaDelta === null ? 'Prediction difference: -' : `Prediction difference: ${pvaDelta} points`}
-                    </p>
-                    <div className="mt-8 border-t border-gray-200 pt-4 text-sm text-gray-500">
-                      {pvaImageForm.matchDate || new Date().toISOString().slice(0, 10)}
-                    </div>
+                    <PredictedVsActualCard
+                      teamAName={pvaImageForm.teamA ? getTeamNameById(Number(pvaImageForm.teamA)) : ''}
+                      teamBName={pvaImageForm.teamB ? getTeamNameById(Number(pvaImageForm.teamB)) : ''}
+                      predictedText={
+                        pvaImageForm.predictedMargin === ''
+                          ? '-'
+                          : `${Number(pvaImageForm.predictedMargin) > 0 ? 'Team A' : 'Team B'} by ${Math.abs(
+                              Number(pvaImageForm.predictedMargin)
+                            )}`
+                      }
+                      actualText={
+                        pvaImageForm.actualTeamAScore === '' || pvaImageForm.actualTeamBScore === ''
+                          ? '-'
+                          : `${pvaImageForm.actualTeamAScore} - ${pvaImageForm.actualTeamBScore}`
+                      }
+                      differenceText={
+                        pvaDelta === null
+                          ? 'Prediction difference: -'
+                          : `Prediction difference: ${pvaDelta} points`
+                      }
+                      date={pvaImageForm.matchDate || new Date().toISOString().slice(0, 10)}
+                    />
                   </div>
                   <button
                     onClick={() =>
