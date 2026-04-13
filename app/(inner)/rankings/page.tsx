@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 
 type Team = {
@@ -286,6 +287,15 @@ export default function RankingsPage() {
           Teams are ranked only inside linked pools. When a new match connects two pools,
           they merge automatically and rankings are recalculated using all linked margins.
         </p>
+
+        <div className="mt-4">
+          <Link
+            href="/consistency"
+            className="inline-flex rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-50"
+          >
+            View Top 10 Margin Consistency
+          </Link>
+        </div>
 
         <div className="mt-6 grid gap-4 md:grid-cols-2">
           <div className="max-w-xs">

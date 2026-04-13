@@ -30,6 +30,9 @@ export default function InnerLayout({
             <Link href="/rankings" className="hover:underline">
               Rankings
             </Link>
+            <Link href="/consistency" className="hover:underline">
+              Consistency
+            </Link>
             <Link href="/network" className="hover:underline">
               Visual Graph
             </Link>
