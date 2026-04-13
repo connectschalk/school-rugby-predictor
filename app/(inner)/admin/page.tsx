@@ -7,6 +7,7 @@ import { trackEvent } from '@/lib/trackEvent'
 import * as XLSX from 'xlsx'
 import { toPng } from 'html-to-image'
 import TeamLogoUploader from '@/components/TeamLogoUploader'
+import PredictionCard from '@/components/admin/PredictionCard'
 
 const ALLOWED_ADMIN_EMAIL = 'connect.schalk@gmail.com'
 
@@ -78,9 +79,13 @@ export default function AdminPage() {
   const [usageMessage, setUsageMessage] = useState('')
 
   const [activeAdminTab, setActiveAdminTab] = useState<'add-delete' | 'usage' | 'scores' | 'social'>('add-delete')
-  const [activeAddDeleteTab, setActiveAddDeleteTab] = useState<'school' | 'match' | 'bulk' | 'logo'>('school')
+  const [activeAddDeleteTab, setActiveAddDeleteTab] = useState<
+    'school' | 'match' | 'bulk' | 'logo' | 'delete-team'
+  >('school')
   const [showRecentActivity, setShowRecentActivity] = useState(false)
   const [activeStudioTab, setActiveStudioTab] = useState<StudioTab>('match')
+  const [teamToDeleteId, setTeamToDeleteId] = useState('')
+  const [teamDeleteMessage, setTeamDeleteMessage] = useState('')
 
   const [matchImageForm, setMatchImageForm] = useState({
     teamA: '',
@@ -379,6 +384,79 @@ export default function AdminPage() {
       fixture: matchToDelete
         ? `${matchToDelete.team_a_name} ${matchToDelete.team_a_score} - ${matchToDelete.team_b_score} ${matchToDelete.team_b_name}`
         : null,
+    })
+    await loadUsageEvents()
+  }
+
+  async function handleDeleteTeam() {
+    setTeamDeleteMessage('')
+
+    if (!teamToDeleteId) {
+      setTeamDeleteMessage('Please select a team to delete.')
+      return
+    }
+
+    const selectedTeam = teams.find((team) => String(team.id) === teamToDeleteId)
+    if (!selectedTeam) {
+      setTeamDeleteMessage('Selected team not found.')
+      return
+    }
+
+    const confirmed = window.confirm(
+      `Delete ${selectedTeam.name}? This will remove team consistency entries, all linked matches, and the team itself.`
+    )
+    if (!confirmed) return
+
+    const teamId = Number(teamToDeleteId)
+
+    const { error: consistencyError } = await supabase
+      .from('team_consistency')
+      .delete()
+      .eq('team_id', teamId)
+
+    if (consistencyError) {
+      setTeamDeleteMessage(`Could not delete team consistency rows: ${consistencyError.message}`)
+      return
+    }
+
+    const { error: matchesAsTeamAError } = await supabase
+      .from('matches')
+      .delete()
+      .eq('team_a_id', teamId)
+
+    if (matchesAsTeamAError) {
+      setTeamDeleteMessage(`Could not delete team matches: ${matchesAsTeamAError.message}`)
+      return
+    }
+
+    const { error: matchesAsTeamBError } = await supabase
+      .from('matches')
+      .delete()
+      .eq('team_b_id', teamId)
+
+    if (matchesAsTeamBError) {
+      setTeamDeleteMessage(`Could not delete team matches: ${matchesAsTeamBError.message}`)
+      return
+    }
+
+    const { error: teamDeleteError } = await supabase
+      .from('teams')
+      .delete()
+      .eq('id', teamId)
+
+    if (teamDeleteError) {
+      setTeamDeleteMessage(`Could not delete team: ${teamDeleteError.message}`)
+      return
+    }
+
+    setTeamDeleteMessage(`${selectedTeam.name} and linked data deleted successfully.`)
+    setTeamToDeleteId('')
+    await loadTeams()
+    await loadMatches()
+
+    await trackEvent('admin_delete_team', 'admin', {
+      teamId,
+      teamName: selectedTeam.name,
     })
     await loadUsageEvents()
   }
@@ -1095,6 +1173,40 @@ export default function AdminPage() {
 
   const teamOptions = useMemo(() => teams, [teams])
 
+  const duplicateGameGroups = useMemo(() => {
+    const grouped = new Map<string, MatchRow[]>()
+
+    for (const match of matches) {
+      const teamIds = [match.team_a_id, match.team_b_id].sort((a, b) => a - b)
+      const scores = [match.team_a_score, match.team_b_score].sort((a, b) => a - b)
+      const key = `${match.match_date}|${teamIds[0]}-${teamIds[1]}|${scores[0]}-${scores[1]}`
+
+      if (!grouped.has(key)) grouped.set(key, [])
+      grouped.get(key)!.push(match)
+    }
+
+    return Array.from(grouped.values())
+      .filter((group) => group.length > 1)
+      .map((group) => {
+        const first = group[0]
+        const teamAName = getTeamNameById(first.team_a_id)
+        const teamBName = getTeamNameById(first.team_b_id)
+        const sortedScores = [first.team_a_score, first.team_b_score].sort((a, b) => a - b)
+
+        return {
+          date: first.match_date,
+          teamAName,
+          teamBName,
+          scorePair: `${sortedScores[0]}-${sortedScores[1]}`,
+          rows: group,
+        }
+      })
+      .sort(
+        (a, b) =>
+          new Date(b.date).getTime() - new Date(a.date).getTime()
+      )
+  }, [matches, teams])
+
   const usageSummary = useMemo(() => {
     const totalEvents = usageEvents.length
     const pageViews = usageEvents.filter((e) => e.event_type === 'page_view').length
@@ -1238,6 +1350,17 @@ export default function AdminPage() {
                 }`}
               >
                 Add Team Logo
+              </button>
+
+              <button
+                onClick={() => setActiveAddDeleteTab('delete-team')}
+                className={`rounded-xl px-4 py-2 text-sm font-medium ${
+                  activeAddDeleteTab === 'delete-team'
+                    ? 'bg-red-600 text-white'
+                    : 'border border-red-300 bg-white text-red-700 hover:bg-red-50'
+                }`}
+              >
+                Delete Team
               </button>
             </div>
 
@@ -1439,6 +1562,48 @@ export default function AdminPage() {
               <div className="mt-6">
                 <TeamLogoUploader />
               </div>
+            )}
+
+            {activeAddDeleteTab === 'delete-team' && (
+              <section className="mt-6 rounded-2xl border border-red-200 bg-red-50/40 p-6 shadow-sm">
+                <h2 className="text-xl font-semibold text-red-900">Delete Team</h2>
+                <p className="mt-2 text-sm text-red-800">
+                  This is a permanent action. This will remove team and all linked matches.
+                </p>
+
+                <div className="mt-4 grid gap-4">
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-red-900">Team</label>
+                    <select
+                      value={teamToDeleteId}
+                      onChange={(e) => setTeamToDeleteId(e.target.value)}
+                      className="w-full rounded-xl border border-red-300 bg-white px-4 py-3"
+                      disabled={loadingTeams}
+                    >
+                      <option value="">Choose team to delete</option>
+                      {teamOptions.map((team) => (
+                        <option key={team.id} value={team.id}>
+                          {team.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleDeleteTeam}
+                    className="w-fit rounded-xl bg-red-600 px-5 py-3 text-white hover:bg-red-700"
+                  >
+                    Delete team and linked data
+                  </button>
+                </div>
+
+                {teamDeleteMessage && (
+                  <div className="mt-4 rounded-xl border border-red-200 bg-white p-4 text-sm text-red-900">
+                    {teamDeleteMessage}
+                  </div>
+                )}
+              </section>
             )}
           </>
         )}
@@ -1644,6 +1809,72 @@ export default function AdminPage() {
                 </div>
               )}
             </section>
+
+            <section className="mt-6 rounded-2xl border border-gray-200 p-6 shadow-sm">
+              <h2 className="text-xl font-semibold">Duplicate Games Search</h2>
+              <p className="mt-2 text-sm text-gray-600">
+                Detect duplicate fixtures even when teams or scores were entered in reverse.
+              </p>
+
+              {loadingMatches ? (
+                <p className="mt-6">Scanning matches...</p>
+              ) : duplicateGameGroups.length === 0 ? (
+                <div className="mt-6 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
+                  No duplicate game groups found for this season.
+                </div>
+              ) : (
+                <div className="mt-6 space-y-5">
+                  {duplicateGameGroups.map((group, index) => (
+                    <div key={`${group.date}-${index}`} className="rounded-2xl border border-gray-200">
+                      <div className="border-b border-gray-200 bg-gray-50 px-4 py-3">
+                        <div className="text-sm font-semibold text-gray-900">
+                          {new Date(group.date).toLocaleDateString()} | {group.teamAName} vs {group.teamBName} | Score pair {group.scorePair}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {group.rows.length} duplicate row(s) found
+                        </div>
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full bg-white">
+                          <thead className="bg-gray-100">
+                            <tr>
+                              <th className="p-3 text-left">Date</th>
+                              <th className="p-3 text-left">Team A</th>
+                              <th className="p-3 text-left">Score</th>
+                              <th className="p-3 text-left">Team B</th>
+                              <th className="p-3 text-left">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {group.rows.map((match) => (
+                              <tr key={match.id} className="border-t">
+                                <td className="p-3">
+                                  {new Date(match.match_date).toLocaleDateString()}
+                                </td>
+                                <td className="p-3">{match.team_a_name}</td>
+                                <td className="p-3 font-semibold">
+                                  {match.team_a_score} - {match.team_b_score}
+                                </td>
+                                <td className="p-3">{match.team_b_name}</td>
+                                <td className="p-3">
+                                  <button
+                                    onClick={() => handleDeleteMatch(match.id)}
+                                    className="rounded-lg border border-red-300 px-3 py-2 text-sm text-red-700 hover:bg-red-50"
+                                  >
+                                    Delete
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
           </>
         )}
 
@@ -1773,27 +2004,20 @@ export default function AdminPage() {
                   <h3 className="text-lg font-semibold">Live Preview</h3>
                   <div
                     ref={matchCardRef}
-                    className="mx-auto rounded-3xl border border-gray-200 bg-white p-10 shadow-sm"
+                    className="mx-auto flex items-center justify-center"
                     style={cardDimensions(matchImageForm.format)}
                   >
-                    <img src="/nextplay-predictor.png" alt="NextPlay Predictor" className="h-14 w-auto" />
-                    <p className="mt-6 text-xs uppercase tracking-[0.18em] text-gray-500">Match Prediction</p>
-                    <p className="mt-2 text-3xl font-bold text-gray-900">
-                      {matchImageForm.teamA && matchImageForm.teamB
-                        ? `${getTeamNameById(Number(matchImageForm.teamA))} vs ${getTeamNameById(
-                            Number(matchImageForm.teamB)
-                          )}`
-                        : 'Select teams'}
-                    </p>
-                    <p className="mt-8 text-5xl font-black leading-tight text-gray-900">
-                      {socialPrediction.headline}
-                    </p>
-                    <p className="mt-4 text-sm text-gray-600">
-                      {matchImageForm.rationale || socialPrediction.rationale}
-                    </p>
-                    <div className="mt-10 border-t border-gray-200 pt-4 text-sm text-gray-500">
-                      {matchImageForm.matchDate || new Date().toISOString().slice(0, 10)}
-                    </div>
+                    <PredictionCard
+                      teamAName={
+                        matchImageForm.teamA ? getTeamNameById(Number(matchImageForm.teamA)) : ''
+                      }
+                      teamBName={
+                        matchImageForm.teamB ? getTeamNameById(Number(matchImageForm.teamB)) : ''
+                      }
+                      predictionMargin={socialPrediction.margin}
+                      date={matchImageForm.matchDate || new Date().toISOString().slice(0, 10)}
+                      rationale={matchImageForm.rationale || socialPrediction.rationale}
+                    />
                   </div>
                   <button
                     onClick={() =>
