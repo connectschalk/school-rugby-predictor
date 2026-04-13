@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { trackEvent } from '@/lib/trackEvent'
 import * as XLSX from 'xlsx'
+import { toPng } from 'html-to-image'
 import TeamLogoUploader from '@/components/TeamLogoUploader'
 
 const ALLOWED_ADMIN_EMAIL = 'connect.schalk@gmail.com'
@@ -44,6 +45,9 @@ type UsageEvent = {
   session_id: string | null
 }
 
+type SocialFormat = 'square' | 'portrait'
+type StudioTab = 'match' | 'rankings' | 'pva'
+
 export default function AdminPage() {
   const router = useRouter()
 
@@ -73,9 +77,39 @@ export default function AdminPage() {
   const [loadingUsage, setLoadingUsage] = useState(true)
   const [usageMessage, setUsageMessage] = useState('')
 
-  const [activeAdminTab, setActiveAdminTab] = useState<'add-delete' | 'usage' | 'scores'>('add-delete')
+  const [activeAdminTab, setActiveAdminTab] = useState<'add-delete' | 'usage' | 'scores' | 'social'>('add-delete')
   const [activeAddDeleteTab, setActiveAddDeleteTab] = useState<'school' | 'match' | 'bulk' | 'logo'>('school')
   const [showRecentActivity, setShowRecentActivity] = useState(false)
+  const [activeStudioTab, setActiveStudioTab] = useState<StudioTab>('match')
+
+  const [matchImageForm, setMatchImageForm] = useState({
+    teamA: '',
+    teamB: '',
+    matchDate: new Date().toISOString().slice(0, 10),
+    rationale: 'Based on connected results and network strength.',
+    format: 'square' as SocialFormat,
+  })
+
+  const [rankingsImageForm, setRankingsImageForm] = useState({
+    format: 'square' as SocialFormat,
+    limit: 10 as 5 | 10,
+    pool: 'all',
+  })
+
+  const [pvaImageForm, setPvaImageForm] = useState({
+    teamA: '',
+    teamB: '',
+    matchDate: new Date().toISOString().slice(0, 10),
+    predictedMargin: '',
+    actualTeamAScore: '',
+    actualTeamBScore: '',
+    format: 'square' as SocialFormat,
+  })
+
+  const matchCardRef = useRef<HTMLDivElement | null>(null)
+  const rankingsCardRef = useRef<HTMLDivElement | null>(null)
+  const pvaCardRef = useRef<HTMLDivElement | null>(null)
+  const [studioMessage, setStudioMessage] = useState('')
 
   const [form, setForm] = useState({
     match_date: '',
@@ -807,6 +841,258 @@ export default function AdminPage() {
     }
   }
 
+  function getTeamNameById(teamId: number) {
+    return teams.find((team) => team.id === teamId)?.name || `Team ${teamId}`
+  }
+
+  function buildPredictionGraph(sourceMatches: MatchRow[]) {
+    const graph: Record<string, Array<{ to: string; margin: number }>> = {}
+
+    for (const match of sourceMatches) {
+      const a = String(match.team_a_id)
+      const b = String(match.team_b_id)
+      const margin = match.team_a_score - match.team_b_score
+
+      if (!graph[a]) graph[a] = []
+      if (!graph[b]) graph[b] = []
+
+      graph[a].push({ to: b, margin })
+      graph[b].push({ to: a, margin: -margin })
+    }
+
+    return graph
+  }
+
+  function getWeightedPredictionMargin(teamAId: number, teamBId: number) {
+    const direct = matches.find(
+      (m) =>
+        (m.team_a_id === teamAId && m.team_b_id === teamBId) ||
+        (m.team_a_id === teamBId && m.team_b_id === teamAId)
+    )
+
+    if (direct) {
+      const margin =
+        direct.team_a_id === teamAId
+          ? direct.team_a_score - direct.team_b_score
+          : direct.team_b_score - direct.team_a_score
+      return { margin: Math.round(margin), rationale: 'Direct result available from played fixture.' }
+    }
+
+    const graph = buildPredictionGraph(matches)
+    const start = String(teamAId)
+    const target = String(teamBId)
+    const paths: Array<{ margin: number; depth: number }> = []
+    const maxDepth = 5
+
+    function dfs(
+      current: string,
+      depth: number,
+      visited: Set<string>,
+      cumulativeMargin: number
+    ) {
+      if (depth > maxDepth) return
+      if (current === target && depth > 0) {
+        paths.push({ margin: cumulativeMargin, depth })
+        return
+      }
+      const neighbours = graph[current] || []
+      for (const edge of neighbours) {
+        if (visited.has(edge.to)) continue
+        visited.add(edge.to)
+        dfs(edge.to, depth + 1, visited, cumulativeMargin + edge.margin)
+        visited.delete(edge.to)
+      }
+    }
+
+    dfs(start, 0, new Set<string>([start]), 0)
+
+    if (!paths.length) {
+      return {
+        margin: null as number | null,
+        rationale: 'Not enough linked data to produce a prediction yet.',
+      }
+    }
+
+    const weighted = paths.reduce(
+      (acc, path) => {
+        const weight = 1 / path.depth
+        acc.sum += path.margin * weight
+        acc.weight += weight
+        return acc
+      },
+      { sum: 0, weight: 0 }
+    )
+
+    return {
+      margin: Math.round((weighted.sum / weighted.weight) * 10) / 10,
+      rationale: `Model weighted ${paths.length} connected path(s) across current season results.`,
+    }
+  }
+
+  const socialPrediction = useMemo(() => {
+    if (!matchImageForm.teamA || !matchImageForm.teamB) {
+      return {
+        margin: null as number | null,
+        headline: 'Select two teams',
+        rationale: 'Choose Team A and Team B to generate a prediction image.',
+      }
+    }
+    if (matchImageForm.teamA === matchImageForm.teamB) {
+      return {
+        margin: null as number | null,
+        headline: 'Choose different teams',
+        rationale: 'Team A and Team B cannot be the same.',
+      }
+    }
+
+    const teamAId = Number(matchImageForm.teamA)
+    const teamBId = Number(matchImageForm.teamB)
+    const prediction = getWeightedPredictionMargin(teamAId, teamBId)
+    const teamAName = getTeamNameById(teamAId)
+    const teamBName = getTeamNameById(teamBId)
+
+    if (prediction.margin === null) {
+      return {
+        margin: null,
+        headline: 'Prediction unavailable',
+        rationale: prediction.rationale,
+      }
+    }
+
+    if (prediction.margin === 0) {
+      return {
+        margin: 0,
+        headline: `${teamAName} and ${teamBName} to draw`,
+        rationale: prediction.rationale,
+      }
+    }
+
+    const winner = prediction.margin > 0 ? teamAName : teamBName
+    return {
+      margin: prediction.margin,
+      headline: `${winner} by ${Math.abs(prediction.margin)}`,
+      rationale: prediction.rationale,
+    }
+  }, [matchImageForm.teamA, matchImageForm.teamB, matches, teams])
+
+  const poolsWithRankings = useMemo(() => {
+    const filtered = matches.filter((m) => m.season === Number(seasonFilter))
+    const adjacency = new Map<number, Set<number>>()
+
+    for (const match of filtered) {
+      if (!adjacency.has(match.team_a_id)) adjacency.set(match.team_a_id, new Set())
+      if (!adjacency.has(match.team_b_id)) adjacency.set(match.team_b_id, new Set())
+      adjacency.get(match.team_a_id)!.add(match.team_b_id)
+      adjacency.get(match.team_b_id)!.add(match.team_a_id)
+    }
+
+    const visited = new Set<number>()
+    const pools: number[][] = []
+
+    for (const teamId of adjacency.keys()) {
+      if (visited.has(teamId)) continue
+      const stack = [teamId]
+      const pool: number[] = []
+      visited.add(teamId)
+
+      while (stack.length > 0) {
+        const current = stack.pop()!
+        pool.push(current)
+        for (const next of adjacency.get(current) || []) {
+          if (!visited.has(next)) {
+            visited.add(next)
+            stack.push(next)
+          }
+        }
+      }
+      pools.push(pool)
+    }
+
+    return pools
+      .map((poolTeamIds, index) => {
+        const poolSet = new Set(poolTeamIds)
+        const poolMatches = filtered.filter(
+          (m) => poolSet.has(m.team_a_id) && poolSet.has(m.team_b_id)
+        )
+
+        const ratings: Record<number, number> = {}
+        for (const id of poolTeamIds) ratings[id] = 0
+
+        for (let i = 0; i < 800; i++) {
+          for (const match of poolMatches) {
+            const margin = match.team_a_score - match.team_b_score
+            const predicted = ratings[match.team_a_id] - ratings[match.team_b_id]
+            const error = predicted - margin
+            ratings[match.team_a_id] -= 0.02 * error
+            ratings[match.team_b_id] += 0.02 * error
+          }
+
+          const mean =
+            poolTeamIds.reduce((sum, id) => sum + ratings[id], 0) / poolTeamIds.length
+          for (const id of poolTeamIds) ratings[id] -= mean
+        }
+
+        const ranking = poolTeamIds
+          .map((id) => ({ id, name: getTeamNameById(id), score: ratings[id] }))
+          .sort((a, b) => b.score - a.score)
+
+        return {
+          poolId: index + 1,
+          teamCount: poolTeamIds.length,
+          ranking,
+        }
+      })
+      .sort((a, b) => b.teamCount - a.teamCount)
+  }, [matches, seasonFilter, teams])
+
+  const selectedRankingPool = useMemo(() => {
+    if (!poolsWithRankings.length) return null
+    if (rankingsImageForm.pool === 'all') return poolsWithRankings[0]
+    const poolId = Number(rankingsImageForm.pool)
+    return poolsWithRankings.find((pool) => pool.poolId === poolId) || poolsWithRankings[0]
+  }, [poolsWithRankings, rankingsImageForm.pool])
+
+  const rankingListForImage = useMemo(() => {
+    const pool = selectedRankingPool
+    if (!pool) return []
+    return pool.ranking.slice(0, rankingsImageForm.limit)
+  }, [selectedRankingPool, rankingsImageForm.limit])
+
+  const pvaDelta = useMemo(() => {
+    const predicted = Number(pvaImageForm.predictedMargin)
+    const a = Number(pvaImageForm.actualTeamAScore)
+    const b = Number(pvaImageForm.actualTeamBScore)
+    if (Number.isNaN(predicted) || Number.isNaN(a) || Number.isNaN(b)) return null
+    const actualMargin = a - b
+    return Math.abs(predicted - actualMargin)
+  }, [
+    pvaImageForm.predictedMargin,
+    pvaImageForm.actualTeamAScore,
+    pvaImageForm.actualTeamBScore,
+  ])
+
+  async function downloadCardAsPng(ref: HTMLDivElement | null, filename: string) {
+    if (!ref) return
+    try {
+      const dataUrl = await toPng(ref, {
+        cacheBust: true,
+        pixelRatio: 2,
+      })
+      const link = document.createElement('a')
+      link.download = filename
+      link.href = dataUrl
+      link.click()
+      setStudioMessage('Image downloaded.')
+    } catch {
+      setStudioMessage('Could not export image.')
+    }
+  }
+
+  function cardDimensions(format: SocialFormat) {
+    if (format === 'portrait') return { width: 540, height: 675 }
+    return { width: 540, height: 540 }
+  }
+
   const teamOptions = useMemo(() => teams, [teams])
 
   const usageSummary = useMemo(() => {
@@ -893,6 +1179,17 @@ export default function AdminPage() {
             }`}
           >
             Scores
+          </button>
+
+          <button
+            onClick={() => setActiveAdminTab('social')}
+            className={`rounded-xl px-4 py-3 text-sm font-medium ${
+              activeAdminTab === 'social'
+                ? 'bg-black text-white'
+                : 'border border-gray-300 bg-white text-black hover:bg-gray-50'
+            }`}
+          >
+            Social Image Studio
           </button>
         </div>
 
@@ -1348,6 +1645,448 @@ export default function AdminPage() {
               )}
             </section>
           </>
+        )}
+
+        {activeAdminTab === 'social' && (
+          <section className="mt-6 rounded-2xl border border-gray-200 p-6 shadow-sm">
+            <div className="flex flex-col gap-2">
+              <h2 className="text-xl font-semibold">Social Image Studio</h2>
+              <p className="text-sm text-gray-600">
+                Build clean social cards for Facebook and Instagram from your current analytics data.
+              </p>
+            </div>
+
+            <div className="mt-6 flex flex-wrap gap-3">
+              <button
+                onClick={() => setActiveStudioTab('match')}
+                className={`rounded-xl px-4 py-2 text-sm font-medium ${
+                  activeStudioTab === 'match'
+                    ? 'bg-black text-white'
+                    : 'border border-gray-300 bg-white text-black hover:bg-gray-50'
+                }`}
+              >
+                Match Prediction
+              </button>
+              <button
+                onClick={() => setActiveStudioTab('rankings')}
+                className={`rounded-xl px-4 py-2 text-sm font-medium ${
+                  activeStudioTab === 'rankings'
+                    ? 'bg-black text-white'
+                    : 'border border-gray-300 bg-white text-black hover:bg-gray-50'
+                }`}
+              >
+                Top 10 Rankings
+              </button>
+              <button
+                onClick={() => setActiveStudioTab('pva')}
+                className={`rounded-xl px-4 py-2 text-sm font-medium ${
+                  activeStudioTab === 'pva'
+                    ? 'bg-black text-white'
+                    : 'border border-gray-300 bg-white text-black hover:bg-gray-50'
+                }`}
+              >
+                Predicted vs Actual
+              </button>
+            </div>
+
+            {studioMessage && (
+              <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm">
+                {studioMessage}
+              </div>
+            )}
+
+            {activeStudioTab === 'match' && (
+              <div className="mt-6 grid gap-6 lg:grid-cols-2">
+                <div className="space-y-4 rounded-2xl border border-gray-200 p-5">
+                  <h3 className="text-lg font-semibold">Match Prediction Image</h3>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium">Team A</label>
+                    <select
+                      value={matchImageForm.teamA}
+                      onChange={(e) => setMatchImageForm((prev) => ({ ...prev, teamA: e.target.value }))}
+                      className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                    >
+                      <option value="">Choose Team A</option>
+                      {teamOptions.map((team) => (
+                        <option key={team.id} value={team.id}>
+                          {team.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium">Team B</label>
+                    <select
+                      value={matchImageForm.teamB}
+                      onChange={(e) => setMatchImageForm((prev) => ({ ...prev, teamB: e.target.value }))}
+                      className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                    >
+                      <option value="">Choose Team B</option>
+                      {teamOptions.map((team) => (
+                        <option key={team.id} value={team.id}>
+                          {team.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium">Match Date</label>
+                    <input
+                      type="date"
+                      value={matchImageForm.matchDate}
+                      onChange={(e) =>
+                        setMatchImageForm((prev) => ({ ...prev, matchDate: e.target.value }))
+                      }
+                      className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium">Rationale</label>
+                    <textarea
+                      value={matchImageForm.rationale}
+                      onChange={(e) =>
+                        setMatchImageForm((prev) => ({ ...prev, rationale: e.target.value }))
+                      }
+                      rows={3}
+                      className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium">Format</label>
+                    <select
+                      value={matchImageForm.format}
+                      onChange={(e) =>
+                        setMatchImageForm((prev) => ({
+                          ...prev,
+                          format: e.target.value as SocialFormat,
+                        }))
+                      }
+                      className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                    >
+                      <option value="square">Facebook Square (1080x1080)</option>
+                      <option value="portrait">Instagram Portrait (1080x1350)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-4 rounded-2xl border border-gray-200 p-5">
+                  <h3 className="text-lg font-semibold">Live Preview</h3>
+                  <div
+                    ref={matchCardRef}
+                    className="mx-auto rounded-3xl border border-gray-200 bg-white p-10 shadow-sm"
+                    style={cardDimensions(matchImageForm.format)}
+                  >
+                    <img src="/nextplay-predictor.png" alt="NextPlay Predictor" className="h-14 w-auto" />
+                    <p className="mt-6 text-xs uppercase tracking-[0.18em] text-gray-500">Match Prediction</p>
+                    <p className="mt-2 text-3xl font-bold text-gray-900">
+                      {matchImageForm.teamA && matchImageForm.teamB
+                        ? `${getTeamNameById(Number(matchImageForm.teamA))} vs ${getTeamNameById(
+                            Number(matchImageForm.teamB)
+                          )}`
+                        : 'Select teams'}
+                    </p>
+                    <p className="mt-8 text-5xl font-black leading-tight text-gray-900">
+                      {socialPrediction.headline}
+                    </p>
+                    <p className="mt-4 text-sm text-gray-600">
+                      {matchImageForm.rationale || socialPrediction.rationale}
+                    </p>
+                    <div className="mt-10 border-t border-gray-200 pt-4 text-sm text-gray-500">
+                      {matchImageForm.matchDate || new Date().toISOString().slice(0, 10)}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() =>
+                      downloadCardAsPng(
+                        matchCardRef.current,
+                        `match-prediction-${matchImageForm.matchDate || Date.now()}.png`
+                      )
+                    }
+                    className="rounded-xl bg-black px-5 py-3 text-sm text-white hover:opacity-90"
+                  >
+                    Download PNG
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {activeStudioTab === 'rankings' && (
+              <div className="mt-6 grid gap-6 lg:grid-cols-2">
+                <div className="space-y-4 rounded-2xl border border-gray-200 p-5">
+                  <h3 className="text-lg font-semibold">Top Rankings Image</h3>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium">Season</label>
+                    <input
+                      type="number"
+                      value={seasonFilter}
+                      onChange={(e) => setSeasonFilter(e.target.value)}
+                      className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium">Pool</label>
+                    <select
+                      value={rankingsImageForm.pool}
+                      onChange={(e) =>
+                        setRankingsImageForm((prev) => ({ ...prev, pool: e.target.value }))
+                      }
+                      className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                    >
+                      <option value="all">Primary pool</option>
+                      {poolsWithRankings.map((pool) => (
+                        <option key={pool.poolId} value={String(pool.poolId)}>
+                          Pool {pool.poolId} ({pool.teamCount} teams)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium">Show</label>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() =>
+                          setRankingsImageForm((prev) => ({ ...prev, limit: 5 }))
+                        }
+                        className={`rounded-xl px-4 py-2 text-sm font-medium ${
+                          rankingsImageForm.limit === 5
+                            ? 'bg-black text-white'
+                            : 'border border-gray-300 bg-white hover:bg-gray-50'
+                        }`}
+                      >
+                        Top 5
+                      </button>
+                      <button
+                        onClick={() =>
+                          setRankingsImageForm((prev) => ({ ...prev, limit: 10 }))
+                        }
+                        className={`rounded-xl px-4 py-2 text-sm font-medium ${
+                          rankingsImageForm.limit === 10
+                            ? 'bg-black text-white'
+                            : 'border border-gray-300 bg-white hover:bg-gray-50'
+                        }`}
+                      >
+                        Top 10
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium">Format</label>
+                    <select
+                      value={rankingsImageForm.format}
+                      onChange={(e) =>
+                        setRankingsImageForm((prev) => ({
+                          ...prev,
+                          format: e.target.value as SocialFormat,
+                        }))
+                      }
+                      className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                    >
+                      <option value="square">Facebook Square (1080x1080)</option>
+                      <option value="portrait">Instagram Portrait (1080x1350)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-4 rounded-2xl border border-gray-200 p-5">
+                  <h3 className="text-lg font-semibold">Live Preview</h3>
+                  <div
+                    ref={rankingsCardRef}
+                    className="mx-auto rounded-3xl border border-gray-200 bg-white p-10 shadow-sm"
+                    style={cardDimensions(rankingsImageForm.format)}
+                  >
+                    <img src="/nextplay-predictor.png" alt="NextPlay Predictor" className="h-14 w-auto" />
+                    <p className="mt-6 text-xs uppercase tracking-[0.18em] text-gray-500">Network Rankings</p>
+                    <p className="mt-2 text-xl font-semibold text-gray-800">
+                      Season {seasonFilter}
+                      {selectedRankingPool ? ` - Pool ${selectedRankingPool.poolId}` : ''}
+                    </p>
+                    <div className="mt-6 space-y-2">
+                      {rankingListForImage.map((team, index) => (
+                        <div key={team.id} className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2">
+                          <span className="text-sm font-semibold text-gray-500">{index + 1}</span>
+                          <span className="ml-3 flex-1 text-sm font-medium text-gray-900">{team.name}</span>
+                        </div>
+                      ))}
+                      {rankingListForImage.length === 0 && (
+                        <p className="text-sm text-gray-500">No ranking data found for this season.</p>
+                      )}
+                    </div>
+                    <div className="mt-8 border-t border-gray-200 pt-4 text-sm text-gray-500">
+                      Generated {new Date().toLocaleDateString()}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() =>
+                      downloadCardAsPng(
+                        rankingsCardRef.current,
+                        `network-rankings-${seasonFilter}.png`
+                      )
+                    }
+                    className="rounded-xl bg-black px-5 py-3 text-sm text-white hover:opacity-90"
+                  >
+                    Download PNG
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {activeStudioTab === 'pva' && (
+              <div className="mt-6 grid gap-6 lg:grid-cols-2">
+                <div className="space-y-4 rounded-2xl border border-gray-200 p-5">
+                  <h3 className="text-lg font-semibold">Predicted vs Actual Image</h3>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium">Team A</label>
+                    <select
+                      value={pvaImageForm.teamA}
+                      onChange={(e) => setPvaImageForm((prev) => ({ ...prev, teamA: e.target.value }))}
+                      className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                    >
+                      <option value="">Choose Team A</option>
+                      {teamOptions.map((team) => (
+                        <option key={team.id} value={team.id}>
+                          {team.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium">Team B</label>
+                    <select
+                      value={pvaImageForm.teamB}
+                      onChange={(e) => setPvaImageForm((prev) => ({ ...prev, teamB: e.target.value }))}
+                      className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                    >
+                      <option value="">Choose Team B</option>
+                      {teamOptions.map((team) => (
+                        <option key={team.id} value={team.id}>
+                          {team.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium">Match Date</label>
+                    <input
+                      type="date"
+                      value={pvaImageForm.matchDate}
+                      onChange={(e) =>
+                        setPvaImageForm((prev) => ({ ...prev, matchDate: e.target.value }))
+                      }
+                      className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium">Predicted Margin</label>
+                    <input
+                      type="number"
+                      value={pvaImageForm.predictedMargin}
+                      onChange={(e) =>
+                        setPvaImageForm((prev) => ({ ...prev, predictedMargin: e.target.value }))
+                      }
+                      className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                      placeholder="Positive = Team A by, negative = Team B by"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="mb-2 block text-sm font-medium">Actual Team A Score</label>
+                      <input
+                        type="number"
+                        value={pvaImageForm.actualTeamAScore}
+                        onChange={(e) =>
+                          setPvaImageForm((prev) => ({ ...prev, actualTeamAScore: e.target.value }))
+                        }
+                        className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-sm font-medium">Actual Team B Score</label>
+                      <input
+                        type="number"
+                        value={pvaImageForm.actualTeamBScore}
+                        onChange={(e) =>
+                          setPvaImageForm((prev) => ({ ...prev, actualTeamBScore: e.target.value }))
+                        }
+                        className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium">Format</label>
+                    <select
+                      value={pvaImageForm.format}
+                      onChange={(e) =>
+                        setPvaImageForm((prev) => ({
+                          ...prev,
+                          format: e.target.value as SocialFormat,
+                        }))
+                      }
+                      className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                    >
+                      <option value="square">Facebook Square (1080x1080)</option>
+                      <option value="portrait">Instagram Portrait (1080x1350)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-4 rounded-2xl border border-gray-200 p-5">
+                  <h3 className="text-lg font-semibold">Live Preview</h3>
+                  <div
+                    ref={pvaCardRef}
+                    className="mx-auto rounded-3xl border border-gray-200 bg-white p-10 shadow-sm"
+                    style={cardDimensions(pvaImageForm.format)}
+                  >
+                    <img src="/nextplay-predictor.png" alt="NextPlay Predictor" className="h-14 w-auto" />
+                    <p className="mt-6 text-xs uppercase tracking-[0.18em] text-gray-500">Predicted vs Actual</p>
+                    <p className="mt-2 text-3xl font-bold text-gray-900">
+                      {pvaImageForm.teamA && pvaImageForm.teamB
+                        ? `${getTeamNameById(Number(pvaImageForm.teamA))} vs ${getTeamNameById(
+                            Number(pvaImageForm.teamB)
+                          )}`
+                        : 'Select teams'}
+                    </p>
+                    <div className="mt-7 space-y-3 text-sm">
+                      <p className="rounded-lg bg-gray-50 px-3 py-2">
+                        <span className="text-gray-500">Predicted:</span>{' '}
+                        <span className="font-semibold text-gray-900">
+                          {pvaImageForm.predictedMargin === ''
+                            ? '-'
+                            : `${Number(pvaImageForm.predictedMargin) > 0 ? 'Team A' : 'Team B'} by ${Math.abs(
+                                Number(pvaImageForm.predictedMargin)
+                              )}`}
+                        </span>
+                      </p>
+                      <p className="rounded-lg bg-gray-50 px-3 py-2">
+                        <span className="text-gray-500">Actual:</span>{' '}
+                        <span className="font-semibold text-gray-900">
+                          {pvaImageForm.actualTeamAScore === '' || pvaImageForm.actualTeamBScore === ''
+                            ? '-'
+                            : `${pvaImageForm.actualTeamAScore} - ${pvaImageForm.actualTeamBScore}`}
+                        </span>
+                      </p>
+                    </div>
+                    <p className="mt-5 text-sm text-gray-600">
+                      {pvaDelta === null ? 'Prediction difference: -' : `Prediction difference: ${pvaDelta} points`}
+                    </p>
+                    <div className="mt-8 border-t border-gray-200 pt-4 text-sm text-gray-500">
+                      {pvaImageForm.matchDate || new Date().toISOString().slice(0, 10)}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() =>
+                      downloadCardAsPng(
+                        pvaCardRef.current,
+                        `predicted-vs-actual-${pvaImageForm.matchDate || Date.now()}.png`
+                      )
+                    }
+                    className="rounded-xl bg-black px-5 py-3 text-sm text-white hover:opacity-90"
+                  >
+                    Download PNG
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
         )}
       </div>
     </main>

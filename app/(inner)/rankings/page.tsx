@@ -279,6 +279,23 @@ export default function RankingsPage() {
     )
   }, [pools, normalizedSearch])
 
+  const visiblePools = useMemo(() => {
+    return orderedPools
+      .map((pool) => {
+        const filteredRankings = pool.rankings.filter(
+          (team) => team.teamName.trim().toLowerCase() !== 'nudgee'
+        )
+
+        if (filteredRankings.length === 0) return null
+
+        return {
+          ...pool,
+          rankings: filteredRankings,
+        }
+      })
+      .filter(Boolean) as Pool[]
+  }, [orderedPools])
+
   return (
     <main className="min-h-screen bg-white text-black">
       <div className="mx-auto max-w-7xl px-6 py-12">
@@ -347,9 +364,9 @@ export default function RankingsPage() {
           </div>
         )}
 
-        {!loading && !error && orderedPools.length > 0 && (
+        {!loading && !error && visiblePools.length > 0 && (
           <div className="mt-8 space-y-10">
-            {orderedPools.map((pool) => {
+            {visiblePools.map((pool) => {
               const poolHasMatch =
                 normalizedSearch.length > 0 &&
                 pool.rankings.some((team) =>
@@ -383,7 +400,6 @@ export default function RankingsPage() {
                           <th className="p-3 text-left">Rank</th>
                           <th className="p-3 text-left">Team</th>
                           <th className="p-3 text-left">Relative Score</th>
-                          <th className="p-3 text-left">Played</th>
                           <th className="p-3 text-left">W</th>
                           <th className="p-3 text-left">D</th>
                           <th className="p-3 text-left">L</th>
@@ -410,7 +426,6 @@ export default function RankingsPage() {
                               <td className="p-3 font-semibold">
                                 {team.relativeScore > 0 ? `+${team.relativeScore}` : team.relativeScore}
                               </td>
-                              <td className="p-3">{team.matchesPlayed}</td>
                               <td className="p-3">{team.wins}</td>
                               <td className="p-3">{team.draws}</td>
                               <td className="p-3">{team.losses}</td>
