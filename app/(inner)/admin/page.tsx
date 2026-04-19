@@ -9,6 +9,12 @@ import { toPng } from 'html-to-image'
 import TeamLogoUploader from '@/components/TeamLogoUploader'
 import PredictionCard from '@/components/admin/PredictionCard'
 import PredictedVsActualCard from '@/components/admin/PredictedVsActualCard'
+import { recordMatchResultWithPrediction } from '@/lib/admin-match'
+import {
+  backfillPredictionHistoryForSeason,
+  clearPredictionHistoryForSeason,
+} from '@/lib/backfill-prediction-history'
+import { recalculateTeamConsistencyFromPredictionHistory } from '@/lib/team-consistency'
 
 const ALLOWED_ADMIN_EMAIL = 'connect.schalk@gmail.com'
 
@@ -74,6 +80,11 @@ export default function AdminPage() {
 
   const [consistencyMessage, setConsistencyMessage] = useState('')
   const [recalculatingConsistency, setRecalculatingConsistency] = useState(false)
+
+  const [backfillSeason, setBackfillSeason] = useState('2026')
+  const [backfillMessage, setBackfillMessage] = useState('')
+  const [backfilling, setBackfilling] = useState(false)
+  const [clearingHistory, setClearingHistory] = useState(false)
 
   const [usageEvents, setUsageEvents] = useState<UsageEvent[]>([])
   const [loadingUsage, setLoadingUsage] = useState(true)
@@ -249,6 +260,12 @@ export default function AdminPage() {
     loadMatches()
   }, [seasonFilter, authChecked])
 
+  useEffect(() => {
+    if (activeAdminTab === 'scores') {
+      setBackfillSeason(seasonFilter)
+    }
+  }, [activeAdminTab, seasonFilter])
+
   async function handleLogout() {
     await supabase.auth.signOut()
     router.push('/login')
@@ -299,15 +316,20 @@ export default function AdminPage() {
     }
 
     const season = new Date(form.match_date).getFullYear()
+    const savedMatchDate = form.match_date
+    const teamAId = Number(form.team_a_id)
+    const teamBId = Number(form.team_b_id)
+    const teamAScore = Number(form.team_a_score)
+    const teamBScore = Number(form.team_b_score)
 
     const { data: existing } = await supabase
       .from('matches')
       .select('id')
       .eq('match_date', form.match_date)
-      .eq('team_a_id', Number(form.team_a_id))
-      .eq('team_b_id', Number(form.team_b_id))
-      .eq('team_a_score', Number(form.team_a_score))
-      .eq('team_b_score', Number(form.team_b_score))
+      .eq('team_a_id', teamAId)
+      .eq('team_b_id', teamBId)
+      .eq('team_a_score', teamAScore)
+      .eq('team_b_score', teamBScore)
       .limit(1)
 
     if (existing && existing.length > 0) {
@@ -315,19 +337,18 @@ export default function AdminPage() {
       return
     }
 
-    const { error } = await supabase.from('matches').insert([
-      {
-        match_date: form.match_date,
-        season,
-        team_a_id: Number(form.team_a_id),
-        team_b_id: Number(form.team_b_id),
-        team_a_score: Number(form.team_a_score),
-        team_b_score: Number(form.team_b_score),
-      },
-    ])
+    const inserted = await recordMatchResultWithPrediction(supabase, {
+      match_date: form.match_date,
+      season,
+      team_a_id: teamAId,
+      team_b_id: teamBId,
+      team_a_score: teamAScore,
+      team_b_score: teamBScore,
+      teams,
+    })
 
-    if (error) {
-      setMatchMessage(`Could not save result: ${error.message}`)
+    if (!inserted.ok) {
+      setMatchMessage(`Could not save result: ${inserted.error}`)
       return
     }
 
@@ -352,7 +373,7 @@ export default function AdminPage() {
 
     await trackEvent('admin_add_match', 'admin', {
       season,
-      match_date: form.match_date,
+      match_date: savedMatchDate,
       homeTeam: homeName,
       awayTeam: awayName,
     })
@@ -379,6 +400,10 @@ export default function AdminPage() {
 
     setDeleteMessage('Match deleted successfully.')
     await loadMatches()
+
+    if (matchToDelete) {
+      await recalculateTeamConsistencyFromPredictionHistory(supabase, matchToDelete.season, teams)
+    }
 
     await trackEvent('admin_delete_match', 'admin', {
       matchId,
@@ -641,6 +666,8 @@ export default function AdminPage() {
       setUploadRows([])
       await loadMatches()
 
+      // Bulk rows skip prediction_history; call `recordMatchResultWithPrediction` per row later to align with single-add flow.
+
       await trackEvent('admin_bulk_upload', 'admin', {
         season: seasonFilter,
         rowsAdded: validRows.length,
@@ -661,262 +688,100 @@ export default function AdminPage() {
     return Math.floor(diffDays / 7) + 1
   }
 
-  function buildGraphWithoutMatch(matches: MatchRow[], excludedMatchId: number) {
-    const graph = new Map<number, Array<{ to: number; margin: number }>>()
-
-    for (const match of matches) {
-      if (match.id === excludedMatchId) continue
-
-      if (!graph.has(match.team_a_id)) graph.set(match.team_a_id, [])
-      if (!graph.has(match.team_b_id)) graph.set(match.team_b_id, [])
-
-      const margin = match.team_a_score - match.team_b_score
-
-      graph.get(match.team_a_id)!.push({
-        to: match.team_b_id,
-        margin,
-      })
-
-      graph.get(match.team_b_id)!.push({
-        to: match.team_a_id,
-        margin: -margin,
-      })
-    }
-
-    return graph
-  }
-
-  function findPredictionPaths(
-    graph: Map<number, Array<{ to: number; margin: number }>>,
-    start: number,
-    end: number,
-    maxDepth: number
-  ) {
-    const results: Array<{ margin: number; depth: number }> = []
-
-    function dfs(
-      current: number,
-      target: number,
-      depth: number,
-      visited: Set<number>,
-      totalMargin: number
-    ) {
-      if (depth > maxDepth) return
-
-      if (current === target && depth > 0) {
-        results.push({ margin: totalMargin, depth })
-        return
-      }
-
-      const neighbours = graph.get(current) || []
-
-      for (const edge of neighbours) {
-        if (visited.has(edge.to)) continue
-        visited.add(edge.to)
-        dfs(edge.to, target, depth + 1, visited, totalMargin + edge.margin)
-        visited.delete(edge.to)
-      }
-    }
-
-    const visited = new Set<number>([start])
-    dfs(start, end, 0, visited, 0)
-
-    return results
-  }
-
-  function averagePredictionFromPaths(paths: Array<{ margin: number; depth: number }>) {
-    if (!paths.length) return null
-
-    let weightedSum = 0
-    let totalWeight = 0
-
-    for (const path of paths) {
-      const weight = 1 / path.depth
-      weightedSum += path.margin * weight
-      totalWeight += weight
-    }
-
-    if (totalWeight === 0) return null
-
-    return weightedSum / totalWeight
-  }
-
   async function handleRecalculateConsistency() {
     setConsistencyMessage('')
     setRecalculatingConsistency(true)
 
     try {
       const season = Number(seasonFilter)
+      const result = await recalculateTeamConsistencyFromPredictionHistory(supabase, season, teams)
 
-      const { data: rawMatches, error: matchesError } = await supabase
-        .from('matches')
-        .select(`
-          id,
-          season,
-          match_date,
-          team_a_id,
-          team_b_id,
-          team_a_score,
-          team_b_score,
-          team_a:teams!matches_team_a_id_fkey(name),
-          team_b:teams!matches_team_b_id_fkey(name)
-        `)
-        .eq('season', season)
-        .order('match_date', { ascending: true })
-
-      if (matchesError) {
-        setConsistencyMessage(`Could not load matches: ${matchesError.message}`)
-        setRecalculatingConsistency(false)
-        return
-      }
-
-      const matchesForSeason: MatchRow[] = (rawMatches || []).map((m: any) => ({
-        id: m.id,
-        season: m.season,
-        match_date: m.match_date,
-        team_a_id: m.team_a_id,
-        team_b_id: m.team_b_id,
-        team_a_score: m.team_a_score,
-        team_b_score: m.team_b_score,
-        team_a_name: m.team_a.name,
-        team_b_name: m.team_b.name,
-      }))
-
-      if (matchesForSeason.length === 0) {
-        setConsistencyMessage('No matches found for this season.')
-        setRecalculatingConsistency(false)
-        return
-      }
-
-      const latestWeek = Math.max(...matchesForSeason.map((m) => getWeekNumberInSeason(m.match_date)))
-      const fullSeasonMode = latestWeek >= 5
-      const maxDepth = fullSeasonMode ? 3 : 2
-
-      const teamStats = new Map<
-        number,
-        {
-          prediction_error: number
-          matches_evaluated: number
-        }
-      >()
-
-      for (const team of teams) {
-        teamStats.set(team.id, {
-          prediction_error: 0,
-          matches_evaluated: 0,
-        })
-      }
-
-      for (const match of matchesForSeason) {
-        const graph = buildGraphWithoutMatch(matchesForSeason, match.id)
-        const paths = findPredictionPaths(
-          graph,
-          match.team_a_id,
-          match.team_b_id,
-          maxDepth
-        )
-
-        const prediction = averagePredictionFromPaths(paths)
-        if (prediction === null) continue
-
-        const actualMargin = match.team_a_score - match.team_b_score
-        const error = Math.abs(actualMargin - prediction)
-
-        const teamAStats = teamStats.get(match.team_a_id)
-        const teamBStats = teamStats.get(match.team_b_id)
-
-        if (teamAStats) {
-          teamAStats.prediction_error += error
-          teamAStats.matches_evaluated += 1
-        }
-
-        if (teamBStats) {
-          teamBStats.prediction_error += error
-          teamBStats.matches_evaluated += 1
-        }
-      }
-
-      const rowsToUpsert = teams.map((team) => {
-        const stats = teamStats.get(team.id) || {
-          prediction_error: 0,
-          matches_evaluated: 0,
-        }
-
-        const avgError =
-          stats.matches_evaluated > 0
-            ? stats.prediction_error / stats.matches_evaluated
-            : 999
-
-        const consistencyScore =
-          stats.matches_evaluated > 0
-            ? Math.max(0, Math.min(1, 1 - avgError / 30))
-            : 0
-
-        const sampleConfidence = fullSeasonMode
-          ? 1
-          : Math.min(stats.matches_evaluated / 5, 1)
-
-        const adjustedConsistency = consistencyScore * sampleConfidence
-
-        let anchorStatus = 'provisional'
-
-        if (fullSeasonMode) {
-          if (stats.matches_evaluated >= 5 && adjustedConsistency >= 0.85) {
-            anchorStatus = 'trusted_anchor'
-          } else if (stats.matches_evaluated >= 3 && adjustedConsistency >= 0.7) {
-            anchorStatus = 'usable_reference'
-          } else if (stats.matches_evaluated >= 2) {
-            anchorStatus = 'unstable'
-          } else {
-            anchorStatus = 'provisional'
-          }
-        } else {
-          if (stats.matches_evaluated >= 3 && adjustedConsistency >= 0.8) {
-            anchorStatus = 'emerging'
-          } else {
-            anchorStatus = 'provisional'
-          }
-        }
-
-        return {
-          team_id: team.id,
-          season,
-          prediction_error: Math.round(stats.prediction_error * 100) / 100,
-          matches_evaluated: stats.matches_evaluated,
-          consistency_score: Math.round(consistencyScore * 1000) / 1000,
-          sample_confidence: Math.round(sampleConfidence * 1000) / 1000,
-          adjusted_consistency: Math.round(adjustedConsistency * 1000) / 1000,
-          is_anchor: anchorStatus === 'trusted_anchor' || anchorStatus === 'usable_reference',
-          anchor_status: anchorStatus,
-          updated_at: new Date().toISOString(),
-        }
-      })
-
-      const { error: upsertError } = await supabase
-        .from('team_consistency')
-        .upsert(rowsToUpsert, {
-          onConflict: 'team_id,season',
-        })
-
-      if (upsertError) {
-        setConsistencyMessage(`Could not save consistency results: ${upsertError.message}`)
-        setRecalculatingConsistency(false)
+      if (!result.ok) {
+        setConsistencyMessage(`Could not recalculate: ${result.error}`)
         return
       }
 
       setConsistencyMessage(
-        fullSeasonMode
-          ? 'Consistency recalculated using full-season mode.'
-          : 'Consistency recalculated using early-season cautious mode.'
+        'Consistency recalculated from prediction history (predicted vs actual margins, avg error / 20).'
       )
 
       await trackEvent('admin_recalculate_consistency', 'admin', {
         season,
-        mode: fullSeasonMode ? 'full-season' : 'early-season',
+        source: 'prediction_history',
       })
       await loadUsageEvents()
     } finally {
       setRecalculatingConsistency(false)
+    }
+  }
+
+  async function handleBackfillPredictionHistory(replaceExisting: boolean) {
+    setBackfillMessage('')
+    setBackfilling(true)
+    try {
+      const season = Number(backfillSeason)
+      if (Number.isNaN(season)) {
+        setBackfillMessage('Invalid season.')
+        return
+      }
+      const result = await backfillPredictionHistoryForSeason(supabase, {
+        season,
+        teams,
+        replaceExisting,
+      })
+      if (!result.ok) {
+        setBackfillMessage(`Error: ${result.error}`)
+        return
+      }
+      setBackfillMessage(
+        `Backfill complete. Processed ${result.processed} matches. Inserted ${result.inserted}, skipped ${result.skipped}, no usable prediction ${result.noPrediction}. Replaced existing ${result.replaced}. Team consistency recalculated for season ${season}.`
+      )
+      await trackEvent('admin_backfill_prediction_history', 'admin', {
+        season,
+        processed: result.processed,
+        inserted: result.inserted,
+        skipped: result.skipped,
+        noPrediction: result.noPrediction,
+        replaced: result.replaced,
+        replaceExisting,
+      })
+      await loadUsageEvents()
+    } finally {
+      setBackfilling(false)
+    }
+  }
+
+  async function handleClearPredictionHistoryForSeason() {
+    const season = Number(backfillSeason)
+    if (Number.isNaN(season)) {
+      setBackfillMessage('Invalid season.')
+      return
+    }
+    const confirmed = window.confirm(
+      `Delete all prediction_history rows for season ${season}? This cannot be undone.`
+    )
+    if (!confirmed) return
+
+    setBackfillMessage('')
+    setClearingHistory(true)
+    try {
+      const cleared = await clearPredictionHistoryForSeason(supabase, season)
+      if (!cleared.ok) {
+        setBackfillMessage(`Clear failed: ${cleared.error}`)
+        return
+      }
+      const recalc = await recalculateTeamConsistencyFromPredictionHistory(supabase, season, teams)
+      if (!recalc.ok) {
+        setBackfillMessage(`History cleared. Consistency recalc failed: ${recalc.error}`)
+        return
+      }
+      setBackfillMessage(
+        `Cleared prediction_history for season ${season} and recalculated team_consistency.`
+      )
+      await trackEvent('admin_clear_prediction_history', 'admin', { season })
+      await loadUsageEvents()
+    } finally {
+      setClearingHistory(false)
     }
   }
 
@@ -954,7 +819,7 @@ export default function AdminPage() {
         direct.team_a_id === teamAId
           ? direct.team_a_score - direct.team_b_score
           : direct.team_b_score - direct.team_a_score
-      return { margin: Math.round(margin), rationale: 'Direct result available from played fixture.' }
+      return { margin, rationale: 'Direct result available from played fixture.' }
     }
 
     const graph = buildPredictionGraph(matches)
@@ -1003,7 +868,7 @@ export default function AdminPage() {
     )
 
     return {
-      margin: Math.round((weighted.sum / weighted.weight) * 10) / 10,
+      margin: weighted.sum / weighted.weight,
       rationale: `Model weighted ${paths.length} connected path(s) across current season results.`,
     }
   }
@@ -1038,9 +903,9 @@ export default function AdminPage() {
       }
     }
 
-    if (prediction.margin === 0) {
+    if (Math.round(prediction.margin) === 0) {
       return {
-        margin: 0,
+        margin: prediction.margin,
         headline: `${teamAName} and ${teamBName} to draw`,
         rationale: prediction.rationale,
       }
@@ -1049,7 +914,7 @@ export default function AdminPage() {
     const winner = prediction.margin > 0 ? teamAName : teamBName
     return {
       margin: prediction.margin,
-      headline: `${winner} by ${Math.abs(prediction.margin)}`,
+      headline: `${winner} by ${Math.round(Math.abs(prediction.margin))}`,
       rationale: prediction.rationale,
     }
   }, [matchImageForm.teamA, matchImageForm.teamB, matches, teams])
@@ -1716,9 +1581,63 @@ export default function AdminPage() {
         {activeAdminTab === 'scores' && (
           <>
             <section className="mt-6 rounded-2xl border border-gray-200 p-6 shadow-sm">
+              <h2 className="text-xl font-semibold">Backfill prediction history</h2>
+              <p className="mt-2 text-sm text-gray-600">
+                One-time utility: for each match, simulates the model using only results from <strong>strictly earlier</strong>{' '}
+                match dates (same-day fixtures are excluded from the prior set). Inserts <code className="text-xs">prediction_history</code>{' '}
+                with <code className="text-xs">match_id</code>, then recalculates team consistency. Skip leaves existing rows;
+                replace deletes and re-inserts per match.
+              </p>
+
+              <div className="mt-4 flex max-w-xs flex-col gap-2">
+                <label className="text-sm font-medium">Season</label>
+                <input
+                  type="number"
+                  value={backfillSeason}
+                  onChange={(e) => setBackfillSeason(e.target.value)}
+                  className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                />
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() => handleBackfillPredictionHistory(false)}
+                  disabled={backfilling || clearingHistory || teams.length === 0}
+                  className="rounded-xl bg-black px-5 py-3 text-white hover:opacity-90 disabled:opacity-50"
+                >
+                  {backfilling ? 'Running…' : 'Backfill prediction history'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleBackfillPredictionHistory(true)}
+                  disabled={backfilling || clearingHistory || teams.length === 0}
+                  className="rounded-xl border border-gray-300 bg-white px-5 py-3 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {backfilling ? 'Running…' : 'Backfill (replace existing)'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClearPredictionHistoryForSeason}
+                  disabled={backfilling || clearingHistory}
+                  className="rounded-xl border border-red-300 bg-white px-5 py-3 text-red-800 hover:bg-red-50 disabled:opacity-50"
+                >
+                  {clearingHistory ? 'Clearing…' : 'Clear season history first'}
+                </button>
+              </div>
+
+              {backfillMessage && (
+                <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm whitespace-pre-wrap">
+                  {backfillMessage}
+                </div>
+              )}
+            </section>
+
+            <section className="mt-6 rounded-2xl border border-gray-200 p-6 shadow-sm">
               <h2 className="text-xl font-semibold">Recalculate Team Consistency</h2>
               <p className="mt-2 text-sm text-gray-600">
-                Weeks 1-4 use cautious mode. From week 5 onward, all season data is used and anchor teams update automatically.
+                Rebuilds <code className="text-xs">team_consistency</code> from <code className="text-xs">prediction_history</code>{' '}
+                (avg prediction error vs actual, sample size, anchors).
               </p>
 
               <button
@@ -2265,9 +2184,12 @@ export default function AdminPage() {
                       predictedText={
                         pvaImageForm.predictedMargin === ''
                           ? '-'
-                          : `${Number(pvaImageForm.predictedMargin) > 0 ? 'Team A' : 'Team B'} by ${Math.abs(
-                              Number(pvaImageForm.predictedMargin)
-                            )}`
+                          : (() => {
+                              const pm = Number(pvaImageForm.predictedMargin)
+                              const r = Math.round(pm)
+                              if (r === 0) return 'Draw'
+                              return `${pm > 0 ? 'Team A' : 'Team B'} by ${Math.abs(r)}`
+                            })()
                       }
                       actualText={
                         pvaImageForm.actualTeamAScore === '' || pvaImageForm.actualTeamBScore === ''
@@ -2277,7 +2199,7 @@ export default function AdminPage() {
                       differenceText={
                         pvaDelta === null
                           ? 'Prediction difference: -'
-                          : `Prediction difference: ${pvaDelta} points`
+                          : `Prediction difference: ${Math.round(pvaDelta)} points`
                       }
                       date={pvaImageForm.matchDate || new Date().toISOString().slice(0, 10)}
                     />

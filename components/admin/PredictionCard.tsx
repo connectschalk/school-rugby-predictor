@@ -99,8 +99,13 @@ export default function PredictionCard({
   date,
   rationale = 'Based on connected results and network strength.',
 }: PredictionCardProps) {
+  const roundedMargin =
+    predictionMargin === null || predictionMargin === undefined
+      ? null
+      : Math.round(predictionMargin)
+
   const winnerName =
-    predictionMargin === null || predictionMargin === 0
+    predictionMargin === null || roundedMargin === 0
       ? ''
       : predictionMargin > 0
         ? teamAName
@@ -109,16 +114,16 @@ export default function PredictionCard({
   const headline =
     predictionMargin === null
       ? 'Prediction unavailable'
-      : predictionMargin === 0
+      : roundedMargin === 0
         ? 'Prediction Draw'
         : `Prediction ${winnerName} by`
 
   const marginText =
     predictionMargin === null
       ? '-'
-      : predictionMargin === 0
+      : roundedMargin === 0
         ? 'DRAW'
-        : `${Math.abs(predictionMargin)}`
+        : `${Math.round(Math.abs(predictionMargin))}`
 
   return (
     <div className="mx-auto flex w-full max-w-[500px] flex-col items-center rounded-2xl border border-gray-200 bg-white px-8 py-10 text-center shadow-sm">

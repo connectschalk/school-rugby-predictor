@@ -11,7 +11,9 @@ type Team = {
 type ConsistencyRow = {
   team_id: number
   season: number
-  prediction_error: number
+  prediction_error?: number | null
+  total_prediction_error?: number | null
+  avg_prediction_error?: number | null
   matches_evaluated: number
   consistency_score: number
   sample_confidence: number
@@ -52,7 +54,7 @@ export default function ConsistencyPage() {
       const { data, error: consistencyError } = await supabase
         .from('team_consistency')
         .select(
-          'team_id, season, prediction_error, matches_evaluated, consistency_score, sample_confidence, adjusted_consistency, anchor_status'
+          'team_id, season, prediction_error, total_prediction_error, avg_prediction_error, matches_evaluated, consistency_score, sample_confidence, adjusted_consistency, anchor_status'
         )
         .eq('season', Number(season))
 
@@ -75,9 +77,11 @@ export default function ConsistencyPage() {
     return rows
       .map((row) => {
         const averageError =
-          row.matches_evaluated > 0
-            ? row.prediction_error / row.matches_evaluated
-            : row.prediction_error
+          row.avg_prediction_error != null && row.avg_prediction_error !== undefined
+            ? row.avg_prediction_error
+            : row.matches_evaluated > 0
+              ? (row.total_prediction_error ?? row.prediction_error ?? 0) / row.matches_evaluated
+              : row.total_prediction_error ?? row.prediction_error ?? 0
 
         return {
           ...row,
@@ -126,8 +130,8 @@ export default function ConsistencyPage() {
 
         {!loading && !error && topTeams.length === 0 && (
           <div className="mt-8 rounded-xl border border-gray-200 bg-gray-50 p-6">
-            No consistency data found for this season. Run{' '}
-            <span className="font-semibold">Recalculate consistency</span> in Admin first.
+            No consistency data found for this season. Add results via Admin (single match add) or run{' '}
+            <span className="font-semibold">Recalculate consistency</span> after prediction history exists.
           </div>
         )}
 

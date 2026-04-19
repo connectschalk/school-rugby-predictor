@@ -6,19 +6,19 @@ import { supabase } from '@/lib/supabase'
 type Team = { id: number; name: string }
 
 type Match = {
-  id: number
-  season: number
-  match_date: string
-  team_a_id: number
-  team_b_id: number
-  team_a_score: number
-  team_b_score: number
+    id: number
+    season: number
+    match_date: string
+    team_a_id: number
+    team_b_id: number
+    team_a_score: number
+    team_b_score: number
 }
 
 type PositionedNode = {
   id: number
-  name: string
-  margin: number
+    name: string
+    margin: number
   depth: number
   row: number
   x: number
@@ -45,83 +45,83 @@ const NODE_RADIUS = 9
 const MAX_LEVEL = 3
 
 function slugifyTeamName(name: string) {
-  return name
-    .toLowerCase()
-    .trim()
-    .replace(/&/g, 'and')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
+    return name
+        .toLowerCase()
+        .trim()
+        .replace(/&/g, 'and')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
 }
 
 function getBaselineLayoutData(matches: Match[], baselineTeamId: number, maxDepth: number) {
-  const adjacency: Record<
-    number,
-    Array<{ opponentId: number; marginFromCurrent: number; matchId: number }>
-  > = {}
+    const adjacency: Record<
+        number,
+        Array<{ opponentId: number; marginFromCurrent: number; matchId: number }>
+    > = {}
 
-  for (const match of matches) {
-    if (!adjacency[match.team_a_id]) adjacency[match.team_a_id] = []
-    if (!adjacency[match.team_b_id]) adjacency[match.team_b_id] = []
+    for (const match of matches) {
+        if (!adjacency[match.team_a_id]) adjacency[match.team_a_id] = []
+        if (!adjacency[match.team_b_id]) adjacency[match.team_b_id] = []
 
-    const margin = match.team_a_score - match.team_b_score
-    adjacency[match.team_a_id].push({
-      opponentId: match.team_b_id,
-      marginFromCurrent: -margin,
-      matchId: match.id,
-    })
-    adjacency[match.team_b_id].push({
-      opponentId: match.team_a_id,
-      marginFromCurrent: margin,
-      matchId: match.id,
-    })
-  }
+        const margin = match.team_a_score - match.team_b_score
+        adjacency[match.team_a_id].push({
+            opponentId: match.team_b_id,
+            marginFromCurrent: -margin,
+            matchId: match.id,
+        })
+        adjacency[match.team_b_id].push({
+            opponentId: match.team_a_id,
+            marginFromCurrent: margin,
+            matchId: match.id,
+        })
+    }
 
-  const directOpponents = new Set<number>()
-  for (const match of matches) {
+    const directOpponents = new Set<number>()
+    for (const match of matches) {
     if (match.team_a_id === baselineTeamId) directOpponents.add(match.team_b_id)
     if (match.team_b_id === baselineTeamId) directOpponents.add(match.team_a_id)
-  }
+    }
 
-  const visited = new Set<number>([baselineTeamId])
-  const depthMap = new Map<number, number>()
-  const marginMap = new Map<number, number>()
-  const parentMap = new Map<number, number | null>()
-  const matchMap = new Map<number, number | null>()
+    const visited = new Set<number>([baselineTeamId])
+    const depthMap = new Map<number, number>()
+    const marginMap = new Map<number, number>()
+    const parentMap = new Map<number, number | null>()
+    const matchMap = new Map<number, number | null>()
 
-  depthMap.set(baselineTeamId, 0)
-  marginMap.set(baselineTeamId, 0)
-  parentMap.set(baselineTeamId, null)
-  matchMap.set(baselineTeamId, null)
+    depthMap.set(baselineTeamId, 0)
+    marginMap.set(baselineTeamId, 0)
+    parentMap.set(baselineTeamId, null)
+    matchMap.set(baselineTeamId, null)
 
-  const queue: Array<{ teamId: number; depth: number; cumulativeMargin: number }> = [
-    { teamId: baselineTeamId, depth: 0, cumulativeMargin: 0 },
-  ]
+    const queue: Array<{ teamId: number; depth: number; cumulativeMargin: number }> = [
+        { teamId: baselineTeamId, depth: 0, cumulativeMargin: 0 },
+    ]
 
-  while (queue.length > 0) {
-    const current = queue.shift()!
-    if (current.depth >= maxDepth) continue
-    const neighbours = adjacency[current.teamId] || []
+    while (queue.length > 0) {
+        const current = queue.shift()!
+        if (current.depth >= maxDepth) continue
+        const neighbours = adjacency[current.teamId] || []
 
-    for (const neighbour of neighbours) {
+        for (const neighbour of neighbours) {
       if (visited.has(neighbour.opponentId)) continue
-      visited.add(neighbour.opponentId)
+                visited.add(neighbour.opponentId)
 
-      let nextDepth = current.depth + 1
+                let nextDepth = current.depth + 1
       if (directOpponents.has(neighbour.opponentId)) nextDepth = 1
 
-      const nextMargin = current.cumulativeMargin + neighbour.marginFromCurrent
-      depthMap.set(neighbour.opponentId, nextDepth)
-      marginMap.set(neighbour.opponentId, nextMargin)
-      parentMap.set(neighbour.opponentId, current.teamId)
-      matchMap.set(neighbour.opponentId, neighbour.matchId)
+                const nextMargin = current.cumulativeMargin + neighbour.marginFromCurrent
+                depthMap.set(neighbour.opponentId, nextDepth)
+                marginMap.set(neighbour.opponentId, nextMargin)
+                parentMap.set(neighbour.opponentId, current.teamId)
+                matchMap.set(neighbour.opponentId, neighbour.matchId)
 
-      queue.push({
-        teamId: neighbour.opponentId,
-        depth: nextDepth,
-        cumulativeMargin: nextMargin,
-      })
-    }
-  }
+                queue.push({
+                    teamId: neighbour.opponentId,
+                    depth: nextDepth,
+                    cumulativeMargin: nextMargin,
+                })
+            }
+        }
 
   return { reachableTeamIds: visited, depthMap, marginMap, parentMap, matchMap }
 }
@@ -143,10 +143,10 @@ function pathToBaseline(teamId: number, parentMap: Map<number, number | null>) {
 }
 
 export default function NetworkPage() {
-  const [teams, setTeams] = useState<Team[]>([])
-  const [matches, setMatches] = useState<Match[]>([])
-  const [season, setSeason] = useState('2026')
-  const [baselineTeam, setBaselineTeam] = useState('')
+    const [teams, setTeams] = useState<Team[]>([])
+    const [matches, setMatches] = useState<Match[]>([])
+    const [season, setSeason] = useState('2026')
+    const [baselineTeam, setBaselineTeam] = useState('')
   const [viewLevel, setViewLevel] = useState(3)
   const [searchTerm, setSearchTerm] = useState('')
   const [compareMode, setCompareMode] = useState(false)
@@ -154,51 +154,51 @@ export default function NetworkPage() {
   const [compareB, setCompareB] = useState('')
   const [activeTeamId, setActiveTeamId] = useState<number | null>(null)
   const [logoStatus, setLogoStatus] = useState<Record<string, 'loaded' | 'failed'>>({})
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+    const [loading, setLoading] = useState(true)
+    const [error, setError] = useState('')
 
-  useEffect(() => {
-    async function loadTeams() {
+    useEffect(() => {
+        async function loadTeams() {
       const { data, error: teamsError } = await supabase
-        .from('teams')
-        .select('id, name')
-        .order('name')
+                .from('teams')
+                .select('id, name')
+                .order('name')
 
       if (teamsError) {
         setError(teamsError.message)
-        return
-      }
+                return
+            }
 
-      const loadedTeams = (data as Team[]) || []
-      setTeams(loadedTeams)
+            const loadedTeams = (data as Team[]) || []
+            setTeams(loadedTeams)
       const grey = loadedTeams.find((team) => team.name.trim().toLowerCase() === 'grey college')
       if (grey) setBaselineTeam(String(grey.id))
-    }
+        }
 
-    loadTeams()
-  }, [])
+        loadTeams()
+    }, [])
 
-  useEffect(() => {
-    async function loadMatches() {
-      setLoading(true)
-      setError('')
+    useEffect(() => {
+        async function loadMatches() {
+            setLoading(true)
+            setError('')
       const { data, error: matchesError } = await supabase
-        .from('matches')
-        .select('id, season, match_date, team_a_id, team_b_id, team_a_score, team_b_score')
-        .eq('season', Number(season))
-        .order('match_date', { ascending: true })
+                .from('matches')
+                .select('id, season, match_date, team_a_id, team_b_id, team_a_score, team_b_score')
+                .eq('season', Number(season))
+                .order('match_date', { ascending: true })
 
       if (matchesError) {
         setError(matchesError.message)
-        setMatches([])
-      } else {
-        setMatches((data as Match[]) || [])
-      }
-      setLoading(false)
-    }
+                setMatches([])
+            } else {
+                setMatches((data as Match[]) || [])
+            }
+            setLoading(false)
+        }
 
-    loadMatches()
-  }, [season])
+        loadMatches()
+    }, [season])
 
   useEffect(() => {
     setViewLevel(3)
@@ -207,26 +207,26 @@ export default function NetworkPage() {
 
   const teamById = useMemo(() => new Map(teams.map((team) => [team.id, team])), [teams])
 
-  const baselineReachability = useMemo(() => {
-    if (!baselineTeam) {
-      return {
-        reachableTeamIds: new Set<number>(),
-        depthMap: new Map<number, number>(),
-        marginMap: new Map<number, number>(),
-        parentMap: new Map<number, number | null>(),
-        matchMap: new Map<number, number | null>(),
-      }
-    }
+    const baselineReachability = useMemo(() => {
+        if (!baselineTeam) {
+            return {
+                reachableTeamIds: new Set<number>(),
+                depthMap: new Map<number, number>(),
+                marginMap: new Map<number, number>(),
+                parentMap: new Map<number, number | null>(),
+                matchMap: new Map<number, number | null>(),
+            }
+        }
     return getBaselineLayoutData(matches, Number(baselineTeam), viewLevel)
   }, [matches, baselineTeam, viewLevel])
 
   const reachableMatches = useMemo(() => {
     if (!baselineTeam) return []
-    return matches.filter(
-      (m) =>
-        baselineReachability.reachableTeamIds.has(m.team_a_id) &&
-        baselineReachability.reachableTeamIds.has(m.team_b_id)
-    )
+        return matches.filter(
+            (m) =>
+                baselineReachability.reachableTeamIds.has(m.team_a_id) &&
+                baselineReachability.reachableTeamIds.has(m.team_b_id)
+        )
   }, [matches, baselineReachability, baselineTeam])
 
   const teamIdsInScope = useMemo(() => {
@@ -313,7 +313,7 @@ export default function NetworkPage() {
 
     const raw = ids.map((id) => {
       const name = teamById.get(id)?.name || `Team ${id}`
-      return {
+            return {
         margin: baselineReachability.marginMap.get(id) ?? 0,
         pinned: PINNED_TEAM_NAMES.has(name) || String(id) === baselineTeam,
         logoSrc: `/team-logos/${slugifyTeamName(name)}.png`,
@@ -340,7 +340,7 @@ export default function NetworkPage() {
 
     const raw = ids.map((id) => {
       const name = teamById.get(id)?.name || `Team ${id}`
-      return {
+            return {
         id,
         name,
         margin: baselineReachability.marginMap.get(id) ?? 0,
@@ -466,38 +466,38 @@ export default function NetworkPage() {
 
   const canExpand = viewLevel < MAX_LEVEL
 
-  return (
-    <main className="min-h-screen bg-white text-black">
-      <div className="mx-auto max-w-7xl px-6 py-12">
+    return (
+        <main className="min-h-screen bg-white text-black">
+            <div className="mx-auto max-w-7xl px-6 py-12">
         <h1 className="text-3xl font-bold">Visual Graph Dashboard</h1>
-        <p className="mt-2 text-gray-600">
+                <p className="mt-2 text-gray-600">
           Fixed-axis margin view with structured depth rows for baseline analysis.
-        </p>
+                </p>
 
-        <div className="mt-6 grid gap-4 md:grid-cols-3">
-          <div>
-            <label className="mb-2 block text-sm font-medium">Season</label>
-            <input
-              type="number"
-              value={season}
-              onChange={(e) => setSeason(e.target.value)}
-              className="w-full rounded-xl border border-gray-300 px-4 py-3"
-            />
-          </div>
-          <div>
-            <label className="mb-2 block text-sm font-medium">Baseline Team</label>
-            <select
-              value={baselineTeam}
-              onChange={(e) => setBaselineTeam(e.target.value)}
-              className="w-full rounded-xl border border-gray-300 px-4 py-3"
-            >
-              <option value="">Choose Baseline Team</option>
-              {teams.map((team) => (
-                <option key={team.id} value={team.id}>
-                  {team.name}
-                </option>
-              ))}
-            </select>
+                <div className="mt-6 grid gap-4 md:grid-cols-3">
+                    <div>
+                        <label className="mb-2 block text-sm font-medium">Season</label>
+                        <input
+                            type="number"
+                            value={season}
+                            onChange={(e) => setSeason(e.target.value)}
+                            className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                        />
+                    </div>
+                    <div>
+                        <label className="mb-2 block text-sm font-medium">Baseline Team</label>
+                        <select
+                            value={baselineTeam}
+                            onChange={(e) => setBaselineTeam(e.target.value)}
+                            className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                        >
+                            <option value="">Choose Baseline Team</option>
+                            {teams.map((team) => (
+                                <option key={team.id} value={team.id}>
+                                    {team.name}
+                                </option>
+                            ))}
+                        </select>
           </div>
           <div>
             <label className="mb-2 block text-sm font-medium">Graph Level</label>
@@ -518,17 +518,17 @@ export default function NetworkPage() {
               ))}
             </div>
           </div>
-        </div>
+                    </div>
 
         <div className="mt-4 grid gap-4 md:grid-cols-4">
-          <div>
+                    <div>
             <label className="mb-2 block text-sm font-medium">Search Team</label>
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Type a school name"
-              className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                            className="w-full rounded-xl border border-gray-300 px-4 py-3"
             />
           </div>
           <div className="flex items-end">
@@ -572,9 +572,9 @@ export default function NetworkPage() {
                   {team.name}
                 </option>
               ))}
-            </select>
-          </div>
-        </div>
+                        </select>
+                    </div>
+                </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button
@@ -603,29 +603,29 @@ export default function NetworkPage() {
         {!loading && !error && !baselineTeam && (
           <div className="mt-8 rounded-xl border border-gray-200 bg-gray-50 p-6">
             Choose a baseline team to start the dashboard.
-          </div>
-        )}
+                    </div>
+                )}
         {!loading && !error && baselineTeam && positionedNodes.length === 0 && (
-          <div className="mt-8 rounded-xl border border-gray-200 bg-gray-50 p-6">
-            No connected matches found for this season.
-          </div>
-        )}
+                    <div className="mt-8 rounded-xl border border-gray-200 bg-gray-50 p-6">
+                        No connected matches found for this season.
+                    </div>
+                )}
 
         {!loading && !error && baselineTeam && positionedNodes.length > 0 && (
-          <>
-            <div className="mt-8 rounded-2xl border border-gray-200 p-4 shadow-sm">
+                    <>
+                        <div className="mt-8 rounded-2xl border border-gray-200 p-4 shadow-sm">
               <div className="mb-4 flex flex-wrap items-center gap-5 text-sm text-gray-700">
                 <div><strong>Visible teams:</strong> {positionedNodes.length}</div>
                 <div><strong>Visible links:</strong> {visibleMatches.length}</div>
-                <div className="flex items-center gap-2">
-                  <span className="inline-block h-3 w-3 rounded-full bg-[#111827]" />
+                                <div className="flex items-center gap-2">
+                                    <span className="inline-block h-3 w-3 rounded-full bg-[#111827]" />
                   <span>Baseline</span>
-                </div>
-                <div className="flex items-center gap-2">
+                                </div>
+                                <div className="flex items-center gap-2">
                   <span className="inline-block h-3 w-3 rounded-full bg-[#0f766e]" />
                   <span>Pinned anchors</span>
-                </div>
-              </div>
+                                </div>
+                            </div>
 
               <div className="overflow-auto rounded-xl border border-gray-200 bg-white">
                 <svg width={CHART_WIDTH} height={CHART_HEIGHT}>
@@ -763,16 +763,16 @@ export default function NetworkPage() {
                     strokeWidth={1}
                   />
                 </svg>
-              </div>
-            </div>
+                            </div>
+                        </div>
 
-            <div className="mt-6 rounded-2xl border border-gray-200 p-6 shadow-sm">
+                        <div className="mt-6 rounded-2xl border border-gray-200 p-6 shadow-sm">
               <h2 className="text-xl font-semibold">Focused Team</h2>
               <p className="mt-2 text-gray-700">{selectedInfo}</p>
+                        </div>
+                    </>
+                )}
             </div>
-          </>
-        )}
-      </div>
-    </main>
-  )
+        </main>
+    )
 }
