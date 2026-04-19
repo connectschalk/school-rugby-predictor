@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
-/* Tailwind v4: explicit content paths so utilities are generated for App Router + shared code */
-@source "./**/*.{js,ts,jsx,tsx,mdx}";
+/* Explicit scan roots (paths relative to this file). Use ../app so App Router is targeted, not ./app (which would mean app/app/). */
+@source "../app/**/*.{js,ts,jsx,tsx,mdx}";
 @source "../components/**/*.{js,ts,jsx,tsx,mdx}";
 @source "../lib/**/*.{js,ts,jsx,tsx}";
 
