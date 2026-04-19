@@ -5,6 +5,7 @@ import {
   type Match as PredictorMatch,
   type TeamConsistencyRow,
 } from '@/lib/prediction-model'
+import { getConsistencyModelSettings, toStrongOpponentBoostParams } from '@/lib/consistency-model-settings'
 import { recalculateTeamConsistencyFromPredictionHistory } from '@/lib/team-consistency'
 
 type Team = { id: number; name: string }
@@ -30,17 +31,21 @@ export async function recordMatchResultWithPrediction(
 > {
   const { match_date, season, team_a_id, team_b_id, team_a_score, team_b_score, teams } = params
 
-  const [{ data: seasonMatches, error: seasonMatchesError }, { data: consistencyData, error: consistencyError }] =
-    await Promise.all([
-      supabase
-        .from('matches')
-        .select('id, season, match_date, team_a_id, team_b_id, team_a_score, team_b_score')
-        .eq('season', season),
-      supabase
-        .from('team_consistency')
-        .select('team_id, adjusted_consistency, consistency_score, is_anchor, anchor_status')
-        .eq('season', season),
-    ])
+  const [
+    { data: seasonMatches, error: seasonMatchesError },
+    { data: consistencyData, error: consistencyError },
+    consistencySettings,
+  ] = await Promise.all([
+    supabase
+      .from('matches')
+      .select('id, season, match_date, team_a_id, team_b_id, team_a_score, team_b_score')
+      .eq('season', season),
+    supabase
+      .from('team_consistency')
+      .select('team_id, adjusted_consistency, consistency_score, is_anchor, anchor_status')
+      .eq('season', season),
+    getConsistencyModelSettings(supabase, season),
+  ])
 
   if (seasonMatchesError) {
     return { ok: false, error: seasonMatchesError.message, stage: 'load_matches' }
@@ -59,7 +64,8 @@ export async function recordMatchResultWithPrediction(
     team_b_id,
     (seasonMatches || []) as PredictorMatch[],
     teams,
-    consistencyMap
+    consistencyMap,
+    toStrongOpponentBoostParams(consistencySettings)
   )
 
   const actual_margin = team_a_score - team_b_score

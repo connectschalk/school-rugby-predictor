@@ -5,6 +5,7 @@ import {
   type Match as PredictorMatch,
   type TeamConsistencyRow,
 } from '@/lib/prediction-model'
+import { getConsistencyModelSettings, toStrongOpponentBoostParams } from '@/lib/consistency-model-settings'
 import { recalculateTeamConsistencyFromPredictionHistory } from '@/lib/team-consistency'
 
 export type BackfillMatchRow = {
@@ -83,6 +84,9 @@ export async function backfillPredictionHistoryForSeason(
   const allMatches = (raw || []) as BackfillMatchRow[]
   const sorted = sortMatchesForBackfill(allMatches)
 
+  const consistencySettings = await getConsistencyModelSettings(supabase, season)
+  const strongOpponentBoostParams = toStrongOpponentBoostParams(consistencySettings)
+
   const emptyConsistency = new Map<number, TeamConsistencyRow>()
 
   const { data: existingRows, error: existingError } = await supabase
@@ -114,7 +118,8 @@ export async function backfillPredictionHistoryForSeason(
       match.team_b_id,
       priorMatches,
       teams,
-      emptyConsistency
+      emptyConsistency,
+      strongOpponentBoostParams
     )
 
     const sa = Number(match.team_a_score)

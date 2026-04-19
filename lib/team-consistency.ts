@@ -1,14 +1,33 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { getConsistencyModelSettings, type ConsistencyModelSettings } from '@/lib/consistency-model-settings'
 
 export type TeamIdRow = { id: number }
 
 export function classifyAnchorStatus(
   matchesEvaluated: number,
-  adjustedConsistency: number
+  adjustedConsistency: number,
+  settings: Pick<
+    ConsistencyModelSettings,
+    | 'trusted_anchor_min_matches'
+    | 'trusted_anchor_min_adjusted_consistency'
+    | 'usable_reference_min_matches'
+    | 'usable_reference_min_adjusted_consistency'
+    | 'unstable_min_matches'
+  >
 ): 'trusted_anchor' | 'usable_reference' | 'unstable' | 'provisional' {
-  if (matchesEvaluated >= 5 && adjustedConsistency >= 0.85) return 'trusted_anchor'
-  if (matchesEvaluated >= 3 && adjustedConsistency >= 0.7) return 'usable_reference'
-  if (matchesEvaluated >= 2) return 'unstable'
+  if (
+    matchesEvaluated >= settings.trusted_anchor_min_matches &&
+    adjustedConsistency >= settings.trusted_anchor_min_adjusted_consistency
+  ) {
+    return 'trusted_anchor'
+  }
+  if (
+    matchesEvaluated >= settings.usable_reference_min_matches &&
+    adjustedConsistency >= settings.usable_reference_min_adjusted_consistency
+  ) {
+    return 'usable_reference'
+  }
+  if (matchesEvaluated >= settings.unstable_min_matches) return 'unstable'
   return 'provisional'
 }
 
@@ -27,6 +46,8 @@ export async function recalculateTeamConsistencyFromPredictionHistory(
   season: number,
   allTeams: TeamIdRow[]
 ): Promise<{ ok: true; rowsWritten: number } | { ok: false; error: string; reason?: string }> {
+  const settings = await getConsistencyModelSettings(supabase, season)
+
   const { data: history, error } = await supabase
     .from('prediction_history')
     .select('team_a_id, team_b_id, prediction_error')
@@ -67,13 +88,21 @@ export async function recalculateTeamConsistencyFromPredictionHistory(
 
     const consistency_score =
       matches_evaluated > 0
-        ? Math.max(0, Math.min(1, 1 - avg_prediction_error / 20))
+        ? Math.max(
+            0,
+            Math.min(1, 1 - avg_prediction_error / settings.error_divisor)
+          )
         : 0
 
     const sample_confidence = Math.min(matches_evaluated / 5, 1)
-    const adjusted_consistency = consistency_score * sample_confidence
+    let adjusted_consistency = consistency_score * sample_confidence
+    if (matches_evaluated > 0) {
+      adjusted_consistency = Math.max(settings.min_trust_floor, adjusted_consistency)
+    } else {
+      adjusted_consistency = 0
+    }
 
-    const anchor_status = classifyAnchorStatus(matches_evaluated, adjusted_consistency)
+    const anchor_status = classifyAnchorStatus(matches_evaluated, adjusted_consistency, settings)
     const is_anchor = anchor_status === 'trusted_anchor' || anchor_status === 'usable_reference'
 
     return {

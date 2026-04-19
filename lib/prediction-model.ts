@@ -3,6 +3,13 @@
  * Used by the public predictor and by admin pre-result snapshots.
  */
 
+import {
+  DEFAULT_STRONG_OPPONENT_BOOST_PARAMS,
+  type StrongOpponentBoostParams,
+} from '@/lib/consistency-model-settings'
+
+export type { StrongOpponentBoostParams }
+
 export type Team = {
   id: number
   name: string
@@ -246,9 +253,12 @@ export function findAllPathsWithWeights(
   teams: Team[],
   volatilityConsistencyMap: Record<string, number>,
   strengthMap: Record<string, number>,
-  consistencyByTeamId: Map<number, TeamConsistencyRow>
+  consistencyByTeamId: Map<number, TeamConsistencyRow>,
+  strongOpponentBoostParams: StrongOpponentBoostParams = DEFAULT_STRONG_OPPONENT_BOOST_PARAMS
 ): PathResult[] {
   const results: PathResult[] = []
+  const boostStep = strongOpponentBoostParams.strongOpponentStep
+  const boostMax = strongOpponentBoostParams.maxStrongOpponentCount
 
   const strengthValues = Object.values(strengthMap)
   let strongThreshold = 0
@@ -304,7 +314,7 @@ export function findAllPathsWithWeights(
         const s = strengthMap[id]
         if (s != null && s >= strongThreshold) strongCount += 1
       }
-      const strongOpponentBoost = 1 + Math.min(2, strongCount) * 0.08
+      const strongOpponentBoost = 1 + Math.min(boostMax, strongCount) * boostStep
 
       const weight = getPathWeight({
         pathLength: path.length,
@@ -411,7 +421,8 @@ export function predictFixtureMarginTeamAPerspective(
   teamBId: number,
   matches: Match[],
   teams: Team[],
-  teamConsistencyByTeamId: Map<number, TeamConsistencyRow>
+  teamConsistencyByTeamId: Map<number, TeamConsistencyRow>,
+  strongOpponentBoostParams: StrongOpponentBoostParams = DEFAULT_STRONG_OPPONENT_BOOST_PARAMS
 ): PreMatchPrediction {
   const home = String(teamAId)
   const away = String(teamBId)
@@ -446,7 +457,8 @@ export function predictFixtureMarginTeamAPerspective(
     teams,
     volatilityConsistencyMap,
     strengthMap,
-    teamConsistencyByTeamId
+    teamConsistencyByTeamId,
+    strongOpponentBoostParams
   )
 
   if (allPaths.length === 0) {

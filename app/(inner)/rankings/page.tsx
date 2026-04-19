@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import RankingsExplanationModal from '@/components/rankings/RankingsExplanationModal'
 
 type Team = {
   id: number
@@ -186,6 +187,7 @@ export default function RankingsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
+  const [explanationOpen, setExplanationOpen] = useState(false)
 
   useEffect(() => {
     async function loadTeams() {
@@ -305,14 +307,23 @@ export default function RankingsPage() {
           they merge automatically and rankings are recalculated using all linked margins.
         </p>
 
-        <div className="mt-4">
+        <div className="mt-4 flex flex-wrap items-center gap-3">
           <Link
             href="/consistency"
             className="inline-flex rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-50"
           >
             View Top 10 Margin Consistency
           </Link>
+          <button
+            type="button"
+            onClick={() => setExplanationOpen(true)}
+            className="inline-flex rounded-xl border border-gray-900 bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
+          >
+            Explanation
+          </button>
         </div>
+
+        <RankingsExplanationModal open={explanationOpen} onClose={() => setExplanationOpen(false)} />
 
         <div className="mt-6 grid gap-4 md:grid-cols-2">
           <div className="max-w-xs">
@@ -400,6 +411,7 @@ export default function RankingsPage() {
                           <th className="p-3 text-left">Rank</th>
                           <th className="p-3 text-left">Team</th>
                           <th className="p-3 text-left">Relative Score</th>
+                          <th className="p-3 text-left">Played</th>
                           <th className="p-3 text-left">W</th>
                           <th className="p-3 text-left">D</th>
                           <th className="p-3 text-left">L</th>
@@ -426,6 +438,7 @@ export default function RankingsPage() {
                               <td className="p-3 font-semibold">
                                 {team.relativeScore > 0 ? `+${team.relativeScore}` : team.relativeScore}
                               </td>
+                              <td className="p-3 tabular-nums">{team.matchesPlayed}</td>
                               <td className="p-3">{team.wins}</td>
                               <td className="p-3">{team.draws}</td>
                               <td className="p-3">{team.losses}</td>

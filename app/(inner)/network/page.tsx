@@ -29,12 +29,16 @@ type PositionedNode = {
 
 const PINNED_TEAM_NAMES = new Set([
   'Afrikaans Hoër Seuns',
+  'Afrikaans Hoer Seuns',
   'Grey College',
   'Paarl Gimnasium',
   'Paarl Boys High',
-  'Oakdale',
-  'Outeniqua',
-  'Durban High',
+  'Northwood',
+  'Westville',
+  'Stellenberg',
+  'Garsfontein',
+  'Paul Roos',
+  'Hilton College',
 ])
 
 const CHART_WIDTH = 1800

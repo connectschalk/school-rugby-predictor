@@ -1,14 +1,22 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import PredictionCard from '@/components/admin/PredictionCard'
+import { exportElementAsPng } from '@/lib/exportAsPng'
 import { supabase } from '@/lib/supabase'
 import { trackEvent } from '@/lib/trackEvent'
+import {
+  DEFAULT_STRONG_OPPONENT_BOOST_PARAMS,
+  getConsistencyModelSettings,
+  toStrongOpponentBoostParams,
+} from '@/lib/consistency-model-settings'
 import {
   type Team,
   type Match,
   type PathResult,
   type PredictionResult,
   type TeamConsistencyRow,
+  type StrongOpponentBoostParams,
   MAX_LINKS,
   HOME_ADVANTAGE,
   buildGraph,
@@ -19,6 +27,13 @@ import {
   getMatchSummary,
   formatFixture,
 } from '@/lib/prediction-model'
+
+function shareRationaleForResult(result: PredictionResult, season: string): string {
+  if (result.type === 'direct') {
+    return `Direct result from played fixture · ${result.confidence} confidence · Season ${season}`
+  }
+  return `Indirect prediction · ${result.confidence} confidence · ${result.pathCount} linked path(s) · Season ${season}`
+}
 
 export default function PredictorPage() {
   const [teams, setTeams] = useState<Team[]>([])
@@ -33,6 +48,10 @@ export default function PredictorPage() {
   const [teamConsistencyByTeamId, setTeamConsistencyByTeamId] = useState<
     Map<number, TeamConsistencyRow>
   >(new Map())
+  const [strongOpponentBoostParams, setStrongOpponentBoostParams] =
+    useState<StrongOpponentBoostParams>(DEFAULT_STRONG_OPPONENT_BOOST_PARAMS)
+  const [shareImageMessage, setShareImageMessage] = useState('')
+  const shareCardRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     trackEvent('page_view', 'predictor')
@@ -98,6 +117,15 @@ export default function PredictorPage() {
     loadTeamConsistency()
   }, [season])
 
+  useEffect(() => {
+    async function loadConsistencyModelSettings() {
+      const s = await getConsistencyModelSettings(supabase, Number(season))
+      setStrongOpponentBoostParams(toStrongOpponentBoostParams(s))
+    }
+
+    loadConsistencyModelSettings()
+  }, [season])
+
   const graph = useMemo(() => buildGraph(matches), [matches])
 
   const matchesById = useMemo(() => {
@@ -114,6 +142,25 @@ export default function PredictorPage() {
 
   const homeTeamName = teams.find((t) => String(t.id) === homeTeam)?.name || 'Unknown team'
   const awayTeamName = teams.find((t) => String(t.id) === awayTeam)?.name || 'Unknown team'
+
+  const shareImageDate = useMemo(() => new Date().toISOString().slice(0, 10), [result])
+
+  async function downloadSharePng() {
+    if (!result) return
+    const el = shareCardRef.current
+    if (!el) return
+    setShareImageMessage('')
+    try {
+      await exportElementAsPng(el, `school-rugby-prediction-${season}-${Date.now()}.png`)
+      setShareImageMessage('Image downloaded.')
+      await trackEvent('prediction_png_download', 'predictor', {
+        season,
+        resultType: result.type,
+      })
+    } catch {
+      setShareImageMessage('Could not export image. Try again.')
+    }
+  }
 
   async function runPrediction() {
     setError('')
@@ -187,7 +234,8 @@ export default function PredictorPage() {
       teams,
       volatilityConsistencyMap,
       strengthMap,
-      teamConsistencyByTeamId
+      teamConsistencyByTeamId,
+      strongOpponentBoostParams
     )
 
     if (allPaths.length === 0) {
@@ -425,6 +473,33 @@ export default function PredictorPage() {
                       <p className="text-sm text-gray-600">
                         Based on {result.pathCount} total linked path(s), showing top 10 by weight
                       </p>
+                    )}
+                  </div>
+
+                  <div className="rounded-2xl border border-gray-200 p-6">
+                    <h3 className="text-lg font-semibold">Share image</h3>
+                    <p className="mt-1 text-sm text-gray-600">
+                      Download matches the preview (full width, no clipping). Crop to 4:5 in Instagram if you
+                      want a strict Stories frame.
+                    </p>
+                    <PredictionCard
+                      ref={shareCardRef}
+                      className="mx-auto mt-4 max-w-full"
+                      homeTeamName={homeTeamName}
+                      awayTeamName={awayTeamName}
+                      predictionMargin={result.averageMargin}
+                      date={shareImageDate}
+                      rationale={shareRationaleForResult(result, season)}
+                    />
+                    <button
+                      type="button"
+                      onClick={downloadSharePng}
+                      className="mt-4 rounded-xl bg-black px-5 py-3 text-sm text-white hover:opacity-90"
+                    >
+                      Download PNG
+                    </button>
+                    {shareImageMessage && (
+                      <p className="mt-2 text-sm text-gray-600">{shareImageMessage}</p>
                     )}
                   </div>
 
