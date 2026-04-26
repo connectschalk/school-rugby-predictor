@@ -104,12 +104,11 @@ export function resolveAvatarLetter(
   return pick(firstName) ?? pick(displayName) ?? 'P'
 }
 
-/** Legacy image: URL present and no stored letter avatar. */
-export function shouldUseLegacyAvatarImage(
-  avatarUrl: string | null | undefined,
-  avatarLetter: string | null | undefined
-): boolean {
+/**
+ * When `avatar_url` is set (static app path, full URL, or legacy upload), show that image
+ * instead of the letter circle. Letter/colour can still be stored for if the URL is cleared later.
+ */
+export function shouldUseLegacyAvatarImage(avatarUrl: string | null | undefined): boolean {
   const url = avatarUrl?.trim()
-  if (!url) return false
-  return normalizeAvatarLetter(avatarLetter) === null
+  return Boolean(url)
 }

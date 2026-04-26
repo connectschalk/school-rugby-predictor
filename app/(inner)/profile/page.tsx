@@ -26,6 +26,8 @@ export default function ProfilePage() {
   const [displayName, setDisplayName] = useState('')
   const [chosenLetter, setChosenLetter] = useState<string | null>(null)
   const [chosenColourHex, setChosenColourHex] = useState(DEFAULT_AVATAR_COLOUR)
+  /** Preserved on save when set (e.g. `/admin-avatar.png`); not overwritten by letter/colour saves. */
+  const [storedAvatarUrl, setStoredAvatarUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
@@ -54,6 +56,7 @@ export default function ProfilePage() {
       setDisplayName('')
       setChosenLetter(null)
       setChosenColourHex(DEFAULT_AVATAR_COLOUR)
+      setStoredAvatarUrl(null)
       setLoading(false)
       return
     }
@@ -69,6 +72,7 @@ export default function ProfilePage() {
     }
 
     if (effective) {
+      setStoredAvatarUrl(effective.avatar_url?.trim() || null)
       setFirstName(effective.first_name || '')
       setSurname(effective.surname || '')
       setDisplayName(effective.display_name || '')
@@ -80,6 +84,7 @@ export default function ProfilePage() {
       }
       setChosenLetter(normalizeAvatarLetter(effective.avatar_letter))
     } else {
+      setStoredAvatarUrl(null)
       setFirstName('')
       setSurname('')
       setDisplayName('')
@@ -117,6 +122,7 @@ export default function ProfilePage() {
         setDisplayName('')
         setChosenLetter(null)
         setChosenColourHex(DEFAULT_AVATAR_COLOUR)
+        setStoredAvatarUrl(null)
         setLoading(false)
       }
     })
@@ -173,7 +179,7 @@ export default function ProfilePage() {
         display_name: name,
         avatar_letter: letterToSave,
         avatar_colour: colourNorm,
-        avatar_url: null,
+        avatar_url: storedAvatarUrl,
       },
       { onConflict: 'id' }
     )
@@ -285,16 +291,23 @@ export default function ProfilePage() {
               <LetterAvatar
                 letter={chosenLetter}
                 colour={chosenColourHex}
-                avatarUrl={null}
+                avatarUrl={storedAvatarUrl}
                 firstName={firstName}
                 displayName={displayName}
                 name={displayName.trim() || firstName.trim() || 'You'}
                 size={96}
               />
             </div>
-            <p className="mt-2 text-center text-xs text-gray-500">
-              Letter defaults to first of first name, then display name, if you clear your pick.
-            </p>
+            {storedAvatarUrl ? (
+              <p className="mt-2 text-center text-xs text-gray-600">
+                A custom avatar image is set for your account. Saving keeps it along with your letter and colour
+                settings. To use only the letter circle again, set avatar_url to null for your row in Supabase.
+              </p>
+            ) : (
+              <p className="mt-2 text-center text-xs text-gray-500">
+                Letter defaults to first of first name, then display name, if you clear your pick.
+              </p>
+            )}
           </div>
 
           <fieldset className="space-y-2 border-0 p-0">

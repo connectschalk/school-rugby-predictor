@@ -34,7 +34,7 @@ export default function LetterAvatar({
   const L = resolveAvatarLetter(letter, firstName, display)
   const C = resolveAvatarColour(colour)
   const letterColour = pickAvatarLetterTextColor(C)
-  const legacy = shouldUseLegacyAvatarImage(avatarUrl, letter)
+  const legacy = shouldUseLegacyAvatarImage(avatarUrl)
 
   if (legacy && avatarUrl) {
     return (
