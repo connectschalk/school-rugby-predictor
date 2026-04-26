@@ -1,0 +1,57 @@
+-- Example data + scoring checks for Predict a Score rankings (NOT run automatically).
+-- Replace :user_a, :user_b, :user_c with real UUIDs from Supabase → Authentication → Users.
+-- Those users must be able to sign in so you can create user_profiles (or insert profiles below).
+
+-- ---------------------------------------------------------------------------
+-- 1) One completed match (home wins 28–24 → margin 4, winner = home)
+-- ---------------------------------------------------------------------------
+-- insert into public.game_matches (
+--   home_team,
+--   away_team,
+--   kickoff_time,
+--   status,
+--   home_score,
+--   away_score
+-- ) values (
+--   'Test Home FC',
+--   'Test Away FC',
+--   timestamptz '2026-04-20 15:00:00+00',
+--   'completed',
+--   28,
+--   24
+-- )
+-- returning id;  -- copy as :match_id
+
+-- ---------------------------------------------------------------------------
+-- 2) Three predictions (requires user_predictions rows; ids from returning)
+-- Expected points after scoring:
+--   User A: home, margin 4  → exact → 2 + 5 = 7
+--   User B: home, margin 8  → |8-4| = 4 → 2 + 1 = 3
+--   User C: away, margin 7  → wrong winner → 0
+-- ---------------------------------------------------------------------------
+-- insert into public.user_profiles (id, display_name) values
+--   (:user_a, 'Player A'),
+--   (:user_b, 'Player B'),
+--   (:user_c, 'Player C')
+-- on conflict (id) do update set display_name = excluded.display_name;
+
+-- insert into public.user_predictions (match_id, user_id, predicted_winner, predicted_margin)
+-- values
+--   (:match_id, :user_a, 'home', 4),
+--   (:match_id, :user_b, 'home', 8),
+--   (:match_id, :user_c, 'away', 7);
+
+-- ---------------------------------------------------------------------------
+-- 3) Run scoring (same as app “Run scoring” / RPC score_predictions_for_match)
+-- ---------------------------------------------------------------------------
+-- select public.score_predictions_for_match(:match_id);
+-- → should return 3
+
+-- ---------------------------------------------------------------------------
+-- 4) Inspect rows (optional)
+-- ---------------------------------------------------------------------------
+-- select prediction_id, user_id, winner_correct, actual_winner, actual_margin,
+--        margin_difference, winner_points, margin_points, total_points
+--   from public.user_prediction_scores
+--  where match_id = :match_id
+--  order by total_points desc, margin_difference asc nulls last;

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { trackEvent } from '@/lib/trackEvent'
@@ -35,6 +36,7 @@ import {
 } from '@/lib/prediction-model'
 import { recalculateTeamConsistencyFromPredictionHistory } from '@/lib/team-consistency'
 import { matchTeamName, type TeamMatchResult } from '@/lib/team-name-match'
+import { ADMIN_EMAIL } from '@/lib/admin-email'
 
 function formatTeamMatchLabel(m: TeamMatchResult): string {
   const pct = m.matchConfidence != null ? ` ${Math.round(m.matchConfidence * 100)}%` : ''
@@ -46,8 +48,6 @@ function newUrlImportRowKey(): string {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
   return `url-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
-
-const ALLOWED_ADMIN_EMAIL = 'connect.schalk@gmail.com'
 
 type Team = {
   id: number
@@ -240,7 +240,7 @@ export default function AdminPage() {
 
       const email = session?.user?.email || ''
 
-      if (!session || email !== ALLOWED_ADMIN_EMAIL) {
+      if (!session || email !== ADMIN_EMAIL) {
         router.push('/login')
         return
       }
@@ -255,7 +255,7 @@ export default function AdminPage() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       const email = session?.user?.email || ''
-      if (!session || email !== ALLOWED_ADMIN_EMAIL) {
+      if (!session || email !== ADMIN_EMAIL) {
         router.push('/login')
       }
     })
@@ -1822,6 +1822,11 @@ export default function AdminPage() {
         <p className="mt-4 text-gray-600">
           Add schools, add results, bulk Excel or URL import, upload team logos, view results,
           delete incorrect scores, recalculate team consistency, and monitor usage.
+        </p>
+        <p className="mt-2 text-sm">
+          <Link href="/admin/game-matches" className="text-blue-600 underline hover:text-blue-800">
+            Predict a Score — bulk fixtures & match admin
+          </Link>
         </p>
 
         <div className="mt-8 flex flex-wrap gap-3">

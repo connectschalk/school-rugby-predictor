@@ -1,5 +1,6 @@
 import Image from 'next/image'
 import Link from 'next/link'
+import InnerHeaderNav from '@/components/InnerHeaderNav'
 
 export default function InnerLayout({
   children,
@@ -9,8 +10,8 @@ export default function InnerLayout({
   return (
     <>
       <header className="border-b border-gray-200">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
-          <Link href="/" className="flex items-center gap-4">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-6 sm:flex-row sm:items-center sm:justify-between">
+          <Link href="/" className="flex shrink-0 items-center gap-4">
             <Image
               src="/nextplay-predictor.png"
               alt="NextPlay Predictor"
@@ -20,23 +21,7 @@ export default function InnerLayout({
             />
           </Link>
 
-          <nav className="flex gap-6 text-sm font-medium">
-            <Link href="/predictor" className="hover:underline">
-              Predictor
-            </Link>
-            <Link href="/results" className="hover:underline">
-              Results
-            </Link>
-            <Link href="/rankings" className="hover:underline">
-              Rankings
-            </Link>
-            <Link href="/consistency" className="hover:underline">
-              Consistency
-            </Link>
-            <Link href="/network" className="hover:underline">
-              Visual Graph
-            </Link>
-          </nav>
+          <InnerHeaderNav />
         </div>
       </header>
 

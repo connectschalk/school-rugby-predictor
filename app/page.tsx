@@ -4,26 +4,23 @@ import Link from 'next/link'
 import { useEffect } from 'react'
 import { trackEvent } from '@/lib/trackEvent'
 
-const navItems = [
+const mainNavItems = [
   {
-    title: 'Predict',
-    description: 'Predict a match margin between two teams.',
-    href: '/predictor',
+    title: 'Predict a Score',
+    description:
+      'Pick a match, predict the winning margin, and compete as the public game rolls out.',
+    href: '/predict-score',
   },
   {
-    title: 'Results',
-    description: 'See match results and compare outcomes.',
-    href: '/results',
+    title: 'User Rankings',
+    description: 'See how your predictions stack up once season and match rankings go live.',
+    href: '/user-rankings',
   },
   {
-    title: 'Rankings',
-    description: 'View connected pool rankings for the season.',
-    href: '/rankings',
-  },
-  {
-    title: 'Visual Graph',
-    description: 'Explore the team network and linked margins visually.',
-    href: '/network',
+    title: 'Profile',
+    description:
+      'Create an account, set your display name and photo for leaderboards, and manage your public identity.',
+    href: '/profile',
   },
 ]
 
@@ -46,20 +43,24 @@ export default function HomePage() {
               className="mx-auto h-28 w-auto md:h-36"
             />
 
-            {/* TITLE */}
-            <h1 className="mt-8 text-4xl font-bold tracking-tight md:text-5xl">
+            <p className="mt-6 text-sm font-medium uppercase tracking-wide text-gray-500">
               NextPlay Predictor
+            </p>
+
+            {/* TITLE */}
+            <h1 className="mt-2 text-4xl font-bold tracking-tight md:text-5xl">
+              Predict the margin. Climb the rankings.
             </h1>
 
             {/* DESCRIPTION */}
             <p className="mx-auto mt-4 max-w-3xl text-base text-gray-600 md:text-lg">
-              School rugby insights powered by connected results, rankings, and visual team
-              relationships.
+              Pick any school rugby match, predict the winning margin, and see how close you
+              get.
             </p>
 
-            {/* CARDS */}
-            <div className="mt-12 grid gap-5 md:grid-cols-2">
-              {navItems.map((item) => (
+            {/* PRIMARY NAV CARDS */}
+            <div className="mt-12 grid grid-cols-1 gap-5 md:grid-cols-3">
+              {mainNavItems.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
@@ -68,7 +69,7 @@ export default function HomePage() {
                       destination: item.href,
                     })
                   }
-                  className="rounded-3xl border border-gray-200 p-8 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md"
+                  className="rounded-3xl border border-gray-200 bg-white p-8 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md"
                 >
                   <h2 className="text-2xl font-semibold">{item.title}</h2>
                   <p className="mt-3 text-base text-gray-600">
