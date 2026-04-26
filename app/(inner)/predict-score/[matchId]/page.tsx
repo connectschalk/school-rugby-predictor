@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
 import MatchBanter from '@/components/predict-score/MatchBanter'
+import { formatKickoffHm, matchPredictionsClosed } from '@/lib/prediction-cutoff'
 import { fetchGameMatchById, type GameMatch } from '@/lib/public-prediction-game'
 import { getSchoolTeamLogoPath } from '@/lib/school-team-logos'
 import { supabase } from '@/lib/supabase'
@@ -104,6 +105,9 @@ export default function PredictScoreMatchPage() {
       : `${match.home_team} vs ${match.away_team}`
   const homeLogo = getSchoolTeamLogoPath(match.home_team)
   const awayLogo = getSchoolTeamLogoPath(match.away_team)
+  const at = new Date()
+  const closed = matchPredictionsClosed(match, at)
+  const kickHm = formatKickoffHm(match.kickoff_time)
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8 md:px-6 md:py-12">
@@ -162,6 +166,14 @@ export default function PredictScoreMatchPage() {
         ) : null}
         <h1 className="sr-only">{finalLine}</h1>
         <p className="mt-4 text-center text-sm text-gray-600">{formatKickoff(match.kickoff_time)}</p>
+        {closed ? (
+          <p className="mt-2 text-center text-xs font-semibold text-gray-600">Predictions closed</p>
+        ) : (
+          <div className="mt-2 space-y-0.5 text-center text-xs font-medium text-gray-600">
+            <p>Predictions close at kickoff</p>
+            {kickHm ? <p>Kickoff: {kickHm}</p> : null}
+          </div>
+        )}
       </div>
 
       <div className="mt-10">

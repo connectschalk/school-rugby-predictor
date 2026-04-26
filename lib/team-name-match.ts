@@ -23,11 +23,13 @@ export type TeamMatchResult = {
 const KNOWN_ALIASES: Record<string, string> = {
   affies: 'Afrikaans Hoër Seuns',
   'afrikaanse hoër seuns': 'Afrikaans Hoër Seuns',
+  'afrikaans hoer seuns': 'Afrikaans Hoër Seuns',
   'paarl boys': 'Paarl Boys High',
   'paarl gim': 'Paarl Gimnasium',
   'paarl boys high': 'Paarl Boys High',
   grey: 'Grey College',
   'durban high': 'Durban High',
+  'durban hs': 'Durban High',
   oakdale: 'Oakdale',
   outeniqua: 'Outeniqua',
 }
@@ -106,11 +108,24 @@ function resolveAlias(raw: string): string | null {
   return null
 }
 
+function resolveDbStoredAlias(raw: string, dbAliases: Map<string, string> | undefined): string | null {
+  if (!dbAliases || dbAliases.size === 0) return null
+  const k = normalizeTeamKey(raw)
+  const byKey = dbAliases.get(k)
+  if (byKey) return byKey
+  const loose = normalizeTeamKeyLoose(raw)
+  return dbAliases.get(loose) ?? null
+}
+
 /**
  * Match a single parsed school name to `teams`.
  * Auto-assigns id only for exact, normalized, alias, or fuzzy >= AUTO_FUZZY.
  */
-export function matchTeamName(rawName: string, teams: TeamRow[]): TeamMatchResult {
+export function matchTeamName(
+  rawName: string,
+  teams: TeamRow[],
+  dbAliases?: Map<string, string> | null
+): TeamMatchResult {
   const trimmed = rawName.trim()
   if (!trimmed) {
     return {
@@ -161,6 +176,22 @@ export function matchTeamName(rawName: string, teams: TeamRow[]): TeamMatchResul
         matchConfidence: 1,
         suggestedTeamId: byAlias.id,
         suggestedTeamName: byAlias.name,
+        needsReview: false,
+      }
+    }
+  }
+
+  const dbCanon = resolveDbStoredAlias(trimmed, dbAliases ?? undefined)
+  if (dbCanon) {
+    const byDb = findTeamByExactName(teams, dbCanon)
+    if (byDb) {
+      return {
+        matchedTeamId: byDb.id,
+        matchedTeamName: byDb.name,
+        matchMethod: 'alias',
+        matchConfidence: 1,
+        suggestedTeamId: byDb.id,
+        suggestedTeamName: byDb.name,
         needsReview: false,
       }
     }

@@ -5,14 +5,21 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
 import HowItWorksModal from '@/components/HowItWorksModal'
 import CompletedMatchLeaderboard from '@/components/predict-score/CompletedMatchLeaderboard'
-import PredictionSlipRow, { type SlipPick } from '@/components/predict-score/PredictionSlipRow'
+import PredictScoreSlipListSection, {
+  CLOSED_SLIP_HEADER_CLASS,
+} from '@/components/predict-score/PredictScoreSlipListSection'
+import { type SlipPick } from '@/components/predict-score/PredictionSlipRow'
+import { canEditPredictionOnMatch, matchPredictionsClosed, matchStartsSoon } from '@/lib/prediction-cutoff'
 import {
   fetchCompletedGameMatches,
   fetchPlayableGameMatches,
   fetchUserPredictionsForMatches,
+  sortPlayableMatchesForPredictScore,
   type GameMatch,
   type UserPredictionRow,
 } from '@/lib/public-prediction-game'
+import { matchGameAgainstTeamSearch } from '@/lib/team-aliases-db'
+import type { TeamRow } from '@/lib/team-name-match'
 import { supabase } from '@/lib/supabase'
 import { trackEvent } from '@/lib/trackEvent'
 
@@ -47,7 +54,7 @@ async function ensureUserProfile(user: User) {
 export default function PredictScorePage() {
   const [user, setUser] = useState<User | null>(null)
   const [authReady, setAuthReady] = useState(false)
-  const [matches, setMatches] = useState<GameMatch[]>([])
+  const [playableMatches, setPlayableMatches] = useState<GameMatch[]>([])
   const [completedMatches, setCompletedMatches] = useState<GameMatch[]>([])
   const [predictions, setPredictions] = useState<Map<string, UserPredictionRow>>(
     () => new Map()
@@ -61,6 +68,10 @@ export default function PredictScorePage() {
   const [flashSubmittedId, setFlashSubmittedId] = useState<string | null>(null)
   const [bulkSaveMsg, setBulkSaveMsg] = useState('')
   const [howModalOpen, setHowModalOpen] = useState(false)
+  const [teamSearch, setTeamSearch] = useState('')
+  const [aliasRowsForSearch, setAliasRowsForSearch] = useState<Record<string, unknown>[]>([])
+  const [teamsForSearch, setTeamsForSearch] = useState<TeamRow[]>([])
+  const [nowTick, setNowTick] = useState(() => Date.now())
 
   const signedIn = !!user
 
@@ -76,17 +87,21 @@ export default function PredictScorePage() {
   const loadMatches = useCallback(async () => {
     setLoadingMatches(true)
     setLoadError('')
-    const [upcomingRes, completedRes] = await Promise.all([
+    const [upcomingRes, completedRes, aliasRes, teamsRes] = await Promise.all([
       fetchPlayableGameMatches(supabase),
       fetchCompletedGameMatches(supabase, 15),
+      supabase.from('team_aliases').select('*'),
+      supabase.from('teams').select('id, name'),
     ])
     if (upcomingRes.error) {
       setLoadError(upcomingRes.error.message)
-      setMatches([])
+      setPlayableMatches([])
     } else {
-      setMatches(upcomingRes.data)
+      setPlayableMatches(upcomingRes.data)
     }
     setCompletedMatches(completedRes.error ? [] : completedRes.data)
+    setAliasRowsForSearch((aliasRes.data as Record<string, unknown>[]) ?? [])
+    setTeamsForSearch((teamsRes.data as TeamRow[]) ?? [])
     setLoadingMatches(false)
   }, [])
 
@@ -132,18 +147,23 @@ export default function PredictScorePage() {
   }, [loadMatches])
 
   useEffect(() => {
-    if (!user || matches.length === 0) {
+    const id = window.setInterval(() => setNowTick(Date.now()), 30000)
+    return () => window.clearInterval(id)
+  }, [])
+
+  useEffect(() => {
+    if (!user || playableMatches.length === 0) {
       if (!user) setPredictions(new Map())
       return
     }
-    const ids = matches.map((m) => m.id)
+    const ids = playableMatches.map((m) => m.id)
     void reloadPredictions(user.id, ids)
-  }, [user, matches, reloadPredictions])
+  }, [user, playableMatches, reloadPredictions])
 
   useEffect(() => {
     setSlipByMatch((prev) => {
       const next: Record<string, SlipPick> = { ...prev }
-      for (const m of matches) {
+      for (const m of playableMatches) {
         const p = predictions.get(m.id)
         if (p) {
           next[m.id] = { winner: p.predicted_winner, margin: String(p.predicted_margin) }
@@ -153,7 +173,7 @@ export default function PredictScorePage() {
       }
       return next
     })
-  }, [matches, predictions])
+  }, [playableMatches, predictions])
 
   useEffect(() => {
     if (!flashSubmittedId) return
@@ -167,7 +187,54 @@ export default function PredictScorePage() {
     return () => window.clearTimeout(t)
   }, [bulkSaveMsg])
 
-  const matchIds = useMemo(() => matches.map((m) => m.id), [matches])
+  const matchIds = useMemo(() => playableMatches.map((m) => m.id), [playableMatches])
+
+  const filteredPlayable = useMemo(() => {
+    const q = teamSearch.trim()
+    if (!q) return playableMatches
+    return playableMatches.filter((m) => matchGameAgainstTeamSearch(m, q, aliasRowsForSearch, teamsForSearch))
+  }, [playableMatches, teamSearch, aliasRowsForSearch, teamsForSearch])
+
+  const atDate = useMemo(() => new Date(nowTick), [nowTick])
+
+  const { closedMatches, featuredEditable, openOtherMatches, startingSoonMatches } = useMemo(() => {
+    const closed: GameMatch[] = []
+    const editable: GameMatch[] = []
+    for (const m of filteredPlayable) {
+      if (matchPredictionsClosed(m, atDate)) closed.push(m)
+      else if (canEditPredictionOnMatch(m, atDate)) editable.push(m)
+    }
+    const sortedEditable = sortPlayableMatchesForPredictScore(editable)
+    const featured = sortedEditable.filter((m) => !!m.is_featured)
+    const nonFeatured = sortedEditable.filter((m) => !m.is_featured)
+    const soon: GameMatch[] = []
+    const open: GameMatch[] = []
+    for (const m of nonFeatured) {
+      if (matchStartsSoon(m, atDate)) soon.push(m)
+      else open.push(m)
+    }
+    return {
+      closedMatches: sortPlayableMatchesForPredictScore(closed),
+      featuredEditable: featured,
+      openOtherMatches: open,
+      startingSoonMatches: soon,
+    }
+  }, [filteredPlayable, atDate])
+
+  const startsSoonIds = useMemo(() => {
+    const set = new Set<string>()
+    for (const m of [...featuredEditable, ...openOtherMatches, ...startingSoonMatches]) {
+      if (matchStartsSoon(m, atDate)) set.add(m.id)
+    }
+    return set
+  }, [featuredEditable, openOtherMatches, startingSoonMatches, atDate])
+
+  const hasEditablePredictRows =
+    featuredEditable.length + openOtherMatches.length + startingSoonMatches.length > 0
+
+  const searchActive = teamSearch.trim().length > 0
+  const noSearchResults =
+    searchActive && filteredPlayable.length === 0 && playableMatches.length > 0
 
   const patchSlip = useCallback((matchId: string, patch: Partial<SlipPick>) => {
     setSlipByMatch((prev) => ({
@@ -203,6 +270,11 @@ export default function PredictScorePage() {
 
   const handleSubmitOne = async (matchId: string) => {
     if (!user) return
+    const rowMatch = playableMatches.find((m) => m.id === matchId)
+    if (!rowMatch || !canEditPredictionOnMatch(rowMatch, new Date())) {
+      setSubmitError('Predictions are closed for this match.')
+      return
+    }
     const slip = slipByMatch[matchId]
     if (!slip?.winner) {
       setSubmitError('Pick a winner for this match.')
@@ -232,8 +304,7 @@ export default function PredictScorePage() {
 
   const handleSubmitAll = async () => {
     if (!user) return
-    const upcoming = matches.filter((m) => m.status === 'upcoming')
-    const targets = upcoming.filter((m) => {
+    const targets = playableMatches.filter((m) => canEditPredictionOnMatch(m, new Date())).filter((m) => {
       const s = slipByMatch[m.id]
       if (!s?.winner) return false
       return parseMargin(s.margin) !== null
@@ -355,53 +426,110 @@ export default function PredictScorePage() {
 
       {loadingMatches ? (
         <p className="mt-10 text-center text-sm text-gray-500">Loading matches…</p>
-      ) : matches.length === 0 && completedMatches.length === 0 ? (
+      ) : playableMatches.length === 0 && completedMatches.length === 0 ? (
         <p className="mt-10 text-center text-sm text-gray-600">
           No matches yet. Add rows to <code className="text-xs">game_matches</code> in Supabase to
           test.
         </p>
       ) : (
         <>
-          {matches.length > 0 ? (
+          {playableMatches.length > 0 ? (
             <section className="mt-10">
-              <div className="inline-block bg-slate-900 px-6 py-2.5 text-base font-black uppercase tracking-wide text-white shadow-sm">
-                Upcoming matches
+              <div className="mb-4">
+                <label className="block w-full max-w-md">
+                  <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-700">
+                    Find a team
+                  </span>
+                  <input
+                    type="search"
+                    enterKeyHint="search"
+                    placeholder="Search team..."
+                    value={teamSearch}
+                    onChange={(e) => setTeamSearch(e.target.value)}
+                    className="w-full border-2 border-gray-900 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-800"
+                  />
+                </label>
               </div>
 
-              <div className="md:border-2 md:border-gray-900 md:bg-white">
-                <div className="mt-0 hidden border-b-2 border-gray-900 bg-teal-900 px-3 py-2 md:grid md:grid-cols-[9.5rem_minmax(0,1fr)_minmax(0,1fr)_5.5rem_6.5rem_5.5rem] md:items-center md:gap-3 md:text-[10px] md:font-bold md:uppercase md:tracking-wider md:text-white">
-                  <span>Kick-off</span>
-                  <span>Home</span>
-                  <span>Away</span>
-                  <span className="text-center">Margin</span>
-                  <span className="text-center">Predict</span>
-                  <span className="text-center">Comments</span>
-                </div>
+              {noSearchResults ? (
+                <p className="mt-6 border-2 border-gray-300 bg-gray-50 px-4 py-3 text-center text-sm text-gray-700">
+                  No matches found for this team.
+                </p>
+              ) : (
+                <>
+                  {!hasEditablePredictRows && closedMatches.length > 0 ? (
+                    <p className="mt-6 border-2 border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm text-amber-950">
+                      Nothing open for predictions here — kickoff has passed or these fixtures are
+                      locked. You can still open comments below.
+                    </p>
+                  ) : null}
+                  <div className="mt-2 flex flex-col gap-10">
+                  <PredictScoreSlipListSection
+                    title="Featured games"
+                    titleClassName="inline-block bg-slate-900 px-6 py-2.5 text-base font-black uppercase tracking-wide text-white shadow-sm"
+                    matches={featuredEditable}
+                    startsSoonIds={startsSoonIds}
+                    slipByMatch={slipByMatch}
+                    predictions={predictions}
+                    signedIn={signedIn}
+                    submittingMatchId={submittingMatchId}
+                    submittingAll={submittingAll}
+                    flashSubmittedId={flashSubmittedId}
+                    patchSlip={patchSlip}
+                    onPredict={handleSubmitOne}
+                  />
+                  <PredictScoreSlipListSection
+                    title="Open games"
+                    titleClassName="inline-block bg-slate-900 px-6 py-2.5 text-base font-black uppercase tracking-wide text-white shadow-sm"
+                    description="Kickoff more than 60 minutes away — predictions close at kickoff."
+                    matches={openOtherMatches}
+                    startsSoonIds={startsSoonIds}
+                    slipByMatch={slipByMatch}
+                    predictions={predictions}
+                    signedIn={signedIn}
+                    submittingMatchId={submittingMatchId}
+                    submittingAll={submittingAll}
+                    flashSubmittedId={flashSubmittedId}
+                    patchSlip={patchSlip}
+                    onPredict={handleSubmitOne}
+                  />
+                  <PredictScoreSlipListSection
+                    title="Starting soon"
+                    titleClassName="inline-block bg-amber-900 px-6 py-2.5 text-base font-black uppercase tracking-wide text-white shadow-sm"
+                    description="Kickoff within 60 minutes — you can still predict until kickoff."
+                    matches={startingSoonMatches}
+                    startsSoonIds={startsSoonIds}
+                    slipByMatch={slipByMatch}
+                    predictions={predictions}
+                    signedIn={signedIn}
+                    submittingMatchId={submittingMatchId}
+                    submittingAll={submittingAll}
+                    flashSubmittedId={flashSubmittedId}
+                    patchSlip={patchSlip}
+                    onPredict={handleSubmitOne}
+                  />
+                  <PredictScoreSlipListSection
+                    title="Predictions closed"
+                    titleClassName="inline-block bg-gray-700 px-6 py-2.5 text-base font-black uppercase tracking-wide text-white shadow-sm"
+                    description="Kickoff has passed or the match is no longer upcoming for predictions."
+                    listWrapClassName="md:border-2 md:border-gray-400 md:bg-gray-50"
+                    headerClassName={CLOSED_SLIP_HEADER_CLASS}
+                    matches={closedMatches}
+                    startsSoonIds={startsSoonIds}
+                    slipByMatch={slipByMatch}
+                    predictions={predictions}
+                    signedIn={signedIn}
+                    submittingMatchId={submittingMatchId}
+                    submittingAll={submittingAll}
+                    flashSubmittedId={flashSubmittedId}
+                    patchSlip={patchSlip}
+                    onPredict={handleSubmitOne}
+                  />
+                  </div>
+                </>
+              )}
 
-                <ul className="space-y-3 bg-gray-100 p-2 md:space-y-0 md:divide-y md:divide-gray-200 md:bg-white md:p-0">
-                  {matches.map((match) => {
-                    const slip = slipByMatch[match.id] ?? { winner: null, margin: '' }
-                    const locked = match.status === 'locked'
-                    const rowBusy = submittingMatchId === match.id || submittingAll
-                    return (
-                      <PredictionSlipRow
-                        key={match.id}
-                        match={match}
-                        slip={slip}
-                        onSlipChange={patchSlip}
-                        prediction={predictions.get(match.id)}
-                        signedIn={signedIn}
-                        locked={locked}
-                        submitting={rowBusy}
-                        flashSubmitted={flashSubmittedId === match.id}
-                        onPredict={handleSubmitOne}
-                      />
-                    )
-                  })}
-                </ul>
-              </div>
-
-              {signedIn ? (
+              {signedIn && hasEditablePredictRows ? (
                 <div className="mt-4 flex flex-col items-end gap-2">
                   <button
                     type="button"

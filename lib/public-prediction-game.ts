@@ -11,6 +11,9 @@ export type GameMatch = {
   home_score: number | null
   away_score: number | null
   created_at: string
+  /** Highlight ordering on Predict a Score (max 10 live upcoming/locked). */
+  is_featured?: boolean
+  featured_order?: number | null
 }
 
 export type UserPredictionRow = {
@@ -52,6 +55,34 @@ export type SeasonLeaderboardRow = {
   margin_points_average: number | null
 }
 
+/** Featured first (order 1–10), then kickoff_time / created_at ascending. */
+export function sortPlayableMatchesForPredictScore(matches: GameMatch[]): GameMatch[] {
+  return [...matches].sort((a, b) => {
+    const af = !!a.is_featured ? 1 : 0
+    const bf = !!b.is_featured ? 1 : 0
+    if (af !== bf) return bf - af
+    if (af === 1) {
+      const ao = a.featured_order ?? 999
+      const bo = b.featured_order ?? 999
+      if (ao !== bo) return ao - bo
+    }
+    const kt = +new Date(a.kickoff_time) - +new Date(b.kickoff_time)
+    if (kt !== 0) return kt
+    return +new Date(a.created_at) - +new Date(b.created_at)
+  })
+}
+
+export function partitionFeaturedMatches(matches: GameMatch[]): {
+  featured: GameMatch[]
+  rest: GameMatch[]
+} {
+  const sorted = sortPlayableMatchesForPredictScore(matches)
+  return {
+    featured: sorted.filter((m) => !!m.is_featured),
+    rest: sorted.filter((m) => !m.is_featured),
+  }
+}
+
 export type MatchLeaderboardEntry = {
   user_id: string
   rank: number
@@ -68,12 +99,12 @@ export async function fetchPlayableGameMatches(client: SupabaseClient) {
   const { data, error } = await client
     .from('game_matches')
     .select(
-      'id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at'
+      'id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at, is_featured, featured_order'
     )
     .in('status', ['upcoming', 'locked'])
-    .order('kickoff_time', { ascending: true })
 
-  return { data: (data as GameMatch[] | null) ?? [], error }
+  const raw = (data as GameMatch[] | null) ?? []
+  return { data: sortPlayableMatchesForPredictScore(raw), error }
 }
 
 export async function fetchUserPredictionsForMatches(
@@ -236,7 +267,7 @@ export async function fetchGameMatchById(client: SupabaseClient, matchId: string
   const { data, error } = await client
     .from('game_matches')
     .select(
-      'id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at'
+      'id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at, is_featured, featured_order'
     )
     .eq('id', matchId)
     .maybeSingle()

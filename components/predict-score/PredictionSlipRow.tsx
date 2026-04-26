@@ -2,6 +2,12 @@
 
 import Link from 'next/link'
 import type { GameMatch, UserPredictionRow } from '@/lib/public-prediction-game'
+import {
+  canEditPredictionOnMatch,
+  formatKickoffHm,
+  matchPredictionsClosed,
+  predictionCutoffPassed,
+} from '@/lib/prediction-cutoff'
 import { getSchoolTeamLogoPath } from '@/lib/school-team-logos'
 
 export type SlipPick = {
@@ -15,7 +21,8 @@ type Props = {
   onSlipChange: (matchId: string, patch: Partial<SlipPick>) => void
   prediction: UserPredictionRow | undefined
   signedIn: boolean
-  locked: boolean
+  /** Kickoff within 60 minutes but still before kickoff — show warning, keep Predict enabled. */
+  startsSoon?: boolean
   submitting: boolean
   flashSubmitted: boolean
   onPredict: (matchId: string) => void
@@ -90,15 +97,19 @@ export default function PredictionSlipRow({
   onSlipChange,
   prediction,
   signedIn,
-  locked,
+  startsSoon = false,
   submitting,
   flashSubmitted,
   onPredict,
 }: Props) {
-  const editable = signedIn && !locked
-  const winner = locked && prediction ? prediction.predicted_winner : slip.winner
-  const marginVal =
-    locked && prediction ? String(prediction.predicted_margin) : slip.margin
+  const at = new Date()
+  const cutoffPassed = predictionCutoffPassed(match, at)
+  const closed = matchPredictionsClosed(match, at)
+  const lockedOut = !canEditPredictionOnMatch(match, at)
+  const editable = signedIn && !lockedOut
+  const winner = lockedOut && prediction ? prediction.predicted_winner : slip.winner
+  const marginVal = lockedOut && prediction ? String(prediction.predicted_margin) : slip.margin
+  const kickHm = formatKickoffHm(match.kickoff_time)
 
   const homeSelected = winner === 'home'
   const awaySelected = winner === 'away'
@@ -111,10 +122,30 @@ export default function PredictionSlipRow({
       <div className="border border-gray-300 bg-white p-4 shadow-sm md:hidden">
         <div className="flex items-center justify-between gap-2 border-b border-gray-100 pb-2">
           <span className="text-[10px] font-bold uppercase tracking-wider text-teal-900">
-            {match.status === 'locked' ? 'Locked' : 'Upcoming'}
+            {match.status === 'locked' ? 'Locked' : cutoffPassed ? 'Closed' : 'Upcoming'}
           </span>
           <span className="text-xs text-gray-500">{formatKickoffShort(match.kickoff_time)}</span>
         </div>
+        {!closed ? (
+          <div className="mt-1 space-y-0.5 text-center text-[11px] font-medium text-gray-600">
+            <p>Predictions close at kickoff</p>
+            {kickHm ? <p>Kickoff: {kickHm}</p> : null}
+          </div>
+        ) : (
+          <p className="mt-1 text-center text-[11px] font-semibold text-gray-600">Predictions closed</p>
+        )}
+        {startsSoon && editable ? (
+          <div
+            className="mt-2 flex items-center justify-center gap-1.5 rounded border border-amber-600 bg-amber-50 px-2 py-1.5 text-[11px] font-semibold text-amber-950"
+            role="status"
+          >
+            <span className="text-base font-black leading-none" aria-hidden>
+              !
+            </span>
+            <span>Starts soon</span>
+            {kickHm ? <span className="font-normal text-gray-700">· Kickoff: {kickHm}</span> : null}
+          </div>
+        ) : null}
         <p className="mt-3 text-center text-xs font-medium text-gray-500">Tap a school to pick winner</p>
         <div className="mt-2 grid grid-cols-2 gap-2">
           <TeamLogoBlock
@@ -150,7 +181,7 @@ export default function PredictionSlipRow({
             placeholder="—"
           />
         </div>
-        {locked && prediction ? (
+        {lockedOut && signedIn && prediction ? (
           <p className="mt-3 rounded border border-gray-200 bg-gray-50 px-3 py-2 text-center text-xs text-gray-800">
             Saved:{' '}
             <span className="font-semibold">
@@ -158,8 +189,10 @@ export default function PredictionSlipRow({
             </span>{' '}
             by {prediction.predicted_margin}
           </p>
-        ) : locked && !prediction ? (
-          <p className="mt-3 text-center text-xs text-gray-600">No prediction saved before lock.</p>
+        ) : lockedOut && signedIn && !prediction ? (
+          <p className="mt-3 text-center text-xs text-gray-600">
+            {cutoffPassed ? 'No prediction saved before close.' : 'No prediction saved before lock.'}
+          </p>
         ) : null}
         {!signedIn ? (
           <p className="mt-3 text-center text-xs text-gray-600">Sign in above to predict.</p>
@@ -174,7 +207,7 @@ export default function PredictionSlipRow({
             onClick={() => onPredict(match.id)}
             className="flex-1 border-2 border-teal-900 bg-teal-800 py-3 text-sm font-bold uppercase tracking-wide text-white hover:bg-teal-900 disabled:opacity-40"
           >
-            {submitting ? '…' : prediction ? 'Update' : 'Predict'}
+            {submitting ? '…' : !editable && signedIn && lockedOut ? 'Closed' : prediction ? 'Update' : 'Predict'}
           </button>
           <Link
             href={`/predict-score/${match.id}`}
@@ -189,9 +222,29 @@ export default function PredictionSlipRow({
       <div className="hidden border-b border-gray-200 bg-white md:grid md:grid-cols-[9.5rem_minmax(0,1fr)_minmax(0,1fr)_5.5rem_6.5rem_5.5rem] md:items-center md:gap-3 md:px-3 md:py-2">
         <div className="text-xs text-gray-600">
           <div className="font-bold uppercase tracking-wide text-teal-900">
-            {match.status === 'locked' ? 'Locked' : 'Upcoming'}
+            {match.status === 'locked' ? 'Locked' : cutoffPassed ? 'Closed' : 'Upcoming'}
           </div>
           <div className="mt-0.5 leading-snug">{formatKickoffShort(match.kickoff_time)}</div>
+          {!closed ? (
+            <div className="mt-1 space-y-0.5 text-[10px] font-medium leading-tight text-gray-600">
+              <div>Predictions close at kickoff</div>
+              {kickHm ? <div>Kickoff: {kickHm}</div> : null}
+            </div>
+          ) : (
+            <div className="mt-1 text-[10px] font-semibold text-gray-600">Predictions closed</div>
+          )}
+          {startsSoon && editable ? (
+            <div
+              className="mt-1.5 flex flex-wrap items-center gap-1 rounded border border-amber-600 bg-amber-50 px-1.5 py-1 text-[10px] font-semibold text-amber-950"
+              role="status"
+            >
+              <span className="font-black" aria-hidden>
+                !
+              </span>
+              <span>Starts soon</span>
+              {kickHm ? <span className="font-normal text-gray-700">· {kickHm}</span> : null}
+            </div>
+          ) : null}
         </div>
         <TeamLogoBlock
           label="Home"
@@ -233,7 +286,7 @@ export default function PredictionSlipRow({
             onClick={() => onPredict(match.id)}
             className="border-2 border-teal-900 bg-teal-800 px-2 py-2.5 text-xs font-bold uppercase tracking-wide text-white hover:bg-teal-900 disabled:opacity-40"
           >
-            {submitting ? '…' : prediction ? 'Save' : 'Predict'}
+            {submitting ? '…' : !editable && signedIn && lockedOut ? 'Closed' : prediction ? 'Save' : 'Predict'}
           </button>
           {flashSubmitted ? (
             <span className="text-center text-[10px] font-semibold text-teal-800">Saved</span>
