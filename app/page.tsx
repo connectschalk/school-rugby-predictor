@@ -74,13 +74,6 @@ export default function HomePage() {
           >
             info@thenextplay.co.za
           </a>
-          <Link
-            href="/admin"
-            onClick={() => trackEvent('admin_click', 'landing')}
-            className="rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-500 hover:bg-gray-50 hover:text-gray-700"
-          >
-            Admin
-          </Link>
         </footer>
       </div>
     </main>

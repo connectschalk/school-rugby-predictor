@@ -36,7 +36,45 @@ import {
 } from '@/lib/prediction-model'
 import { recalculateTeamConsistencyFromPredictionHistory } from '@/lib/team-consistency'
 import { matchTeamName, type TeamMatchResult } from '@/lib/team-name-match'
-import { ADMIN_EMAIL } from '@/lib/admin-email'
+import { fetchUserIsAdmin } from '@/lib/admin-access'
+
+const ADMIN_TOOL_CARDS = [
+  {
+    href: '/predictor',
+    title: 'Predictor',
+    description: 'Head-to-head margin prediction between two teams.',
+  },
+  {
+    href: '/rankings',
+    title: 'Rankings tool',
+    description: 'Internal pool rankings and season connectivity.',
+  },
+  {
+    href: '/consistency',
+    title: 'Consistency',
+    description: 'Team consistency metrics and adjusted scores.',
+  },
+  {
+    href: '/network',
+    title: 'Graph',
+    description: 'Visual network of teams, links, and margins.',
+  },
+  {
+    href: '/results',
+    title: 'Scores / Results',
+    description: 'Browse and search match results by season.',
+  },
+  {
+    href: '/admin/game-matches',
+    title: 'Game matches',
+    description: 'Bulk fixtures and Predict a Score match admin.',
+  },
+  {
+    href: '/tools',
+    title: 'Tools hub',
+    description: 'Shortcuts to all internal analysis tools.',
+  },
+] as const
 
 function formatTeamMatchLabel(m: TeamMatchResult): string {
   const pct = m.matchConfidence != null ? ` ${Math.round(m.matchConfidence * 100)}%` : ''
@@ -238,14 +276,18 @@ export default function AdminPage() {
         data: { session },
       } = await supabase.auth.getSession()
 
-      const email = session?.user?.email || ''
-
-      if (!session || email !== ADMIN_EMAIL) {
-        router.push('/login')
+      if (!session?.user) {
+        router.replace('/login')
         return
       }
 
-      setAdminEmail(email)
+      const { isAdmin, error } = await fetchUserIsAdmin(supabase, session.user.id)
+      if (error || !isAdmin) {
+        router.replace('/predict-score')
+        return
+      }
+
+      setAdminEmail(session.user.email ?? '')
       setAuthChecked(true)
     }
 
@@ -254,10 +296,14 @@ export default function AdminPage() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      const email = session?.user?.email || ''
-      if (!session || email !== ADMIN_EMAIL) {
-        router.push('/login')
-      }
+      void (async () => {
+        if (!session?.user) {
+          router.replace('/login')
+          return
+        }
+        const { isAdmin } = await fetchUserIsAdmin(supabase, session.user.id)
+        if (!isAdmin) router.replace('/predict-score')
+      })()
     })
 
     return () => {
@@ -1823,13 +1869,32 @@ export default function AdminPage() {
           Add schools, add results, bulk Excel or URL import, upload team logos, view results,
           delete incorrect scores, recalculate team consistency, and monitor usage.
         </p>
-        <p className="mt-2 text-sm">
-          <Link href="/admin/game-matches" className="text-blue-600 underline hover:text-blue-800">
-            Predict a Score — bulk fixtures & match admin
-          </Link>
-        </p>
 
-        <div className="mt-8 flex flex-wrap gap-3">
+        <section className="mt-10" aria-labelledby="admin-tools-heading">
+          <h2 id="admin-tools-heading" className="text-lg font-semibold text-gray-900">
+            Internal tools
+          </h2>
+          <p className="mt-1 text-sm text-gray-600">
+            Analysis and data tools (admin accounts only). Use the bar above to switch quickly.
+          </p>
+          <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {ADMIN_TOOL_CARDS.map((card) => (
+              <Link
+                key={card.href}
+                href={card.href}
+                className="group flex flex-col rounded-2xl border border-gray-200 bg-gray-50/80 p-5 shadow-sm transition hover:border-gray-300 hover:bg-white hover:shadow-md"
+              >
+                <span className="text-base font-semibold text-gray-900 group-hover:text-red-800">
+                  {card.title}
+                </span>
+                <span className="mt-2 flex-1 text-sm text-gray-600">{card.description}</span>
+                <span className="mt-4 text-xs font-semibold text-red-700">Open →</span>
+              </Link>
+            ))}
+          </div>
+        </section>
+
+        <div className="mt-10 flex flex-wrap gap-3">
           <button
             onClick={() => setActiveAdminTab('add-delete')}
             className={`rounded-xl px-4 py-3 text-sm font-medium ${

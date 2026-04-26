@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import RequireAdmin from '@/components/admin/RequireAdmin'
 
 type Team = { id: number; name: string }
 
@@ -146,7 +147,7 @@ function pathToBaseline(teamId: number, parentMap: Map<number, number | null>) {
   return ids
 }
 
-export default function NetworkPage() {
+function NetworkPageContent() {
     const [teams, setTeams] = useState<Team[]>([])
     const [matches, setMatches] = useState<Match[]>([])
     const [season, setSeason] = useState('2026')
@@ -779,4 +780,12 @@ export default function NetworkPage() {
             </div>
         </main>
     )
+}
+
+export default function NetworkPage() {
+  return (
+    <RequireAdmin>
+      <NetworkPageContent />
+    </RequireAdmin>
+  )
 }

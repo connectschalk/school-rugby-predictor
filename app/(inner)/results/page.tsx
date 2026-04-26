@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import RequireAdmin from '@/components/admin/RequireAdmin'
 
 type Team = {
   id: number
@@ -23,7 +24,7 @@ type MatchRow = Match & {
   teamBName: string
 }
 
-export default function ResultsPage() {
+function ResultsPageContent() {
   const [teams, setTeams] = useState<Team[]>([])
   const [matches, setMatches] = useState<Match[]>([])
   const [season, setSeason] = useState('2026')
@@ -204,5 +205,13 @@ export default function ResultsPage() {
         )}
       </div>
     </main>
+  )
+}
+
+export default function ResultsPage() {
+  return (
+    <RequireAdmin>
+      <ResultsPageContent />
+    </RequireAdmin>
   )
 }

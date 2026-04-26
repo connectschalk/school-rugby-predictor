@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { ADMIN_EMAIL } from '@/lib/admin-email'
+import { fetchUserIsAdmin } from '@/lib/admin-access'
 import { parseGameMatchesBulk, parseGameMatchesCsv } from '@/lib/parse-game-matches-bulk'
 import type { ParsedGameLine } from '@/lib/parse-game-matches-bulk'
 import type { GameMatch, GameMatchStatus } from '@/lib/public-prediction-game'
@@ -238,9 +238,13 @@ export default function AdminGameMatchesPage() {
       const {
         data: { session },
       } = await supabase.auth.getSession()
-      const email = session?.user?.email ?? ''
-      if (!session || email.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
-        router.push('/login')
+      if (!session?.user) {
+        router.replace('/login')
+        return
+      }
+      const { isAdmin, error } = await fetchUserIsAdmin(supabase, session.user.id)
+      if (error || !isAdmin) {
+        router.replace('/predict-score')
         return
       }
       setAuthChecked(true)
@@ -251,10 +255,14 @@ export default function AdminGameMatchesPage() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      const email = session?.user?.email ?? ''
-      if (!session || email.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
-        router.push('/login')
-      }
+      void (async () => {
+        if (!session?.user) {
+          router.replace('/login')
+          return
+        }
+        const { isAdmin } = await fetchUserIsAdmin(supabase, session.user.id)
+        if (!isAdmin) router.replace('/predict-score')
+      })()
     })
 
     return () => subscription.unsubscribe()
@@ -693,7 +701,7 @@ export default function AdminGameMatchesPage() {
           <div>
             <h1 className="text-3xl font-bold">Predict a Score — fixtures</h1>
             <p className="mt-1 text-sm text-gray-600">
-              Admin only ({ADMIN_EMAIL}).{' '}
+              Admin only (user_profiles.role = admin).{' '}
               <Link href="/admin" className="text-blue-600 underline hover:text-blue-800">
                 Back to admin
               </Link>

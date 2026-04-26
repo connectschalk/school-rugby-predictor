@@ -7,27 +7,31 @@ import { useEffect, useId, useState, Suspense } from 'react'
 import LetterAvatar from '@/components/LetterAvatar'
 import { clearPostConfirmProfilePreview, readPostConfirmProfilePreview, type PostConfirmProfilePreview } from '@/lib/user-profile-metadata'
 import { supabase } from '@/lib/supabase'
-import { ADMIN_EMAIL } from '@/lib/admin-email'
+import { isProfileAdminRole } from '@/lib/admin-access'
 
 type PostLoginPath = '/admin' | '/profile' | '/predict-score'
 
-/** First-time / incomplete profile → `/profile`; complete → `/predict-score`; admin → `/admin`. Fetch errors → `/profile`. */
+/** First-time / incomplete profile → `/profile`; complete → `/predict-score`; admin role → `/admin`. Fetch errors → `/profile`. */
 async function getPostLoginRouteForUser(user: {
   id: string
   email?: string | null
 }): Promise<PostLoginPath> {
-  const em = user.email?.toLowerCase() ?? ''
-  if (em === ADMIN_EMAIL.toLowerCase()) return '/admin'
-
   const { data: profile, error } = await supabase
     .from('user_profiles')
-    .select('first_name, surname, display_name')
+    .select('first_name, surname, display_name, role')
     .eq('id', user.id)
     .single()
 
   if (error || !profile) return '/profile'
 
-  const row = profile as { first_name: string | null; surname: string | null; display_name: string | null }
+  const row = profile as {
+    first_name: string | null
+    surname: string | null
+    display_name: string | null
+    role?: string | null
+  }
+  if (isProfileAdminRole(row.role)) return '/admin'
+
   const isProfileComplete =
     Boolean(row.first_name?.trim()) && Boolean(row.surname?.trim()) && Boolean(row.display_name?.trim())
 

@@ -27,6 +27,7 @@ import {
   getMatchSummary,
   formatFixture,
 } from '@/lib/prediction-model'
+import RequireAdmin from '@/components/admin/RequireAdmin'
 
 function shareRationaleForResult(result: PredictionResult, season: string): string {
   if (result.type === 'direct') {
@@ -35,7 +36,7 @@ function shareRationaleForResult(result: PredictionResult, season: string): stri
   return `Indirect prediction · ${result.confidence} confidence · ${result.pathCount} linked path(s) · Season ${season}`
 }
 
-export default function PredictorPage() {
+function PredictorPageContent() {
   const [teams, setTeams] = useState<Team[]>([])
   const [matches, setMatches] = useState<Match[]>([])
   const [season, setSeason] = useState('2026')
@@ -573,5 +574,13 @@ export default function PredictorPage() {
         </div>
       </div>
     </main>
+  )
+}
+
+export default function PredictorPage() {
+  return (
+    <RequireAdmin>
+      <PredictorPageContent />
+    </RequireAdmin>
   )
 }

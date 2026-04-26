@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import RequireAdmin from '@/components/admin/RequireAdmin'
 
 type Team = {
   id: number
@@ -26,7 +27,7 @@ type RankedConsistency = ConsistencyRow & {
   averageError: number
 }
 
-export default function ConsistencyPage() {
+function ConsistencyPageContent() {
   const [teams, setTeams] = useState<Team[]>([])
   const [rows, setRows] = useState<ConsistencyRow[]>([])
   const [season, setSeason] = useState('2026')
@@ -167,5 +168,13 @@ export default function ConsistencyPage() {
         )}
       </div>
     </main>
+  )
+}
+
+export default function ConsistencyPage() {
+  return (
+    <RequireAdmin>
+      <ConsistencyPageContent />
+    </RequireAdmin>
   )
 }

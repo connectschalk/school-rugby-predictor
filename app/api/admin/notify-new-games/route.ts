@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { ADMIN_EMAIL } from '@/lib/admin-email'
+import { fetchUserIsAdmin } from '@/lib/admin-access'
 
 export const runtime = 'nodejs'
 
@@ -27,7 +27,12 @@ export async function POST(request: Request) {
     error: userErr,
   } = await supabaseUser.auth.getUser()
 
-  if (userErr || !user?.email || user.email.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+  if (userErr || !user) {
+    return NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 })
+  }
+
+  const { isAdmin, error: roleErr } = await fetchUserIsAdmin(supabaseUser, user.id)
+  if (roleErr || !isAdmin) {
     return NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 })
   }
 

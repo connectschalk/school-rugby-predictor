@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import RankingsExplanationModal from '@/components/rankings/RankingsExplanationModal'
+import RequireAdmin from '@/components/admin/RequireAdmin'
 
 type Team = {
   id: number
@@ -180,7 +181,7 @@ function computePoolRankings(poolTeamIds: number[], matches: Match[], teams: Tea
   return ranked
 }
 
-export default function RankingsPage() {
+function RankingsPageContent() {
   const [teams, setTeams] = useState<Team[]>([])
   const [matches, setMatches] = useState<Match[]>([])
   const [season, setSeason] = useState('2026')
@@ -533,5 +534,13 @@ export default function RankingsPage() {
         )}
       </div>
     </main>
+  )
+}
+
+export default function RankingsPage() {
+  return (
+    <RequireAdmin>
+      <RankingsPageContent />
+    </RequireAdmin>
   )
 }
