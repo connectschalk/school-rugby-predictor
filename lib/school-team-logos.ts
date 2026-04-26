@@ -67,7 +67,12 @@ reg('potch-gim', ['Potchefstroom Gimnasium', 'Potch Gim', 'Potchefstroom Gim'])
 reg('rondebosch', ['Rondebosch', 'Rondebosch Boys', 'Rondebosch Boys High School'])
 reg('rustenburg', ['Rustenburg', 'Hoërskool Rustenburg'])
 reg('sacs', ['SACS', 'South African College Schools'])
-reg('stellenberg', ['Stellenberg', 'Hoërskool Stellenberg'])
+reg('stellenberg', [
+  'Stellenberg',
+  'Hoërskool Stellenberg',
+  'Stellenburg',
+  'Hoërskool Stellenburg',
+])
 reg('strand', ['Strand', 'Hoërskool Strand'])
 reg('swartland', ['Swartland', 'Hoërskool Swartland'])
 reg('trio', ['TRIO', 'Trio'])

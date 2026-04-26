@@ -11,6 +11,11 @@ import {
   normalizeAvatarLetter,
   resolveAvatarLetter,
 } from '@/lib/letter-avatar'
+import {
+  DISPLAY_NAME_NOT_ALLOWED_MESSAGE,
+  isDisplayNamePolicyDbError,
+  validateDisplayName,
+} from '@/lib/display-name-filter'
 import { supabase } from '@/lib/supabase'
 import { trackEvent } from '@/lib/trackEvent'
 import { repairUserProfileFromMetadataIfNeeded, type UserProfileRow } from '@/lib/user-profile-metadata'
@@ -156,6 +161,11 @@ export default function ProfilePage() {
       setError(`Display name must be ${DISPLAY_MAX} characters or fewer.`)
       return
     }
+    const displayCheck = validateDisplayName(name)
+    if (!displayCheck.ok) {
+      setError(displayCheck.message)
+      return
+    }
     if (!isPaletteAvatarColour(chosenColourHex)) {
       setError('Please choose a valid avatar colour.')
       return
@@ -185,7 +195,11 @@ export default function ProfilePage() {
     )
 
     if (upsertErr) {
-      setError(upsertErr.message)
+      setError(
+        upsertErr.code === '23514' || isDisplayNamePolicyDbError(upsertErr.message)
+          ? DISPLAY_NAME_NOT_ALLOWED_MESSAGE
+          : upsertErr.message
+      )
       setSaving(false)
       return
     }

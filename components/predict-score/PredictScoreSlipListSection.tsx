@@ -27,6 +27,8 @@ type Props = {
   flashSubmittedId: string | null
   patchSlip: (matchId: string, patch: Partial<SlipPick>) => void
   onPredict: (matchId: string) => void
+  onLock?: (matchId: string) => void
+  lockingMatchId?: string | null
 }
 
 export default function PredictScoreSlipListSection({
@@ -46,6 +48,8 @@ export default function PredictScoreSlipListSection({
   flashSubmittedId,
   patchSlip,
   onPredict,
+  onLock,
+  lockingMatchId = null,
 }: Props) {
   if (matches.length === 0) return null
 
@@ -78,6 +82,8 @@ export default function PredictScoreSlipListSection({
                 submitting={rowBusy}
                 flashSubmitted={flashSubmittedId === match.id}
                 onPredict={onPredict}
+                onLock={onLock}
+                lockingMatchId={lockingMatchId}
               />
             )
           })}

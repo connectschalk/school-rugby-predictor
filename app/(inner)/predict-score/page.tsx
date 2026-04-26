@@ -18,6 +18,7 @@ import {
   type GameMatch,
   type UserPredictionRow,
 } from '@/lib/public-prediction-game'
+import { LOCK_ALL_NO_CANDIDATES, lockAllUnlockedSavedForEditableMatches } from '@/lib/lock-user-predictions'
 import { matchGameAgainstTeamSearch } from '@/lib/team-aliases-db'
 import type { TeamRow } from '@/lib/team-name-match'
 import { supabase } from '@/lib/supabase'
@@ -64,9 +65,12 @@ export default function PredictScorePage() {
   const [loadingMatches, setLoadingMatches] = useState(true)
   const [submittingMatchId, setSubmittingMatchId] = useState<string | null>(null)
   const [submittingAll, setSubmittingAll] = useState(false)
+  const [lockingMatchId, setLockingMatchId] = useState<string | null>(null)
+  const [lockingAll, setLockingAll] = useState(false)
   const [submitError, setSubmitError] = useState('')
   const [flashSubmittedId, setFlashSubmittedId] = useState<string | null>(null)
   const [bulkSaveMsg, setBulkSaveMsg] = useState('')
+  const [lockAllMsg, setLockAllMsg] = useState('')
   const [howModalOpen, setHowModalOpen] = useState(false)
   const [teamSearch, setTeamSearch] = useState('')
   const [aliasRowsForSearch, setAliasRowsForSearch] = useState<Record<string, unknown>[]>([])
@@ -187,6 +191,12 @@ export default function PredictScorePage() {
     return () => window.clearTimeout(t)
   }, [bulkSaveMsg])
 
+  useEffect(() => {
+    if (!lockAllMsg) return
+    const t = window.setTimeout(() => setLockAllMsg(''), 4000)
+    return () => window.clearTimeout(t)
+  }, [lockAllMsg])
+
   const matchIds = useMemo(() => playableMatches.map((m) => m.id), [playableMatches])
 
   const filteredPlayable = useMemo(() => {
@@ -232,6 +242,14 @@ export default function PredictScorePage() {
   const hasEditablePredictRows =
     featuredEditable.length + openOtherMatches.length + startingSoonMatches.length > 0
 
+  const canLockAnySaved = useMemo(() => {
+    const open = [...featuredEditable, ...openOtherMatches, ...startingSoonMatches]
+    return open.some((m) => {
+      const p = predictions.get(m.id)
+      return p && !p.is_locked && canEditPredictionOnMatch(m, atDate)
+    })
+  }, [featuredEditable, openOtherMatches, startingSoonMatches, predictions, atDate])
+
   const searchActive = teamSearch.trim().length > 0
   const noSearchResults =
     searchActive && filteredPlayable.length === 0 && playableMatches.length > 0
@@ -270,6 +288,11 @@ export default function PredictScorePage() {
 
   const handleSubmitOne = async (matchId: string) => {
     if (!user) return
+    const existing = predictions.get(matchId)
+    if (existing?.is_locked) {
+      setSubmitError('This prediction is locked and cannot be changed.')
+      return
+    }
     const rowMatch = playableMatches.find((m) => m.id === matchId)
     if (!rowMatch || !canEditPredictionOnMatch(rowMatch, new Date())) {
       setSubmitError('Predictions are closed for this match.')
@@ -344,6 +367,53 @@ export default function PredictScorePage() {
       setBulkSaveMsg(`Submitted ${targets.length} prediction(s).`)
     }
     setSubmittingAll(false)
+  }
+
+  const handleLockOne = async (matchId: string) => {
+    if (!user) return
+    const pred = predictions.get(matchId)
+    if (!pred?.id || pred.is_locked) return
+    const rowMatch = playableMatches.find((m) => m.id === matchId)
+    if (!rowMatch || !canEditPredictionOnMatch(rowMatch, new Date())) {
+      setSubmitError('Predictions are closed for this match.')
+      return
+    }
+    setSubmitError('')
+    setLockingMatchId(matchId)
+    const { error } = await supabase
+      .from('user_predictions')
+      .update({ is_locked: true, locked_at: new Date().toISOString() })
+      .eq('id', pred.id)
+      .eq('is_locked', false)
+    if (error) {
+      setSubmitError(error.message)
+    } else {
+      await reloadPredictions(user.id, matchIds.length ? matchIds : [matchId])
+    }
+    setLockingMatchId(null)
+  }
+
+  const handleLockAll = async () => {
+    if (!user) return
+    const open = [...featuredEditable, ...openOtherMatches, ...startingSoonMatches]
+    setSubmitError('')
+    setLockAllMsg('')
+    setLockingAll(true)
+    const { locked, error } = await lockAllUnlockedSavedForEditableMatches(
+      supabase,
+      open,
+      predictions,
+      new Date()
+    )
+    if (error?.message === LOCK_ALL_NO_CANDIDATES) {
+      setSubmitError('No saved unlocked predictions to lock for open games.')
+    } else if (error) {
+      setSubmitError(error.message)
+    } else {
+      await reloadPredictions(user.id, matchIds)
+      setLockAllMsg(`Locked ${locked} prediction(s).`)
+    }
+    setLockingAll(false)
   }
 
   return (
@@ -424,6 +494,12 @@ export default function PredictScorePage() {
         </p>
       ) : null}
 
+      {lockAllMsg ? (
+        <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-900">
+          {lockAllMsg}
+        </p>
+      ) : null}
+
       {loadingMatches ? (
         <p className="mt-10 text-center text-sm text-gray-500">Loading matches…</p>
       ) : playableMatches.length === 0 && completedMatches.length === 0 ? (
@@ -478,6 +554,8 @@ export default function PredictScorePage() {
                     flashSubmittedId={flashSubmittedId}
                     patchSlip={patchSlip}
                     onPredict={handleSubmitOne}
+                    onLock={handleLockOne}
+                    lockingMatchId={lockingMatchId}
                   />
                   <PredictScoreSlipListSection
                     title="Open games"
@@ -493,6 +571,8 @@ export default function PredictScorePage() {
                     flashSubmittedId={flashSubmittedId}
                     patchSlip={patchSlip}
                     onPredict={handleSubmitOne}
+                    onLock={handleLockOne}
+                    lockingMatchId={lockingMatchId}
                   />
                   <PredictScoreSlipListSection
                     title="Starting soon"
@@ -508,6 +588,8 @@ export default function PredictScorePage() {
                     flashSubmittedId={flashSubmittedId}
                     patchSlip={patchSlip}
                     onPredict={handleSubmitOne}
+                    onLock={handleLockOne}
+                    lockingMatchId={lockingMatchId}
                   />
                   <PredictScoreSlipListSection
                     title="Predictions closed"
@@ -525,24 +607,43 @@ export default function PredictScorePage() {
                     flashSubmittedId={flashSubmittedId}
                     patchSlip={patchSlip}
                     onPredict={handleSubmitOne}
+                    onLock={handleLockOne}
+                    lockingMatchId={lockingMatchId}
                   />
                   </div>
                 </>
               )}
 
               {signedIn && hasEditablePredictRows ? (
-                <div className="mt-4 flex flex-col items-end gap-2">
-                  <button
-                    type="button"
-                    disabled={submittingAll || submittingMatchId !== null}
-                    onClick={() => void handleSubmitAll()}
-                    className="rounded-xl border border-gray-900 bg-gray-900 px-6 py-3 text-sm font-black uppercase tracking-wide text-white hover:bg-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 disabled:opacity-40"
-                  >
-                    {submittingAll ? 'Submitting…' : 'Submit all'}
-                  </button>
+                <div className="mt-4 flex flex-col items-end gap-3">
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <button
+                      type="button"
+                      disabled={submittingAll || submittingMatchId !== null || lockingMatchId !== null || lockingAll}
+                      onClick={() => void handleSubmitAll()}
+                      className="rounded-xl border border-gray-900 bg-gray-900 px-6 py-3 text-sm font-black uppercase tracking-wide text-white hover:bg-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 disabled:opacity-40"
+                    >
+                      {submittingAll ? 'Submitting…' : 'Submit all'}
+                    </button>
+                    {canLockAnySaved ? (
+                      <button
+                        type="button"
+                        disabled={
+                          submittingAll ||
+                          submittingMatchId !== null ||
+                          lockingMatchId !== null ||
+                          lockingAll
+                        }
+                        onClick={() => void handleLockAll()}
+                        className="rounded-xl border border-red-700 bg-white px-6 py-3 text-sm font-black uppercase tracking-wide text-red-700 hover:bg-red-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 disabled:opacity-40"
+                      >
+                        {lockingAll ? 'Locking…' : 'Lock all saved predictions'}
+                      </button>
+                    ) : null}
+                  </div>
                   <p className="max-w-md text-right text-xs text-gray-600">
-                    Submit all only submits rows where you have selected a winner and entered a
-                    margin. You can leave other matches blank.
+                    Submit all saves open rows with a winner and margin. Lock freezes your pick for
+                    Community Picks — lock all only affects games you already saved.
                   </p>
                 </div>
               ) : null}

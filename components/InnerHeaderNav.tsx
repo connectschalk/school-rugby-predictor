@@ -141,6 +141,8 @@ export default function InnerHeaderNav() {
 
   const rankingsActive = pathname.startsWith('/user-rankings')
   const predictActive = pathname.startsWith('/predict-score')
+  const communityActive =
+    pathname.startsWith('/community-predictor') || pathname.startsWith('/community-picks')
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-x-4 gap-y-3 px-4 py-4 sm:px-6">
@@ -176,6 +178,19 @@ export default function InnerHeaderNav() {
             Predict
           </Link>
           <Link
+            href="/community-predictor"
+            className={`${rankingsClasses(communityActive)} max-md:hidden`}
+            onClick={() => {
+              closeMenu()
+              closeMobileMore()
+            }}
+          >
+            <span className="text-xs font-black leading-none text-red-600" aria-hidden>
+              ◎
+            </span>
+            Community Picks
+          </Link>
+          <Link
             href="/user-rankings"
             className={`${rankingsClasses(rankingsActive)} max-md:hidden`}
             onClick={() => {
@@ -208,6 +223,16 @@ export default function InnerHeaderNav() {
           </button>
           {mobileMoreOpen ? (
             <div className="absolute right-0 z-50 mt-2 w-56 rounded-xl border border-gray-200 bg-white py-2 shadow-md shadow-black/10">
+              <Link
+                href="/community-predictor"
+                className="flex items-center gap-2 px-4 py-3 text-sm font-semibold text-gray-900 hover:bg-gray-50"
+                onClick={closeMobileMore}
+              >
+                <span className="text-xs font-black text-red-600" aria-hidden>
+                  ◎
+                </span>
+                Community Picks
+              </Link>
               <Link
                 href="/user-rankings"
                 className="flex items-center gap-2 px-4 py-3 text-sm font-semibold text-gray-900 hover:bg-gray-50"

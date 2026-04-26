@@ -26,6 +26,8 @@ type Props = {
   submitting: boolean
   flashSubmitted: boolean
   onPredict: (matchId: string) => void
+  onLock?: (matchId: string) => void
+  lockingMatchId?: string | null
 }
 
 function formatKickoffShort(iso: string) {
@@ -102,14 +104,18 @@ export default function PredictionSlipRow({
   submitting,
   flashSubmitted,
   onPredict,
+  onLock,
+  lockingMatchId = null,
 }: Props) {
   const at = new Date()
   const cutoffPassed = predictionCutoffPassed(match, at)
   const closed = matchPredictionsClosed(match, at)
-  const lockedOut = !canEditPredictionOnMatch(match, at)
-  const editable = signedIn && !lockedOut
-  const winner = lockedOut && prediction ? prediction.predicted_winner : slip.winner
-  const marginVal = lockedOut && prediction ? String(prediction.predicted_margin) : slip.margin
+  const timeAllowsEdit = canEditPredictionOnMatch(match, at)
+  const userLocked = prediction?.is_locked === true
+  const editable = signedIn && timeAllowsEdit && !userLocked
+  const showSavedPick = Boolean(prediction && (!timeAllowsEdit || userLocked))
+  const winner = showSavedPick ? prediction!.predicted_winner : slip.winner
+  const marginVal = showSavedPick ? String(prediction!.predicted_margin) : slip.margin
   const kickHm = formatKickoffHm(match.kickoff_time)
 
   const homeSelected = winner === 'home'
@@ -118,22 +124,43 @@ export default function PredictionSlipRow({
   const awayLogo = getSchoolTeamLogoPath(match.away_team)
 
   const hasSavedPrediction = Boolean(prediction)
-  const showClosedButton = !editable && signedIn && lockedOut
-  const predictButtonLabel = submitting ? '…' : showClosedButton ? 'Closed' : hasSavedPrediction ? 'UPDATE' : 'SAVE'
-  const predictButtonColors = showClosedButton
-    ? 'border-gray-300 bg-gray-300 text-gray-600'
-    : hasSavedPrediction
-      ? 'border-green-700 bg-green-600 text-white hover:bg-green-700'
-      : 'border-[#111318] bg-[#111318] text-white hover:bg-black'
+  const closedByTime = signedIn && !timeAllowsEdit
+  const predictButtonLabel = submitting
+    ? '…'
+    : userLocked
+      ? 'Locked'
+      : closedByTime
+        ? 'Closed'
+        : hasSavedPrediction
+          ? 'UPDATE'
+          : 'SAVE'
+  const predictButtonColors =
+    userLocked || closedByTime
+      ? 'border-gray-300 bg-gray-300 text-gray-600'
+      : hasSavedPrediction
+        ? 'border-green-700 bg-green-600 text-white hover:bg-green-700'
+        : 'border-[#111318] bg-[#111318] text-white hover:bg-black'
+
+  const showLockButton = Boolean(
+    onLock && signedIn && timeAllowsEdit && hasSavedPrediction && !userLocked
+  )
+  const lockBusy = lockingMatchId === match.id
 
   return (
     <li className="list-none">
       {/* Mobile slip card */}
       <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm shadow-black/5 md:hidden">
         <div className="flex items-center justify-between gap-2 border-b border-gray-100 pb-2">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-900">
-            {match.status === 'locked' ? 'Locked' : cutoffPassed ? 'Closed' : 'Upcoming'}
-          </span>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-900">
+              {match.status === 'locked' ? 'Locked' : cutoffPassed ? 'Closed' : 'Upcoming'}
+            </span>
+            {userLocked ? (
+              <span className="rounded-full bg-red-700 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
+                Locked in
+              </span>
+            ) : null}
+          </div>
           <span className="text-xs text-gray-500">{formatKickoffShort(match.kickoff_time)}</span>
         </div>
         {!closed ? (
@@ -191,15 +218,15 @@ export default function PredictionSlipRow({
             placeholder="—"
           />
         </div>
-        {lockedOut && signedIn && prediction ? (
+        {showSavedPick && signedIn && prediction ? (
           <p className="mt-3 rounded border border-gray-200 bg-gray-50 px-3 py-2 text-center text-xs text-gray-800">
-            Saved:{' '}
+            {userLocked ? 'Locked pick: ' : 'Saved: '}
             <span className="font-semibold">
               {prediction.predicted_winner === 'home' ? match.home_team : match.away_team}
             </span>{' '}
             by {prediction.predicted_margin}
           </p>
-        ) : lockedOut && signedIn && !prediction ? (
+        ) : !timeAllowsEdit && signedIn && !prediction ? (
           <p className="mt-3 text-center text-xs text-gray-600">
             {cutoffPassed ? 'No prediction saved before close.' : 'No prediction saved before lock.'}
           </p>
@@ -219,6 +246,16 @@ export default function PredictionSlipRow({
           >
             {predictButtonLabel}
           </button>
+          {showLockButton ? (
+            <button
+              type="button"
+              disabled={submitting || lockBusy}
+              onClick={() => onLock!(match.id)}
+              className="flex-1 rounded-xl border border-red-700 bg-white py-3 text-sm font-bold uppercase tracking-wide text-red-700 transition hover:bg-red-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 disabled:opacity-40"
+            >
+              {lockBusy ? '…' : 'Lock'}
+            </button>
+          ) : null}
           <Link
             href={`/predict-score/${match.id}`}
             className="flex items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-3 text-center text-sm font-semibold text-gray-800 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
@@ -231,8 +268,15 @@ export default function PredictionSlipRow({
       {/* Desktop slip row */}
       <div className="hidden border-b border-gray-100 bg-white md:grid md:grid-cols-[9.5rem_minmax(0,1fr)_minmax(0,1fr)_5.5rem_6.5rem_5.5rem] md:items-center md:gap-3 md:px-3 md:py-2">
         <div className="text-xs text-gray-600">
-          <div className="font-bold uppercase tracking-wide text-gray-900">
-            {match.status === 'locked' ? 'Locked' : cutoffPassed ? 'Closed' : 'Upcoming'}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="font-bold uppercase tracking-wide text-gray-900">
+              {match.status === 'locked' ? 'Locked' : cutoffPassed ? 'Closed' : 'Upcoming'}
+            </span>
+            {userLocked ? (
+              <span className="rounded-full bg-red-700 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-white">
+                Locked in
+              </span>
+            ) : null}
           </div>
           <div className="mt-0.5 leading-snug">{formatKickoffShort(match.kickoff_time)}</div>
           {!closed ? (
@@ -298,6 +342,16 @@ export default function PredictionSlipRow({
           >
             {predictButtonLabel}
           </button>
+          {showLockButton ? (
+            <button
+              type="button"
+              disabled={submitting || lockBusy}
+              onClick={() => onLock!(match.id)}
+              className="rounded-lg border border-red-700 bg-white px-2 py-2 text-[10px] font-bold uppercase tracking-wide text-red-700 hover:bg-red-50 disabled:opacity-40"
+            >
+              {lockBusy ? '…' : 'Lock'}
+            </button>
+          ) : null}
           {flashSubmitted ? (
             <span className="text-center text-[10px] font-semibold text-red-700">Saved</span>
           ) : null}

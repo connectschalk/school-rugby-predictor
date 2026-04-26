@@ -23,6 +23,8 @@ export type UserPredictionRow = {
   predicted_winner: 'home' | 'away'
   predicted_margin: number
   submitted_at: string
+  is_locked?: boolean
+  locked_at?: string | null
 }
 
 export type UserPredictionScoreRow = {
@@ -117,11 +119,25 @@ export async function fetchUserPredictionsForMatches(
 
   const { data, error } = await client
     .from('user_predictions')
-    .select('id, match_id, user_id, predicted_winner, predicted_margin, submitted_at')
+    .select('id, match_id, user_id, predicted_winner, predicted_margin, submitted_at, is_locked, locked_at')
     .eq('user_id', userId)
     .in('match_id', matchIds)
 
   return { data: (data as UserPredictionRow[] | null) ?? [], error }
+}
+
+/** All public fixtures for community hub (upcoming, locked, completed). */
+export async function fetchGameMatchesForCommunityHub(client: SupabaseClient, limit = 200) {
+  const { data, error } = await client
+    .from('game_matches')
+    .select(
+      'id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at, is_featured, featured_order'
+    )
+    .in('status', ['upcoming', 'locked', 'completed'])
+    .order('kickoff_time', { ascending: false })
+    .limit(limit)
+
+  return { data: (data as GameMatch[] | null) ?? [], error }
 }
 
 export async function fetchCompletedGameMatches(client: SupabaseClient, limit = 20) {

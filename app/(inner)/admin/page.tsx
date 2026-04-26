@@ -1894,6 +1894,33 @@ export default function AdminPage() {
           </div>
         </section>
 
+        <section
+          className="mt-10 rounded-2xl border border-amber-200 bg-amber-50/90 p-5"
+          aria-labelledby="admin-moderation-heading"
+        >
+          <h2 id="admin-moderation-heading" className="text-base font-semibold text-gray-900">
+            Display name moderation
+          </h2>
+          <p className="mt-2 text-sm text-gray-700">
+            Banned tokens are stored in{' '}
+            <code className="rounded bg-white/80 px-1 py-0.5 text-xs">public.banned_display_words</code>. The app
+            mirrors the starter list in{' '}
+            <code className="rounded bg-white/80 px-1 py-0.5 text-xs">lib/display-name-filter.ts</code>; the
+            database trigger keeps writes honest even if the client is bypassed. The table has RLS enabled with no
+            read policies for API roles—add or deactivate words in the Supabase SQL Editor (service role).
+          </p>
+          <p className="mt-3 font-mono text-[11px] leading-relaxed text-gray-800 sm:text-xs">
+            insert into public.banned_display_words (word, language) values (&apos;example&apos;, &apos;en&apos;)
+            on conflict (word) do nothing;
+          </p>
+          <p className="mt-2 text-xs text-gray-600">
+            Soft-disable:{' '}
+            <code className="rounded bg-white/80 px-1 py-0.5 font-mono text-[11px]">
+              update public.banned_display_words set is_active = false where word = &apos;example&apos;;
+            </code>
+          </p>
+        </section>
+
         <div className="mt-10 flex flex-wrap gap-3">
           <button
             onClick={() => setActiveAdminTab('add-delete')}
