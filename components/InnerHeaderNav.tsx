@@ -2,37 +2,43 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
+import LetterAvatar from '@/components/LetterAvatar'
 import { supabase } from '@/lib/supabase'
 
-function initialsForUser(user: User, displayName: string | null | undefined): string {
-  const name = (displayName ?? '').trim() || (typeof user.user_metadata?.full_name === 'string' ? user.user_metadata.full_name.trim() : '')
-  if (name) {
-    const parts = name.split(/\s+/).filter(Boolean)
-    if (parts.length >= 2) {
-      const a = parts[0][0]
-      const b = parts[parts.length - 1][0]
-      if (a && b) return (a + b).toUpperCase()
-    }
-    const w = parts[0] ?? name
-    return w.slice(0, 2).toUpperCase() || '?'
-  }
-  const email = user.email?.trim()
-  if (email) return email.slice(0, 2).toUpperCase()
-  return '?'
+function PredictIconDot() {
+  return <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-red-500" aria-hidden />
+}
+
+function RankingsListIcon() {
+  return (
+    <span className="inline-flex h-3.5 w-3.5 shrink-0 flex-col justify-center gap-[2px]" aria-hidden>
+      <span className="h-[2px] w-full rounded-full bg-red-500" />
+      <span className="h-[2px] w-full rounded-full bg-red-500" />
+      <span className="h-[2px] w-full rounded-full bg-red-500" />
+    </span>
+  )
 }
 
 export default function InnerHeaderNav() {
   const router = useRouter()
+  const pathname = usePathname()
   const [user, setUser] = useState<User | null>(null)
   const [authReady, setAuthReady] = useState(false)
-  const [profile, setProfile] = useState<{ display_name: string | null; avatar_url: string | null } | null>(
-    null
-  )
+  const [profile, setProfile] = useState<{
+    display_name: string | null
+    avatar_url: string | null
+    avatar_letter: string | null
+    avatar_colour: string | null
+    first_name: string | null
+    surname: string | null
+  } | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const mobileMoreRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -55,12 +61,21 @@ export default function InnerHeaderNav() {
     let cancelled = false
     void supabase
       .from('user_profiles')
-      .select('display_name, avatar_url')
+      .select('display_name, avatar_url, avatar_letter, avatar_colour, first_name, surname')
       .eq('id', user.id)
       .maybeSingle()
       .then(({ data, error }) => {
         if (cancelled || error) return
-        setProfile(data as { display_name: string | null; avatar_url: string | null } | null)
+        setProfile(
+          data as {
+            display_name: string | null
+            avatar_url: string | null
+            avatar_letter: string | null
+            avatar_colour: string | null
+            first_name: string | null
+            surname: string | null
+          } | null
+        )
       })
     return () => {
       cancelled = true
@@ -78,7 +93,19 @@ export default function InnerHeaderNav() {
     return () => document.removeEventListener('pointerdown', onPointerDown)
   }, [menuOpen])
 
+  useEffect(() => {
+    if (!mobileMoreOpen) return
+    function onPointerDown(e: PointerEvent) {
+      if (mobileMoreRef.current && !mobileMoreRef.current.contains(e.target as Node)) {
+        setMobileMoreOpen(false)
+      }
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [mobileMoreOpen])
+
   const closeMenu = useCallback(() => setMenuOpen(false), [])
+  const closeMobileMore = useCallback(() => setMobileMoreOpen(false), [])
 
   const signOut = async () => {
     closeMenu()
@@ -92,19 +119,38 @@ export default function InnerHeaderNav() {
     (typeof user?.user_metadata?.full_name === 'string' && user.user_metadata.full_name.trim()) ||
     user?.email?.split('@')[0]?.trim() ||
     'Account'
-  const avatarUrl = profile?.avatar_url?.trim() || null
-  const initials = user ? initialsForUser(user, profile?.display_name) : ''
+  const fullNameLine = [profile?.first_name?.trim(), profile?.surname?.trim()].filter(Boolean).join(' ')
+
+  const predictClasses = (active: boolean) =>
+    [
+      'inline-flex shrink-0 items-center gap-2 rounded-full border border-gray-800 bg-[#111318] px-4 py-2 text-sm font-semibold text-white transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700',
+      'hover:bg-[#1a1d24]',
+      active ? 'scale-[1.02] shadow-[0_0_0_1px_rgba(239,68,68,0.18)]' : '',
+    ].join(' ')
+
+  const rankingsClasses = (active: boolean) =>
+    [
+      'inline-flex shrink-0 items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700',
+      active
+        ? 'border-gray-500 bg-gray-100 text-gray-900'
+        : 'border-gray-300 bg-white text-gray-900 hover:border-gray-400 hover:bg-gray-50',
+    ].join(' ')
 
   const btnBase =
-    'inline-flex items-center justify-center rounded-lg border-2 px-3 py-2 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2'
+    'inline-flex items-center justify-center rounded-full border px-4 py-2 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700'
+
+  const rankingsActive = pathname.startsWith('/user-rankings')
+  const predictActive = pathname.startsWith('/predict-score')
 
   return (
-    <div className="mx-auto grid w-full max-w-6xl grid-cols-[1fr_auto] items-center gap-x-4 gap-y-4 px-4 py-4 sm:px-6 lg:grid-cols-[auto_minmax(0,1fr)_auto]">
-      {/* Logo / app name → home */}
+    <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-x-4 gap-y-3 px-4 py-4 sm:px-6">
       <Link
         href="/"
-        className="col-start-1 row-start-1 flex shrink-0 items-center gap-3"
-        onClick={closeMenu}
+        className="flex shrink-0 items-center rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
+        onClick={() => {
+          closeMenu()
+          closeMobileMore()
+        }}
       >
         <Image
           src="/nextplay-predictor.png"
@@ -114,55 +160,117 @@ export default function InnerHeaderNav() {
           className="h-10 w-auto sm:h-11"
           priority
         />
-        <span className="text-base font-bold tracking-tight text-gray-900 sm:text-lg">NextPlay</span>
       </Link>
 
-      {/* Main nav — Predict, Rankings (/tools not in nav) */}
-      <nav
-        className="col-span-2 row-start-2 flex flex-wrap items-center justify-center gap-x-8 gap-y-2 border-t border-gray-100 pt-3 text-sm font-semibold text-gray-900 lg:col-span-1 lg:col-start-2 lg:row-start-1 lg:border-t-0 lg:pt-0"
-        aria-label="Main"
-      >
-        <Link href="/predict-score" className="hover:text-teal-900 hover:underline" onClick={closeMenu}>
-          Predict
-        </Link>
-        <Link href="/user-rankings" className="hover:text-teal-900 hover:underline" onClick={closeMenu}>
-          Rankings
-        </Link>
-      </nav>
+      <div className="flex min-w-0 flex-1 items-center justify-end gap-3 sm:gap-4">
+        <nav className="flex items-center gap-3 sm:gap-4" aria-label="Main">
+          <Link
+            href="/predict-score"
+            className={predictClasses(predictActive)}
+            onClick={() => {
+              closeMenu()
+              closeMobileMore()
+            }}
+          >
+            <PredictIconDot />
+            Predict
+          </Link>
+          <Link
+            href="/user-rankings"
+            className={`${rankingsClasses(rankingsActive)} max-md:hidden`}
+            onClick={() => {
+              closeMenu()
+              closeMobileMore()
+            }}
+          >
+            <RankingsListIcon />
+            Rankings
+          </Link>
+        </nav>
 
-      {/* Auth: same cell desktop top-right; mobile top-right next to logo */}
-      <div className="col-start-2 row-start-1 justify-self-end lg:col-start-3">
-        {!authReady ? (
-          <span className="text-xs text-gray-400" aria-hidden>
-            …
-          </span>
-        ) : signedIn ? (
-          <div ref={menuRef} className="relative">
+        <div ref={mobileMoreRef} className="relative md:hidden">
+          <button
+            type="button"
+            aria-expanded={mobileMoreOpen}
+            aria-haspopup="true"
+            aria-label="Open menu"
+            onClick={() => {
+              setMenuOpen(false)
+              setMobileMoreOpen((o) => !o)
+            }}
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-900 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
+          >
+            <span className="flex flex-col gap-1" aria-hidden>
+              <span className="block h-0.5 w-5 rounded-full bg-gray-800" />
+              <span className="block h-0.5 w-5 rounded-full bg-gray-800" />
+              <span className="block h-0.5 w-5 rounded-full bg-gray-800" />
+            </span>
+          </button>
+          {mobileMoreOpen ? (
+            <div className="absolute right-0 z-50 mt-2 w-56 rounded-xl border border-gray-200 bg-white py-2 shadow-md shadow-black/10">
+              <Link
+                href="/user-rankings"
+                className="flex items-center gap-2 px-4 py-3 text-sm font-semibold text-gray-900 hover:bg-gray-50"
+                onClick={closeMobileMore}
+              >
+                <RankingsListIcon />
+                Rankings
+              </Link>
+              {!signedIn && authReady ? (
+                <>
+                  <div className="my-1 border-t border-gray-100" />
+                  <Link
+                    href="/login"
+                    className="block px-4 py-3 text-sm font-semibold text-gray-900 hover:bg-gray-50"
+                    onClick={closeMobileMore}
+                  >
+                    Log in
+                  </Link>
+                  <Link
+                    href="/signup"
+                    className="block px-4 py-3 text-sm font-semibold text-gray-900 hover:bg-gray-50"
+                    onClick={closeMobileMore}
+                  >
+                    Sign up
+                  </Link>
+                </>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+
+        <div
+          className={`flex items-center gap-3 sm:gap-4 ${authReady ? 'md:ml-1 md:border-l md:border-gray-200 md:pl-5' : ''}`}
+        >
+          {!authReady ? (
+            <span className="text-xs text-gray-400" aria-hidden>
+              …
+            </span>
+          ) : signedIn ? (
+            <div ref={menuRef} className="relative">
               <button
                 type="button"
                 aria-expanded={menuOpen}
                 aria-haspopup="menu"
-                onClick={() => setMenuOpen((o) => !o)}
-                className="flex items-center gap-2 rounded-lg border-2 border-gray-200 bg-white px-2 py-1.5 pl-2 pr-3 text-left hover:border-gray-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-800"
+                onClick={() => {
+                  setMobileMoreOpen(false)
+                  setMenuOpen((o) => !o)
+                }}
+                className="flex items-center gap-2 rounded-full border border-gray-300 bg-white px-2 py-1.5 pl-2 pr-3 text-left hover:border-gray-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
               >
-                {avatarUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={avatarUrl}
-                    alt=""
-                    className="h-9 w-9 shrink-0 rounded-full object-cover ring-1 ring-gray-200"
-                    width={36}
-                    height={36}
-                  />
-                ) : (
-                  <span
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-teal-800 text-xs font-bold text-white ring-1 ring-teal-900"
-                    aria-hidden
-                  >
-                    {initials}
-                  </span>
-                )}
-                <span className="max-w-[10rem] truncate text-sm font-semibold text-gray-900">{displayName}</span>
+                <LetterAvatar
+                  letter={profile?.avatar_letter}
+                  colour={profile?.avatar_colour}
+                  avatarUrl={profile?.avatar_url}
+                  firstName={profile?.first_name}
+                  displayName={profile?.display_name}
+                  name={displayName}
+                  size={36}
+                  className="ring-1 ring-gray-200"
+                />
+                <span className="max-w-[10rem] truncate text-sm font-semibold text-gray-900 max-md:hidden">
+                  {displayName}
+                </span>
                 <span className="text-gray-500" aria-hidden>
                   ▾
                 </span>
@@ -170,12 +278,18 @@ export default function InnerHeaderNav() {
               {menuOpen ? (
                 <div
                   role="menu"
-                  className="absolute right-0 z-50 mt-2 w-52 rounded-xl border-2 border-gray-200 bg-white py-1 shadow-lg"
+                  className="absolute right-0 z-50 mt-2 w-56 rounded-xl border border-gray-200 bg-white py-1 shadow-lg shadow-black/5"
                 >
+                  <div className="border-b border-gray-100 px-4 py-2">
+                    <p className="truncate text-sm font-semibold text-gray-900">{displayName}</p>
+                    {fullNameLine ? (
+                      <p className="truncate text-xs text-gray-500">{fullNameLine}</p>
+                    ) : null}
+                  </div>
                   <Link
                     role="menuitem"
                     href="/"
-                    className="block px-4 py-2.5 text-sm font-medium text-gray-900 hover:bg-gray-50"
+                    className="block px-4 py-2.5 text-sm font-medium text-gray-900 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-red-700"
                     onClick={closeMenu}
                   >
                     Home
@@ -183,7 +297,7 @@ export default function InnerHeaderNav() {
                   <Link
                     role="menuitem"
                     href="/profile"
-                    className="block px-4 py-2.5 text-sm font-medium text-gray-900 hover:bg-gray-50"
+                    className="block px-4 py-2.5 text-sm font-medium text-gray-900 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-red-700"
                     onClick={closeMenu}
                   >
                     Profile
@@ -191,7 +305,7 @@ export default function InnerHeaderNav() {
                   <Link
                     role="menuitem"
                     href="/predict-score?how=1"
-                    className="block px-4 py-2.5 text-sm font-medium text-gray-900 hover:bg-gray-50"
+                    className="block px-4 py-2.5 text-sm font-medium text-gray-900 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-red-700"
                     onClick={closeMenu}
                   >
                     How it works
@@ -199,7 +313,7 @@ export default function InnerHeaderNav() {
                   <button
                     type="button"
                     role="menuitem"
-                    className="w-full px-4 py-2.5 text-left text-sm font-medium text-red-800 hover:bg-red-50"
+                    className="w-full px-4 py-2.5 text-left text-sm font-medium text-red-700 hover:bg-red-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-red-700"
                     onClick={() => void signOut()}
                   >
                     Log out
@@ -208,23 +322,24 @@ export default function InnerHeaderNav() {
               ) : null}
             </div>
           ) : (
-            <div className="flex flex-wrap items-center justify-end gap-2">
+            <div className="hidden items-center gap-3 sm:gap-4 md:flex">
               <Link
                 href="/login"
-                className={`${btnBase} border-gray-900 bg-white text-gray-900 hover:bg-gray-50 focus-visible:outline-gray-900`}
+                className={`${btnBase} border-gray-300 bg-white text-gray-900 hover:border-gray-400 hover:bg-gray-50`}
                 onClick={closeMenu}
               >
                 Log in
               </Link>
               <Link
                 href="/signup"
-                className={`${btnBase} border-teal-950 bg-teal-800 text-white hover:bg-teal-900 focus-visible:outline-teal-950`}
+                className={`${btnBase} border-gray-900 bg-gray-900 text-white hover:bg-black`}
                 onClick={closeMenu}
               >
                 Sign up
               </Link>
             </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   )

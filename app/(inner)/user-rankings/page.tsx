@@ -8,6 +8,7 @@ import {
 } from '@/lib/public-prediction-game'
 import HowItWorksModal from '@/components/HowItWorksModal'
 import InfoTooltip from '@/components/InfoTooltip'
+import LetterAvatar from '@/components/LetterAvatar'
 import { supabase } from '@/lib/supabase'
 import { trackEvent } from '@/lib/trackEvent'
 
@@ -29,6 +30,13 @@ function rankCell(rank: number): string {
   if (rank === 2) return '🥈 #2'
   if (rank === 3) return '🥉 #3'
   return `#${rank}`
+}
+
+function medalStyles(rank: number): string {
+  if (rank === 1) return 'border-yellow-300 bg-yellow-50 text-yellow-900'
+  if (rank === 2) return 'border-gray-300 bg-gray-100 text-gray-800'
+  if (rank === 3) return 'border-amber-400 bg-amber-50 text-amber-900'
+  return 'border-gray-200 bg-white text-gray-700'
 }
 
 function marginAvgDisplay(v: number | null): string {
@@ -103,13 +111,13 @@ const TAB_CONFIG: { id: LeaderTab; label: string; description: string }[] = [
   },
   {
     id: 'margin_total',
-    label: 'Margin Total Log',
+    label: 'Margin Total',
     description:
       'Top 20–style board: players with 10+ scored picks only, sorted by margin points total.',
   },
   {
     id: 'margin_avg',
-    label: 'Margin Average Log',
+    label: 'Margin Average',
     description:
       'Top 20–style board: players with 10+ scored picks only, sorted by average margin points per pick.',
   },
@@ -164,34 +172,36 @@ export default function UserRankingsPage() {
 
   const emptyFiltered =
     !loading && rows.length > 0 && displayRows.length === 0 && tab !== 'all'
+  const topThree = displayRows.slice(0, 3)
+  const restRows = displayRows.slice(3)
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-10 md:py-14">
-      <div className="text-center">
-        <div className="flex flex-col items-center justify-center gap-3 sm:flex-row sm:flex-wrap sm:gap-4">
-          <h1 className="text-3xl font-bold tracking-tight md:text-4xl">User Rankings</h1>
+    <main className="mx-auto max-w-6xl px-4 py-8 md:px-6 md:py-12">
+      <div className="text-center md:text-left">
+        <div className="flex flex-col items-center justify-center gap-3 sm:flex-row sm:flex-wrap sm:gap-4 md:justify-start">
+          <h1 className="text-3xl font-black tracking-tight text-gray-900 md:text-4xl">User Rankings</h1>
           <button
             type="button"
             onClick={() => setHowModalOpen(true)}
-            className="shrink-0 rounded-2xl border-2 border-teal-950 bg-teal-800 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-teal-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-950"
+            className="shrink-0 rounded-xl border border-gray-900 bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
           >
             How it works
           </button>
         </div>
-        <p className="mx-auto mt-3 max-w-2xl text-base text-gray-600">
+        <p className="mx-auto mt-3 max-w-2xl text-sm text-gray-600 md:mx-0 md:text-base">
           Predict a Score season stats from scored matches only. You choose how many fixtures to
           play — each valid pick counts. Display names and avatars come from profiles; emails are
           never shown.
         </p>
       </div>
 
-      <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+      <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row md:justify-start">
         <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
           Season
           <select
             value={season}
             onChange={(e) => setSeason(Number(e.target.value))}
-            className="rounded-2xl border border-gray-200 bg-white px-4 py-2 text-base font-normal"
+            className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-base font-normal focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
           >
             {seasonOptions.map((y) => (
               <option key={y} value={y}>
@@ -202,16 +212,16 @@ export default function UserRankingsPage() {
         </label>
       </div>
 
-      <div className="mt-8 flex flex-wrap justify-center gap-2">
+      <div className="mt-8 flex flex-wrap justify-center gap-2 rounded-full border border-gray-200 bg-gray-100 p-1 md:justify-start">
         {TAB_CONFIG.map((t) => (
           <button
             key={t.id}
             type="button"
             onClick={() => setTab(t.id)}
-            className={`rounded-2xl px-4 py-2 text-sm font-medium transition-colors ${
+            className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 ${
               tab === t.id
-                ? 'bg-black text-white'
-                : 'border border-gray-200 bg-white text-gray-800 hover:bg-gray-50'
+                ? 'bg-gray-900 text-white'
+                : 'text-gray-700 hover:bg-white'
             }`}
           >
             {t.label}
@@ -223,12 +233,12 @@ export default function UserRankingsPage() {
       </p>
 
       {error ? (
-        <p className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-center text-sm text-red-800">
+        <p className="mt-6 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-center text-sm text-red-800">
           {error}
         </p>
       ) : null}
 
-      <div className="mt-10 overflow-x-auto">
+      <div className="mt-10">
         {loading ? (
           <p className="text-center text-sm text-gray-500">Loading leaderboard…</p>
         ) : rows.length === 0 ? (
@@ -242,9 +252,83 @@ export default function UserRankingsPage() {
             tab or pick another season.
           </p>
         ) : (
-          <table className="w-full min-w-[900px] border-collapse text-left text-sm">
-            <thead>
-              <tr className="border-b border-gray-200 text-xs font-medium uppercase tracking-wide text-gray-500">
+          <>
+            {topThree.length > 0 ? (
+              <section className="mb-6 grid gap-3 md:grid-cols-3">
+                {topThree.map((r, i) => {
+                  const rank = i + 1
+                  const name = r.display_name?.trim() || 'Player'
+                  return (
+                    <article
+                      key={r.user_id}
+                      className={`rounded-2xl border p-4 shadow-sm shadow-black/5 ${medalStyles(rank)}`}
+                    >
+                      <div className="mb-3 inline-flex rounded-full border border-current/30 px-2 py-1 text-[11px] font-bold uppercase tracking-wide">
+                        {rankCell(rank)}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <LetterAvatar
+                          letter={r.avatar_letter}
+                          colour={r.avatar_colour}
+                          avatarUrl={r.avatar_url}
+                          displayName={r.display_name}
+                          name={name}
+                          size={44}
+                          className="ring-1 ring-black/10"
+                        />
+                        <div className="min-w-0">
+                          <p className="truncate text-base font-semibold text-gray-900">
+                            {name}
+                          </p>
+                          <p className="text-sm text-gray-700">Total points: {r.total_points}</p>
+                        </div>
+                      </div>
+                    </article>
+                  )
+                })}
+              </section>
+            ) : null}
+
+            <div className="space-y-3 md:hidden">
+              {restRows.map((r, i) => {
+                const rank = i + 4
+                const name = r.display_name?.trim() || 'Player'
+                return (
+                  <article key={r.user_id} className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm shadow-black/5">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <LetterAvatar
+                          letter={r.avatar_letter}
+                          colour={r.avatar_colour}
+                          avatarUrl={r.avatar_url}
+                          displayName={r.display_name}
+                          name={name}
+                          size={36}
+                          className="ring-1 ring-gray-200"
+                        />
+                        <div>
+                          <p className="text-sm font-semibold text-gray-900">{name}</p>
+                          <p className="text-xs text-gray-500">#{rank}</p>
+                        </div>
+                      </div>
+                      <p className="text-sm font-semibold text-gray-900">{r.total_points} pts</p>
+                    </div>
+                    <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-gray-600">
+                      <div>Margin total: <span className="font-semibold text-gray-900">{r.margin_points_total}</span></div>
+                      <div>Margin avg: <span className="font-semibold text-gray-900">{marginAvgDisplay(r.margin_points_average)}</span></div>
+                      <div>Picks: <span className="font-semibold text-gray-900">{r.predictions_made}</span></div>
+                      <div>Correct winners: <span className="font-semibold text-gray-900">{r.correct_winner_count}</span></div>
+                      <div>Exact margins: <span className="font-semibold text-gray-900">{r.exact_margin_count}</span></div>
+                    </dl>
+                  </article>
+                )
+              })}
+            </div>
+
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full min-w-[900px] border-collapse text-left text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 text-xs font-medium uppercase tracking-wide text-gray-500">
                 <th className="py-2 pr-2">Rank</th>
                 <th className="py-2 pr-2">Player</th>
                 <th className="py-2 pr-2 text-right normal-case">
@@ -268,12 +352,12 @@ export default function UserRankingsPage() {
                 <th className="py-2 pr-2 text-right">Picks</th>
                 <th className="py-2 pr-2 text-right">Right winner</th>
                 <th className="py-2 text-right">Exact margin</th>
-              </tr>
-            </thead>
-            <tbody>
+                  </tr>
+                </thead>
+                <tbody>
               {displayRows.map((r, i) => {
                 const rank = i + 1
-                const initial = (r.display_name || 'P').trim().slice(0, 1).toUpperCase() || 'P'
+                const name = r.display_name?.trim() || 'Player'
                 return (
                   <tr key={r.user_id} className="border-b border-gray-100">
                     <td className="py-3 pr-2 font-medium text-gray-900 whitespace-nowrap">
@@ -281,23 +365,17 @@ export default function UserRankingsPage() {
                     </td>
                     <td className="py-3 pr-2">
                       <div className="flex items-center gap-2">
-                        {r.avatar_url ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={r.avatar_url}
-                            alt=""
-                            className="h-8 w-8 rounded-full object-cover"
-                          />
-                        ) : (
-                          <span
-                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-medium text-gray-600"
-                            aria-hidden
-                          >
-                            {initial}
-                          </span>
-                        )}
+                        <LetterAvatar
+                          letter={r.avatar_letter}
+                          colour={r.avatar_colour}
+                          avatarUrl={r.avatar_url}
+                          displayName={r.display_name}
+                          name={name}
+                          size={32}
+                          className="ring-1 ring-gray-200"
+                        />
                         <span className="font-medium text-gray-900">
-                          {r.display_name?.trim() || 'Player'}
+                          {name}
                         </span>
                       </div>
                     </td>
@@ -312,8 +390,10 @@ export default function UserRankingsPage() {
                   </tr>
                 )
               })}
-            </tbody>
-          </table>
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
 

@@ -63,15 +63,15 @@ function TeamLogoBlock({
       type="button"
       disabled={disabled}
       onClick={onSelect}
-      className={`flex min-h-[3.25rem] w-full items-center gap-2 border-2 px-3 py-2 text-left transition ${
+      className={`flex min-h-[3.25rem] w-full items-center gap-2 rounded-xl border px-3 py-2 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 ${
         selected
-          ? 'border-teal-950 bg-teal-800 text-white'
-          : 'border-gray-200 bg-gray-50 text-gray-900 hover:border-gray-300'
+          ? 'border-gray-900 bg-gray-900 text-white shadow-sm shadow-black/15'
+          : 'border-gray-200 bg-gray-50 text-gray-900 hover:border-gray-400'
       } ${disabled ? 'cursor-not-allowed opacity-60' : ''}`}
     >
       <span
         className={`flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md text-sm font-bold ${
-          selected ? 'bg-white/20 text-white ring-1 ring-white/30' : 'bg-teal-100 text-teal-900'
+          selected ? 'bg-white/15 text-white ring-1 ring-white/30' : 'bg-white text-gray-700 ring-1 ring-gray-200'
         }`}
       >
         {logoSrc ? (
@@ -86,6 +86,7 @@ function TeamLogoBlock({
           {label}
         </span>
         <span className="block truncate text-sm font-semibold leading-tight">{name}</span>
+        {selected ? <span className="mt-1 block h-0.5 w-8 rounded-full bg-red-500" aria-hidden /> : null}
       </span>
     </button>
   )
@@ -116,12 +117,21 @@ export default function PredictionSlipRow({
   const homeLogo = getSchoolTeamLogoPath(match.home_team)
   const awayLogo = getSchoolTeamLogoPath(match.away_team)
 
+  const hasSavedPrediction = Boolean(prediction)
+  const showClosedButton = !editable && signedIn && lockedOut
+  const predictButtonLabel = submitting ? '…' : showClosedButton ? 'Closed' : hasSavedPrediction ? 'UPDATE' : 'SAVE'
+  const predictButtonColors = showClosedButton
+    ? 'border-gray-300 bg-gray-300 text-gray-600'
+    : hasSavedPrediction
+      ? 'border-green-700 bg-green-600 text-white hover:bg-green-700'
+      : 'border-[#111318] bg-[#111318] text-white hover:bg-black'
+
   return (
     <li className="list-none">
       {/* Mobile slip card */}
-      <div className="border border-gray-300 bg-white p-4 shadow-sm md:hidden">
+      <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm shadow-black/5 md:hidden">
         <div className="flex items-center justify-between gap-2 border-b border-gray-100 pb-2">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-teal-900">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-900">
             {match.status === 'locked' ? 'Locked' : cutoffPassed ? 'Closed' : 'Upcoming'}
           </span>
           <span className="text-xs text-gray-500">{formatKickoffShort(match.kickoff_time)}</span>
@@ -136,7 +146,7 @@ export default function PredictionSlipRow({
         )}
         {startsSoon && editable ? (
           <div
-            className="mt-2 flex items-center justify-center gap-1.5 rounded border border-amber-600 bg-amber-50 px-2 py-1.5 text-[11px] font-semibold text-amber-950"
+            className="mt-2 flex items-center justify-center gap-1.5 rounded-lg border border-red-300 bg-red-50 px-2 py-1.5 text-[11px] font-semibold text-red-800"
             role="status"
           >
             <span className="text-base font-black leading-none" aria-hidden>
@@ -177,7 +187,7 @@ export default function PredictionSlipRow({
             disabled={!editable}
             value={marginVal}
             onChange={(e) => onSlipChange(match.id, { margin: e.target.value })}
-            className="w-full border-2 border-gray-200 bg-white px-3 py-2.5 text-center text-base font-semibold tabular-nums outline-none focus:border-teal-800 disabled:bg-gray-50"
+            className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-center text-base font-semibold tabular-nums outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 disabled:bg-gray-50"
             placeholder="—"
           />
         </div>
@@ -198,20 +208,20 @@ export default function PredictionSlipRow({
           <p className="mt-3 text-center text-xs text-gray-600">Sign in above to predict.</p>
         ) : null}
         {flashSubmitted ? (
-          <p className="mt-2 text-center text-xs font-semibold text-teal-800">Saved</p>
+          <p className="mt-2 text-center text-xs font-semibold text-red-700">Saved</p>
         ) : null}
         <div className="mt-4 flex flex-col gap-2 sm:flex-row">
           <button
             type="button"
             disabled={!editable || submitting}
             onClick={() => onPredict(match.id)}
-            className="flex-1 border-2 border-teal-900 bg-teal-800 py-3 text-sm font-bold uppercase tracking-wide text-white hover:bg-teal-900 disabled:opacity-40"
+            className={`flex-1 rounded-xl border py-3 text-sm font-bold uppercase tracking-wide transition-colors duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 disabled:opacity-40 ${predictButtonColors}`}
           >
-            {submitting ? '…' : !editable && signedIn && lockedOut ? 'Closed' : prediction ? 'Update' : 'Predict'}
+            {predictButtonLabel}
           </button>
           <Link
             href={`/predict-score/${match.id}`}
-            className="flex items-center justify-center border-2 border-gray-300 bg-white px-4 py-3 text-center text-sm font-semibold text-gray-800 hover:bg-gray-50"
+            className="flex items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-3 text-center text-sm font-semibold text-gray-800 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
           >
             Comments
           </Link>
@@ -219,9 +229,9 @@ export default function PredictionSlipRow({
       </div>
 
       {/* Desktop slip row */}
-      <div className="hidden border-b border-gray-200 bg-white md:grid md:grid-cols-[9.5rem_minmax(0,1fr)_minmax(0,1fr)_5.5rem_6.5rem_5.5rem] md:items-center md:gap-3 md:px-3 md:py-2">
+      <div className="hidden border-b border-gray-100 bg-white md:grid md:grid-cols-[9.5rem_minmax(0,1fr)_minmax(0,1fr)_5.5rem_6.5rem_5.5rem] md:items-center md:gap-3 md:px-3 md:py-2">
         <div className="text-xs text-gray-600">
-          <div className="font-bold uppercase tracking-wide text-teal-900">
+          <div className="font-bold uppercase tracking-wide text-gray-900">
             {match.status === 'locked' ? 'Locked' : cutoffPassed ? 'Closed' : 'Upcoming'}
           </div>
           <div className="mt-0.5 leading-snug">{formatKickoffShort(match.kickoff_time)}</div>
@@ -235,7 +245,7 @@ export default function PredictionSlipRow({
           )}
           {startsSoon && editable ? (
             <div
-              className="mt-1.5 flex flex-wrap items-center gap-1 rounded border border-amber-600 bg-amber-50 px-1.5 py-1 text-[10px] font-semibold text-amber-950"
+              className="mt-1.5 flex flex-wrap items-center gap-1 rounded-lg border border-red-300 bg-red-50 px-1.5 py-1 text-[10px] font-semibold text-red-800"
               role="status"
             >
               <span className="font-black" aria-hidden>
@@ -275,7 +285,7 @@ export default function PredictionSlipRow({
             disabled={!editable}
             value={marginVal}
             onChange={(e) => onSlipChange(match.id, { margin: e.target.value })}
-            className="w-full border-2 border-gray-200 px-2 py-2.5 text-center text-sm font-semibold tabular-nums outline-none focus:border-teal-800 disabled:bg-gray-50"
+            className="w-full rounded-lg border border-gray-300 px-2 py-2.5 text-center text-sm font-semibold tabular-nums outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 disabled:bg-gray-50"
             placeholder="—"
           />
         </div>
@@ -284,17 +294,17 @@ export default function PredictionSlipRow({
             type="button"
             disabled={!editable || submitting}
             onClick={() => onPredict(match.id)}
-            className="border-2 border-teal-900 bg-teal-800 px-2 py-2.5 text-xs font-bold uppercase tracking-wide text-white hover:bg-teal-900 disabled:opacity-40"
+            className={`rounded-lg border px-2 py-2.5 text-xs font-bold uppercase tracking-wide transition-colors duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 disabled:opacity-40 ${predictButtonColors}`}
           >
-            {submitting ? '…' : !editable && signedIn && lockedOut ? 'Closed' : prediction ? 'Save' : 'Predict'}
+            {predictButtonLabel}
           </button>
           {flashSubmitted ? (
-            <span className="text-center text-[10px] font-semibold text-teal-800">Saved</span>
+            <span className="text-center text-[10px] font-semibold text-red-700">Saved</span>
           ) : null}
         </div>
         <Link
           href={`/predict-score/${match.id}`}
-          className="border-2 border-gray-300 bg-gray-50 py-2.5 text-center text-xs font-bold uppercase tracking-wide text-gray-800 hover:bg-gray-100"
+          className="rounded-lg border border-gray-300 bg-gray-50 py-2.5 text-center text-xs font-bold uppercase tracking-wide text-gray-800 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
         >
           Comments
         </Link>

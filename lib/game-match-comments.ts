@@ -12,7 +12,10 @@ export type GameMatchCommentRow = {
 
 export type MatchCommentWithAuthor = GameMatchCommentRow & {
   display_name: string
+  first_name: string | null
   avatar_url: string | null
+  avatar_letter: string | null
+  avatar_colour: string | null
 }
 
 const MAX_BODY = 500
@@ -45,7 +48,7 @@ export async function fetchMatchCommentsWithAuthors(
   const ids = [...new Set(list.map((c) => c.user_id))]
   const { data: profiles, error: pErr } = await client
     .from('user_profiles')
-    .select('id, display_name, avatar_url')
+    .select('id, display_name, first_name, avatar_url, avatar_letter, avatar_colour')
     .in('id', ids)
 
   if (pErr) {
@@ -53,9 +56,16 @@ export async function fetchMatchCommentsWithAuthors(
   }
 
   const pm = new Map(
-    (profiles as { id: string; display_name: string; avatar_url: string | null }[] | null)?.map(
-      (p) => [p.id, p]
-    ) ?? []
+    (
+      profiles as {
+        id: string
+        display_name: string
+        first_name: string | null
+        avatar_url: string | null
+        avatar_letter: string | null
+        avatar_colour: string | null
+      }[] | null
+    )?.map((p) => [p.id, p]) ?? []
   )
 
   const rows: MatchCommentWithAuthor[] = list.map((c) => {
@@ -63,7 +73,10 @@ export async function fetchMatchCommentsWithAuthors(
     return {
       ...c,
       display_name: p?.display_name?.trim() || 'Player',
+      first_name: p?.first_name ?? null,
       avatar_url: p?.avatar_url ?? null,
+      avatar_letter: p?.avatar_letter ?? null,
+      avatar_colour: p?.avatar_colour ?? null,
     }
   })
 

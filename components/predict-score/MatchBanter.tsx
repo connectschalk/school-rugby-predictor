@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
+import LetterAvatar from '@/components/LetterAvatar'
 import {
   fetchMatchCommentsWithAuthors,
   insertMatchComment,
@@ -99,18 +100,16 @@ export default function MatchBanter({ matchId, signedIn, userId }: Props) {
           rows.map((r) => (
             <div key={r.id} className="rounded-xl bg-white p-3 shadow-sm">
               <div className="flex items-start gap-2">
-                {r.avatar_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={r.avatar_url}
-                    alt=""
-                    className="mt-0.5 h-8 w-8 shrink-0 rounded-full object-cover"
-                  />
-                ) : (
-                  <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-medium text-gray-600">
-                    {r.display_name.slice(0, 1).toUpperCase()}
-                  </span>
-                )}
+                <LetterAvatar
+                  letter={r.avatar_letter}
+                  colour={r.avatar_colour}
+                  avatarUrl={r.avatar_url}
+                  firstName={r.first_name}
+                  displayName={r.display_name}
+                  name={r.display_name}
+                  size={32}
+                  className="mt-0.5 ring-1 ring-gray-200"
+                />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                     <span className="text-sm font-medium text-gray-900">{r.display_name}</span>

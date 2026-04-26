@@ -4,25 +4,19 @@ import Link from 'next/link'
 import { useEffect } from 'react'
 import { trackEvent } from '@/lib/trackEvent'
 
-const mainNavItems = [
-  {
-    title: 'Predict a Score',
-    description:
-      'Pick a match, predict the winning margin, and compete as the public game rolls out.',
-    href: '/predict-score',
-  },
-  {
-    title: 'User Rankings',
-    description: 'See how your predictions stack up once season and match rankings go live.',
-    href: '/user-rankings',
-  },
-  {
-    title: 'Profile',
-    description:
-      'Create an account, set your display name and photo for leaderboards, and manage your public identity.',
-    href: '/profile',
-  },
-]
+function PredictIconDot() {
+  return <span className="h-3 w-3 shrink-0 rounded-full bg-red-500" aria-hidden />
+}
+
+function RankingsListIcon() {
+  return (
+    <span className="inline-flex h-4 w-4 shrink-0 flex-col justify-center gap-[2px]" aria-hidden>
+      <span className="h-[2px] w-full rounded-full bg-red-500" />
+      <span className="h-[2px] w-full rounded-full bg-red-500" />
+      <span className="h-[2px] w-full rounded-full bg-red-500" />
+    </span>
+  )
+}
 
 export default function HomePage() {
   // 🔥 Track landing page visits
@@ -32,81 +26,61 @@ export default function HomePage() {
 
   return (
     <main className="min-h-screen bg-white text-black">
-      <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-6 py-12">
-        <div className="flex flex-1 flex-col justify-center">
-          <div className="mx-auto w-full max-w-5xl text-center">
-            
-            {/* LOGO */}
+      <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-6 py-10">
+        <section className="flex flex-1 items-center">
+          <div className="mx-auto w-full max-w-4xl text-center">
             <img
               src="/nextplay-predictor.png"
-              alt="NextPlay Predictor"
-              className="mx-auto h-28 w-auto md:h-36"
+              alt="School Rugby Predictor"
+              className="mx-auto h-24 w-auto md:h-28"
             />
-
-            <p className="mt-6 text-sm font-medium uppercase tracking-wide text-gray-500">
-              NextPlay Predictor
-            </p>
-
-            {/* TITLE */}
-            <h1 className="mt-2 text-4xl font-bold tracking-tight md:text-5xl">
+            <h1 className="mt-8 text-4xl font-black tracking-tight text-gray-900 md:text-6xl">
               Predict the margin. Climb the rankings.
             </h1>
-
-            {/* DESCRIPTION */}
-            <p className="mx-auto mt-4 max-w-3xl text-base text-gray-600 md:text-lg">
-              Pick any school rugby match, predict the winning margin, and see how close you
-              get.
+            <p className="mx-auto mt-4 max-w-2xl text-base text-gray-600 md:text-lg">
+              Pick any school rugby match, predict the winning margin, and compete on accuracy.
             </p>
 
-            {/* PRIMARY NAV CARDS */}
-            <div className="mt-12 grid grid-cols-1 gap-5 md:grid-cols-3">
-              {mainNavItems.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() =>
-                    trackEvent('navigation_click', 'landing', {
-                      destination: item.href,
-                    })
-                  }
-                  className="rounded-3xl border border-gray-200 bg-white p-8 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md"
-                >
-                  <h2 className="text-2xl font-semibold">{item.title}</h2>
-                  <p className="mt-3 text-base text-gray-600">
-                    {item.description}
-                  </p>
-                </Link>
-              ))}
-            </div>
-
-            {/* CONTACT BUTTON */}
-            <div className="mt-10">
-              <a
-                href="mailto:info@thenextplay.co.za"
-                onClick={() => trackEvent('contact_click', 'landing')}
-                className="inline-flex rounded-2xl bg-black px-6 py-4 text-base font-medium text-white hover:opacity-90"
+            <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+              <Link
+                href="/predict-score"
+                onClick={() => trackEvent('navigation_click', 'landing', { destination: '/predict-score' })}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-900 bg-[#111318] px-8 py-3.5 text-base font-semibold text-white transition hover:bg-[#1a1d24] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 sm:w-auto"
               >
-                Contact Us
-              </a>
+                <PredictIconDot />
+                Predict
+              </Link>
+              <Link
+                href="/user-rankings"
+                onClick={() => trackEvent('navigation_click', 'landing', { destination: '/user-rankings' })}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-300 bg-white px-8 py-3.5 text-base font-semibold text-gray-900 transition hover:border-gray-400 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 sm:w-auto"
+              >
+                <RankingsListIcon />
+                Rankings
+              </Link>
             </div>
-          </div>
-        </div>
 
-        {/* FOOTER */}
-        <footer className="pt-8 text-center">
-          <div className="text-base text-gray-500">
+            <p className="mt-12 text-center text-lg font-extrabold uppercase tracking-[0.28em] text-gray-500 md:text-xl">
+              PICK - PREDICT - CLIMB
+            </p>
+          </div>
+        </section>
+
+        <footer className="mt-8 flex flex-col items-center justify-center gap-4 text-center">
+          <a
+            href="mailto:info@thenextplay.co.za"
+            onClick={() => trackEvent('contact_click', 'landing')}
+            className="text-sm text-gray-500 hover:text-gray-700"
+          >
             info@thenextplay.co.za
-          </div>
-
-          <div className="mt-5">
-            <Link
-              href="/admin"
-              onClick={() => trackEvent('admin_click', 'landing')}
-              className="rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-500 hover:bg-gray-50 hover:text-gray-700"
-            >
-              Admin
-            </Link>
-          </div>
+          </a>
+          <Link
+            href="/admin"
+            onClick={() => trackEvent('admin_click', 'landing')}
+            className="rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+          >
+            Admin
+          </Link>
         </footer>
       </div>
     </main>

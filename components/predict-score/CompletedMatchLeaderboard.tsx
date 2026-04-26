@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { GameMatch, MatchLeaderboardEntry } from '@/lib/public-prediction-game'
 import { fetchMatchLeaderboardWithProfiles } from '@/lib/public-prediction-game'
 import Link from 'next/link'
+import LetterAvatar from '@/components/LetterAvatar'
 import { supabase } from '@/lib/supabase'
 
 type Props = {
@@ -138,18 +139,16 @@ export default function CompletedMatchLeaderboard({ match, signedIn }: Props) {
                   <td className="py-3 pr-2 font-medium text-gray-900">{r.rank}</td>
                   <td className="py-3 pr-2">
                     <div className="flex items-center gap-2">
-                      {r.avatar_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={r.avatar_url}
-                          alt=""
-                          className="h-8 w-8 rounded-full object-cover"
-                        />
-                      ) : (
-                        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-xs font-medium text-gray-600">
-                          {r.display_name.slice(0, 1).toUpperCase()}
-                        </span>
-                      )}
+                      <LetterAvatar
+                        letter={r.avatar_letter}
+                        colour={r.avatar_colour}
+                        avatarUrl={r.avatar_url}
+                        firstName={r.first_name}
+                        displayName={r.display_name}
+                        name={r.display_name}
+                        size={32}
+                        className="ring-1 ring-gray-200"
+                      />
                       <span className="font-medium text-gray-900">{r.display_name}</span>
                     </div>
                   </td>

@@ -4,11 +4,11 @@ import PredictionSlipRow, { type SlipPick } from '@/components/predict-score/Pre
 import type { GameMatch, UserPredictionRow } from '@/lib/public-prediction-game'
 
 const HEADER_GRID =
-  'mt-0 hidden border-b-2 border-gray-900 bg-teal-900 px-3 py-2 md:grid md:grid-cols-[9.5rem_minmax(0,1fr)_minmax(0,1fr)_5.5rem_6.5rem_5.5rem] md:items-center md:gap-3 md:text-[10px] md:font-bold md:uppercase md:tracking-wider md:text-white'
+  'mt-0 hidden border-b border-gray-200 bg-gray-900 px-3 py-2 md:grid md:grid-cols-[9.5rem_minmax(0,1fr)_minmax(0,1fr)_5.5rem_6.5rem_5.5rem] md:items-center md:gap-3 md:text-[10px] md:font-bold md:uppercase md:tracking-wider md:text-white'
 
 /** Table header row classes for “Predictions closed” lists (gray bar). */
 export const CLOSED_SLIP_HEADER_CLASS =
-  'mt-0 hidden border-b-2 border-gray-600 bg-gray-600 px-3 py-2 md:grid md:grid-cols-[9.5rem_minmax(0,1fr)_minmax(0,1fr)_5.5rem_6.5rem_5.5rem] md:items-center md:gap-3 md:text-[10px] md:font-bold md:uppercase md:tracking-wider md:text-white'
+  'mt-0 hidden border-b border-gray-300 bg-gray-600 px-3 py-2 md:grid md:grid-cols-[9.5rem_minmax(0,1fr)_minmax(0,1fr)_5.5rem_6.5rem_5.5rem] md:items-center md:gap-3 md:text-[10px] md:font-bold md:uppercase md:tracking-wider md:text-white'
 
 type Props = {
   title: string
@@ -34,7 +34,7 @@ export default function PredictScoreSlipListSection({
   titleClassName,
   sectionClassName = '',
   description,
-  listWrapClassName = 'md:border-2 md:border-gray-900 md:bg-white',
+  listWrapClassName = 'overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm shadow-black/5',
   headerClassName = HEADER_GRID,
   matches,
   startsSoonIds,
@@ -62,7 +62,7 @@ export default function PredictScoreSlipListSection({
           <span className="text-center">Predict</span>
           <span className="text-center">Comments</span>
         </div>
-        <ul className="space-y-3 bg-gray-100 p-2 md:space-y-0 md:divide-y md:divide-gray-200 md:bg-white md:p-0">
+        <ul className="space-y-3 bg-gray-100/70 p-2 md:space-y-0 md:divide-y md:divide-gray-100 md:bg-white md:p-0">
           {matches.map((match) => {
             const slip = slipByMatch[match.id] ?? { winner: null, margin: '' }
             const rowBusy = submittingMatchId === match.id || submittingAll

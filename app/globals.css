@@ -27,3 +27,8 @@ body {
   color: var(--foreground);
   font-family: ui-sans-serif, system-ui, sans-serif;
 }
+
+/* Do not put Tailwind arbitrary-class examples in comments here — Tailwind may extract them and emit broken CSS. */
+.safe-area-bottom {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}

@@ -45,6 +45,8 @@ export type SeasonLeaderboardRow = {
   user_id: string
   display_name: string | null
   avatar_url: string | null
+  avatar_letter: string | null
+  avatar_colour: string | null
   total_points: number
   predictions_made: number
   avg_points_per_prediction: number | null
@@ -55,20 +57,14 @@ export type SeasonLeaderboardRow = {
   margin_points_average: number | null
 }
 
-/** Featured first (order 1–10), then kickoff_time / created_at ascending. */
+/** Sort by kickoff_time asc, then created_at asc, then home_team asc. */
 export function sortPlayableMatchesForPredictScore(matches: GameMatch[]): GameMatch[] {
   return [...matches].sort((a, b) => {
-    const af = !!a.is_featured ? 1 : 0
-    const bf = !!b.is_featured ? 1 : 0
-    if (af !== bf) return bf - af
-    if (af === 1) {
-      const ao = a.featured_order ?? 999
-      const bo = b.featured_order ?? 999
-      if (ao !== bo) return ao - bo
-    }
     const kt = +new Date(a.kickoff_time) - +new Date(b.kickoff_time)
     if (kt !== 0) return kt
-    return +new Date(a.created_at) - +new Date(b.created_at)
+    const ct = +new Date(a.created_at) - +new Date(b.created_at)
+    if (ct !== 0) return ct
+    return a.home_team.localeCompare(b.home_team)
   })
 }
 
@@ -88,6 +84,9 @@ export type MatchLeaderboardEntry = {
   rank: number
   display_name: string
   avatar_url: string | null
+  avatar_letter: string | null
+  avatar_colour: string | null
+  first_name: string | null
   total_points: number
   margin_difference: number | null
   winner_correct: boolean
@@ -181,7 +180,7 @@ export async function fetchMatchLeaderboardWithProfiles(
   const ids = [...new Set(raw.map((s) => s.user_id))]
   const { data: profiles, error: pErr } = await client
     .from('user_profiles')
-    .select('id, display_name, avatar_url')
+    .select('id, display_name, first_name, avatar_url, avatar_letter, avatar_colour')
     .in('id', ids)
 
   if (pErr) {
@@ -189,9 +188,16 @@ export async function fetchMatchLeaderboardWithProfiles(
   }
 
   const pm = new Map(
-    (profiles as { id: string; display_name: string; avatar_url: string | null }[] | null)?.map(
-      (p) => [p.id, p]
-    ) ?? []
+    (
+      profiles as {
+        id: string
+        display_name: string
+        first_name: string | null
+        avatar_url: string | null
+        avatar_letter: string | null
+        avatar_colour: string | null
+      }[] | null
+    )?.map((p) => [p.id, p]) ?? []
   )
 
   const rows: MatchLeaderboardEntry[] = raw.map((s, i) => {
@@ -201,6 +207,9 @@ export async function fetchMatchLeaderboardWithProfiles(
       rank: i + 1,
       display_name: p?.display_name?.trim() || 'Player',
       avatar_url: p?.avatar_url ?? null,
+      avatar_letter: p?.avatar_letter ?? null,
+      avatar_colour: p?.avatar_colour ?? null,
+      first_name: p?.first_name ?? null,
       total_points: num(s.total_points),
       margin_difference:
         s.margin_difference === null || s.margin_difference === undefined
@@ -231,6 +240,8 @@ export async function fetchSeasonLeaderboard(client: SupabaseClient, season: num
     user_id: String(r.user_id),
     display_name: r.display_name != null ? String(r.display_name) : null,
     avatar_url: r.avatar_url != null ? String(r.avatar_url) : null,
+    avatar_letter: r.avatar_letter != null ? String(r.avatar_letter) : null,
+    avatar_colour: r.avatar_colour != null ? String(r.avatar_colour) : null,
     total_points: num(r.total_points),
     predictions_made: num(r.predictions_made),
     avg_points_per_prediction:

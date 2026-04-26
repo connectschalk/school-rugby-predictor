@@ -356,7 +356,7 @@ export default function PredictScorePage() {
           <button
             type="button"
             onClick={() => setHowModalOpen(true)}
-            className="shrink-0 rounded-2xl border-2 border-teal-950 bg-teal-800 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-teal-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-950"
+            className="shrink-0 rounded-xl border border-gray-900 bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
           >
             How it works
           </button>
@@ -366,12 +366,12 @@ export default function PredictScorePage() {
           enter the margin, then use <strong>Predict</strong> on that row. Use{' '}
           <strong>Submit all</strong> to save every row that already has both winner and margin;
           empty rows are skipped.{' '}
-          <Link href="/profile" className="font-semibold text-teal-900 underline">
+          <Link href="/profile" className="font-semibold text-gray-900 underline decoration-red-600 underline-offset-2">
             Profile
           </Link>{' '}
           for your public name and photo. Comments live on each match page.
         </p>
-        <p className="mx-auto mt-2 max-w-2xl text-sm font-semibold text-teal-950 md:mx-0">
+        <p className="mx-auto mt-2 max-w-2xl text-sm font-semibold text-gray-900 md:mx-0">
           Predict one match or many. You choose.
         </p>
       </div>
@@ -381,7 +381,7 @@ export default function PredictScorePage() {
       {!authReady ? (
         <p className="mt-10 text-center text-sm text-gray-500">Loading…</p>
       ) : !signedIn ? (
-        <div className="mt-8 border-2 border-gray-900 bg-gray-50 px-6 py-8 text-center">
+        <div className="mt-8 rounded-2xl border border-gray-200 bg-gray-50 px-6 py-8 text-center">
           <p className="text-base font-bold text-gray-900">
             Sign up or log in to make your prediction.
           </p>
@@ -392,13 +392,13 @@ export default function PredictScorePage() {
           <div className="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Link
               href="/signup"
-              className="inline-flex border-2 border-teal-950 bg-teal-800 px-8 py-3 text-sm font-bold uppercase tracking-wide text-white hover:bg-teal-900"
+              className="inline-flex rounded-xl border border-gray-900 bg-gray-900 px-8 py-3 text-sm font-bold uppercase tracking-wide text-white hover:bg-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
             >
               Sign up
             </Link>
             <Link
               href="/login"
-              className="inline-flex border-2 border-gray-900 bg-white px-8 py-3 text-sm font-bold uppercase tracking-wide text-gray-900 hover:bg-gray-100"
+              className="inline-flex rounded-xl border border-gray-300 bg-white px-8 py-3 text-sm font-bold uppercase tracking-wide text-gray-900 hover:border-gray-500 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
             >
               Log in
             </Link>
@@ -407,19 +407,19 @@ export default function PredictScorePage() {
       ) : null}
 
       {loadError ? (
-        <p className="mt-8 border-2 border-red-600 bg-red-50 px-4 py-3 text-sm text-red-900">
+        <p className="mt-8 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
           {loadError}
         </p>
       ) : null}
 
       {submitError ? (
-        <p className="mt-4 border-2 border-red-600 bg-red-50 px-4 py-3 text-sm text-red-900">
+        <p className="mt-4 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
           {submitError}
         </p>
       ) : null}
 
       {bulkSaveMsg ? (
-        <p className="mt-4 border-2 border-teal-800 bg-teal-50 px-4 py-3 text-sm font-semibold text-teal-950">
+        <p className="mt-4 rounded-xl border border-gray-300 bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-900">
           {bulkSaveMsg}
         </p>
       ) : null}
@@ -446,7 +446,7 @@ export default function PredictScorePage() {
                     placeholder="Search team..."
                     value={teamSearch}
                     onChange={(e) => setTeamSearch(e.target.value)}
-                    className="w-full border-2 border-gray-900 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-800"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
                   />
                 </label>
               </div>
@@ -458,7 +458,7 @@ export default function PredictScorePage() {
               ) : (
                 <>
                   {!hasEditablePredictRows && closedMatches.length > 0 ? (
-                    <p className="mt-6 border-2 border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm text-amber-950">
+                    <p className="mt-6 rounded-xl border border-gray-300 bg-gray-50 px-4 py-3 text-center text-sm text-gray-700">
                       Nothing open for predictions here — kickoff has passed or these fixtures are
                       locked. You can still open comments below.
                     </p>
@@ -466,7 +466,8 @@ export default function PredictScorePage() {
                   <div className="mt-2 flex flex-col gap-10">
                   <PredictScoreSlipListSection
                     title="Featured games"
-                    titleClassName="inline-block bg-slate-900 px-6 py-2.5 text-base font-black uppercase tracking-wide text-white shadow-sm"
+                    sectionClassName="rounded-2xl border border-gray-200 bg-gradient-to-b from-gray-50 to-white p-3 md:p-4"
+                    titleClassName="inline-flex items-center rounded-xl border border-gray-900 bg-gray-900 px-5 py-2 text-base font-black uppercase tracking-wide text-white shadow-sm shadow-black/10"
                     matches={featuredEditable}
                     startsSoonIds={startsSoonIds}
                     slipByMatch={slipByMatch}
@@ -480,7 +481,7 @@ export default function PredictScorePage() {
                   />
                   <PredictScoreSlipListSection
                     title="Open games"
-                    titleClassName="inline-block bg-slate-900 px-6 py-2.5 text-base font-black uppercase tracking-wide text-white shadow-sm"
+                    titleClassName="inline-flex items-center rounded-xl border border-gray-900 bg-gray-900 px-5 py-2 text-base font-black uppercase tracking-wide text-white shadow-sm shadow-black/10"
                     description="Kickoff more than 60 minutes away — predictions close at kickoff."
                     matches={openOtherMatches}
                     startsSoonIds={startsSoonIds}
@@ -495,7 +496,7 @@ export default function PredictScorePage() {
                   />
                   <PredictScoreSlipListSection
                     title="Starting soon"
-                    titleClassName="inline-block bg-amber-900 px-6 py-2.5 text-base font-black uppercase tracking-wide text-white shadow-sm"
+                    titleClassName="inline-flex items-center gap-2 rounded-xl border border-red-600 bg-white px-5 py-2 text-base font-black uppercase tracking-wide text-gray-900 shadow-sm shadow-black/5"
                     description="Kickoff within 60 minutes — you can still predict until kickoff."
                     matches={startingSoonMatches}
                     startsSoonIds={startsSoonIds}
@@ -510,9 +511,9 @@ export default function PredictScorePage() {
                   />
                   <PredictScoreSlipListSection
                     title="Predictions closed"
-                    titleClassName="inline-block bg-gray-700 px-6 py-2.5 text-base font-black uppercase tracking-wide text-white shadow-sm"
+                    titleClassName="inline-flex items-center rounded-xl border border-gray-300 bg-gray-100 px-5 py-2 text-base font-black uppercase tracking-wide text-gray-700"
                     description="Kickoff has passed or the match is no longer upcoming for predictions."
-                    listWrapClassName="md:border-2 md:border-gray-400 md:bg-gray-50"
+                    listWrapClassName="overflow-hidden rounded-2xl border border-gray-300 bg-gray-50"
                     headerClassName={CLOSED_SLIP_HEADER_CLASS}
                     matches={closedMatches}
                     startsSoonIds={startsSoonIds}
@@ -535,7 +536,7 @@ export default function PredictScorePage() {
                     type="button"
                     disabled={submittingAll || submittingMatchId !== null}
                     onClick={() => void handleSubmitAll()}
-                    className="border-2 border-teal-950 bg-teal-800 px-6 py-3 text-sm font-black uppercase tracking-wide text-white hover:bg-teal-900 disabled:opacity-40"
+                    className="rounded-xl border border-gray-900 bg-gray-900 px-6 py-3 text-sm font-black uppercase tracking-wide text-white hover:bg-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 disabled:opacity-40"
                   >
                     {submittingAll ? 'Submitting…' : 'Submit all'}
                   </button>
@@ -554,7 +555,7 @@ export default function PredictScorePage() {
 
           {completedMatches.length > 0 ? (
             <section className="mt-14">
-              <div className="inline-block bg-slate-900 px-6 py-2.5 text-base font-black uppercase tracking-wide text-white shadow-sm">
+              <div className="inline-flex items-center rounded-xl border border-gray-900 bg-gray-900 px-5 py-2 text-base font-black uppercase tracking-wide text-white shadow-sm shadow-black/10">
                 Completed matches
               </div>
               <p className="mt-3 text-sm text-gray-600">

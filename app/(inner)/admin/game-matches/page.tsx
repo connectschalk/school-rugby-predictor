@@ -74,33 +74,6 @@ function initialTeamId(m: TeamMatchResult): number | null {
   return m.matchedTeamId ?? m.suggestedTeamId ?? null
 }
 
-function nextFreeFeaturedOrder(rows: FixturePreviewRow[], excludeRowId?: string): number {
-  const used = new Set<number>()
-  for (const r of rows) {
-    if (r.removed || !r.isFeatured || r.featuredOrder == null) continue
-    if (excludeRowId && r.id === excludeRowId) continue
-    used.add(r.featuredOrder)
-  }
-  for (let i = 1; i <= FEATURED_MATCHES_MAX; i += 1) {
-    if (!used.has(i)) return i
-  }
-  return 1
-}
-
-function firstFreeFeaturedOrderFromLiveFixtures(fixtures: GameMatch[], excludeId?: string): number {
-  const used = new Set<number>()
-  for (const x of fixtures) {
-    if (x.status !== 'upcoming' && x.status !== 'locked') continue
-    if (!x.is_featured || x.featured_order == null) continue
-    if (excludeId && x.id === excludeId) continue
-    used.add(x.featured_order)
-  }
-  for (let i = 1; i <= FEATURED_MATCHES_MAX; i += 1) {
-    if (!used.has(i)) return i
-  }
-  return 1
-}
-
 function buildPreviewRows(
   parsed: ParsedGameLine[],
   teams: TeamRow[],
@@ -409,7 +382,7 @@ export default function AdminGameMatchesPage() {
       kickoff_time: r.kickoff_time,
       status: 'upcoming' as const,
       is_featured: r.isFeatured,
-      featured_order: r.isFeatured ? r.featuredOrder : null,
+      featured_order: null,
     }))
 
     const { data: inserted, error } = await supabase.from('game_matches').insert(rows).select('id')
@@ -662,29 +635,11 @@ export default function AdminGameMatchesPage() {
       if (!checked) {
         return rows.map((r) => (r.id === id ? { ...r, isFeatured: false, featuredOrder: null } : r))
       }
-      return rows.map((r) => {
-        if (r.id !== id) return r
-        if (r.isFeatured && r.featuredOrder != null) return r
-        const order = nextFreeFeaturedOrder(rows, id)
-        return { ...r, isFeatured: true, featuredOrder: order }
-      })
+      return rows.map((r) => (r.id === id ? { ...r, isFeatured: true, featuredOrder: null } : r))
     })
   }
 
-  function changePreviewFeaturedOrder(id: string, orderStr: string) {
-    const v = orderStr === '' ? null : Number(orderStr)
-    setPreviewRows((rows) =>
-      rows.map((r) => {
-        if (r.id !== id) return r
-        if (v == null || !Number.isFinite(v) || v < 1 || v > FEATURED_MATCHES_MAX) {
-          return { ...r, isFeatured: false, featuredOrder: null }
-        }
-        return { ...r, isFeatured: true, featuredOrder: v }
-      })
-    )
-  }
-
-  async function saveFixtureFeatured(m: GameMatch, is_featured: boolean, featured_order: number | null) {
+  async function saveFixtureFeatured(m: GameMatch, is_featured: boolean) {
     setRowBusyId(m.id)
     const { data: live, error: liveErr } = await supabase
       .from('game_matches')
@@ -700,7 +655,6 @@ export default function AdminGameMatchesPage() {
     const v = validateFeaturedUpdateForFixture(
       m.id,
       is_featured,
-      featured_order,
       (live ?? []) as LiveFeaturedRow[]
     )
     if (v) {
@@ -713,7 +667,7 @@ export default function AdminGameMatchesPage() {
       .from('game_matches')
       .update({
         is_featured,
-        featured_order: is_featured ? featured_order : null,
+        featured_order: is_featured ? m.featured_order ?? null : null,
       })
       .eq('id', m.id)
 
@@ -761,7 +715,7 @@ export default function AdminGameMatchesPage() {
             full kickoff timestamps use{' '}
             <code className="text-xs">YYYY-MM-DD HH:mm</code> in local time. You can mark up to{' '}
             <strong>{FEATURED_MATCHES_MAX} featured</strong> upcoming/locked games per weekend for Predict a Score
-            (order 1–{FEATURED_MATCHES_MAX}).
+            .
           </p>
           <textarea
             className="mt-4 w-full min-h-[160px] rounded-lg border border-gray-300 p-3 font-mono text-sm"
@@ -864,7 +818,6 @@ export default function AdminGameMatchesPage() {
                     <th className="py-2 pr-2">Matched Away</th>
                     <th className="py-2 pr-2">Kickoff</th>
                     <th className="py-2 pr-2">Featured</th>
-                    <th className="py-2 pr-2">Order</th>
                     <th className="py-2 pr-2">Status</th>
                     <th className="py-2">Action</th>
                   </tr>
@@ -955,25 +908,6 @@ export default function AdminGameMatchesPage() {
                           {r.parseError ? (
                             '—'
                           ) : (
-                            <select
-                              className="max-w-[4.5rem] rounded border border-gray-300 px-1 py-1 text-xs"
-                              disabled={!r.isFeatured}
-                              value={r.featuredOrder ?? ''}
-                              onChange={(e) => changePreviewFeaturedOrder(r.id, e.target.value)}
-                            >
-                              <option value="">—</option>
-                              {Array.from({ length: FEATURED_MATCHES_MAX }, (_, i) => i + 1).map((n) => (
-                                <option key={n} value={n}>
-                                  {n}
-                                </option>
-                              ))}
-                            </select>
-                          )}
-                        </td>
-                        <td className="py-2 pr-2">
-                          {r.parseError ? (
-                            <span className="text-red-700">Parse error</span>
-                          ) : (
                             <span>{st}</span>
                           )}
                           {!r.parseError && r.confirmedForInsert && canInsertRow(r, teamById) && (
@@ -1046,7 +980,6 @@ export default function AdminGameMatchesPage() {
                     <th className="py-2 pr-3">Status</th>
                     <th className="py-2 pr-3">Scores</th>
                     <th className="py-2 pr-3">Featured</th>
-                    <th className="py-2 pr-3">Order</th>
                     <th className="py-2">Actions</th>
                   </tr>
                 </thead>
@@ -1138,37 +1071,14 @@ export default function AdminGameMatchesPage() {
                               onChange={(e) => {
                                 const on = e.target.checked
                                 if (!on) {
-                                  void saveFixtureFeatured(m, false, null)
+                                  void saveFixtureFeatured(m, false)
                                   return
                                 }
-                                const ord =
-                                  m.is_featured && m.featured_order != null
-                                    ? m.featured_order
-                                    : firstFreeFeaturedOrderFromLiveFixtures(fixtures, m.id)
-                                void saveFixtureFeatured(m, true, ord)
+                                void saveFixtureFeatured(m, true)
                               }}
                             />
                             <span className="text-xs">Featured</span>
                           </label>
-                        </td>
-                        <td className="py-2 pr-3">
-                          <select
-                            className="max-w-[4.5rem] rounded border border-gray-300 px-1 py-1 text-xs"
-                            disabled={busy || m.status === 'completed' || !m.is_featured}
-                            value={m.featured_order ?? ''}
-                            onChange={(e) => {
-                              const v = e.target.value === '' ? null : Number(e.target.value)
-                              if (v == null || !Number.isFinite(v)) return
-                              void saveFixtureFeatured(m, true, v)
-                            }}
-                          >
-                            <option value="">—</option>
-                            {Array.from({ length: FEATURED_MATCHES_MAX }, (_, i) => i + 1).map((n) => (
-                              <option key={n} value={n}>
-                                {n}
-                              </option>
-                            ))}
-                          </select>
                         </td>
                         <td className="py-2">
                           <div className="flex flex-col gap-2">
