@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
 import LetterAvatar from '@/components/LetterAvatar'
+import CommunityPicksIcon from '@/components/icons/CommunityPicksIcon'
 import { supabase } from '@/lib/supabase'
 
 function PredictIconDot() {
@@ -143,6 +144,12 @@ export default function InnerHeaderNav() {
   const predictActive = pathname.startsWith('/predict-score')
   const communityActive =
     pathname.startsWith('/community-predictor') || pathname.startsWith('/community-picks')
+  const activeDot = (
+    <span
+      className="absolute -bottom-0.5 left-1/2 h-2 w-2 -translate-x-1/2 rounded-full bg-red-600"
+      aria-hidden
+    />
+  )
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-x-4 gap-y-3 px-4 py-4 sm:px-6">
@@ -166,41 +173,48 @@ export default function InnerHeaderNav() {
 
       <div className="flex min-w-0 flex-1 items-center justify-end gap-3 sm:gap-4">
         <nav className="flex items-center gap-3 sm:gap-4" aria-label="Main">
-          <Link
-            href="/predict-score"
-            className={predictClasses(predictActive)}
-            onClick={() => {
-              closeMenu()
-              closeMobileMore()
-            }}
-          >
-            <PredictIconDot />
-            Predict
-          </Link>
-          <Link
-            href="/community-predictor"
-            className={`${rankingsClasses(communityActive)} max-md:hidden`}
-            onClick={() => {
-              closeMenu()
-              closeMobileMore()
-            }}
-          >
-            <span className="text-xs font-black leading-none text-red-600" aria-hidden>
-              ◎
-            </span>
-            Community Picks
-          </Link>
-          <Link
-            href="/user-rankings"
-            className={`${rankingsClasses(rankingsActive)} max-md:hidden`}
-            onClick={() => {
-              closeMenu()
-              closeMobileMore()
-            }}
-          >
-            <RankingsListIcon />
-            Rankings
-          </Link>
+          <div className="relative flex flex-col items-center pb-3">
+            <Link
+              href="/predict-score"
+              className={predictClasses(predictActive)}
+              onClick={() => {
+                closeMenu()
+                closeMobileMore()
+              }}
+            >
+              <PredictIconDot />
+              Predict
+            </Link>
+            {predictActive ? activeDot : null}
+          </div>
+          <div className="relative hidden flex-col items-center pb-3 md:flex">
+            <Link
+              href="/community-predictor"
+              className={rankingsClasses(communityActive)}
+              onClick={() => {
+                closeMenu()
+                closeMobileMore()
+              }}
+            >
+              <CommunityPicksIcon />
+              Community Picks
+            </Link>
+            {communityActive ? activeDot : null}
+          </div>
+          <div className="relative hidden flex-col items-center pb-3 md:flex">
+            <Link
+              href="/user-rankings"
+              className={rankingsClasses(rankingsActive)}
+              onClick={() => {
+                closeMenu()
+                closeMobileMore()
+              }}
+            >
+              <RankingsListIcon />
+              Rankings
+            </Link>
+            {rankingsActive ? activeDot : null}
+          </div>
         </nav>
 
         <div ref={mobileMoreRef} className="relative md:hidden">
@@ -228,9 +242,7 @@ export default function InnerHeaderNav() {
                 className="flex items-center gap-2 px-4 py-3 text-sm font-semibold text-gray-900 hover:bg-gray-50"
                 onClick={closeMobileMore}
               >
-                <span className="text-xs font-black text-red-600" aria-hidden>
-                  ◎
-                </span>
+                <CommunityPicksIcon />
                 Community Picks
               </Link>
               <Link

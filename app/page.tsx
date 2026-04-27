@@ -1,8 +1,10 @@
 'use client'
 
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
+import CommunityPicksIcon from '@/components/icons/CommunityPicksIcon'
 import { supabase } from '@/lib/supabase'
 import { trackEvent } from '@/lib/trackEvent'
 
@@ -20,17 +22,19 @@ function RankingsListIcon() {
   )
 }
 
-function CommunityPicksIcon() {
-  return (
-    <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden>
-      <span className="h-2.5 w-2.5 rounded-full border-2 border-red-500" />
-    </span>
-  )
-}
-
 export default function HomePage() {
+  const pathname = usePathname()
   const [user, setUser] = useState<User | null>(null)
   const [authReady, setAuthReady] = useState(false)
+  const predictActive = pathname.startsWith('/predict-score')
+  const rankingsActive = pathname.startsWith('/user-rankings')
+  const communityActive = pathname.startsWith('/community-predictor') || pathname.startsWith('/community-picks')
+  const activeDot = (
+    <span
+      className="absolute -bottom-0.5 left-1/2 h-2 w-2 -translate-x-1/2 rounded-full bg-red-600"
+      aria-hidden
+    />
+  )
 
   // 🔥 Track landing page visits
   useEffect(() => {
@@ -77,30 +81,39 @@ export default function HomePage() {
             </p>
 
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-              <Link
-                href="/predict-score"
-                onClick={() => trackEvent('navigation_click', 'landing', { destination: '/predict-score' })}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-900 bg-[#111318] px-8 py-3.5 text-base font-semibold text-white transition hover:bg-[#1a1d24] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 sm:w-auto"
-              >
-                <PredictIconDot />
-                Predict
-              </Link>
-              <Link
-                href="/user-rankings"
-                onClick={() => trackEvent('navigation_click', 'landing', { destination: '/user-rankings' })}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-300 bg-white px-8 py-3.5 text-base font-semibold text-gray-900 transition hover:border-gray-400 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 sm:w-auto"
-              >
-                <RankingsListIcon />
-                Rankings
-              </Link>
-              <Link
-                href="/community-predictor"
-                onClick={() => trackEvent('navigation_click', 'landing', { destination: '/community-predictor' })}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-300 bg-white px-8 py-3.5 text-base font-semibold text-gray-900 transition hover:border-gray-400 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 sm:w-auto"
-              >
-                <CommunityPicksIcon />
-                Community Picks
-              </Link>
+              <div className="relative flex w-full flex-col items-center pb-3 sm:w-auto">
+                <Link
+                  href="/predict-score"
+                  onClick={() => trackEvent('navigation_click', 'landing', { destination: '/predict-score' })}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-900 bg-[#111318] px-8 py-3.5 text-base font-semibold text-white transition hover:bg-[#1a1d24] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 sm:w-auto"
+                >
+                  <PredictIconDot />
+                  Predict
+                </Link>
+                {predictActive ? activeDot : null}
+              </div>
+              <div className="relative flex w-full flex-col items-center pb-3 sm:w-auto">
+                <Link
+                  href="/user-rankings"
+                  onClick={() => trackEvent('navigation_click', 'landing', { destination: '/user-rankings' })}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-300 bg-white px-8 py-3.5 text-base font-semibold text-gray-900 transition hover:border-gray-400 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 sm:w-auto"
+                >
+                  <RankingsListIcon />
+                  Rankings
+                </Link>
+                {rankingsActive ? activeDot : null}
+              </div>
+              <div className="relative flex w-full flex-col items-center pb-3 sm:w-auto">
+                <Link
+                  href="/community-predictor"
+                  onClick={() => trackEvent('navigation_click', 'landing', { destination: '/community-predictor' })}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-300 bg-white px-8 py-3.5 text-base font-semibold text-gray-900 transition hover:border-gray-400 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 sm:w-auto"
+                >
+                  <CommunityPicksIcon />
+                  Community Picks
+                </Link>
+                {communityActive ? activeDot : null}
+              </div>
             </div>
 
             <p className="mt-12 text-center text-lg font-extrabold uppercase tracking-[0.28em] text-gray-500 md:text-xl">
