@@ -496,10 +496,7 @@ export default function PredictScorePage() {
       {loadingMatches ? (
         <p className="mt-10 text-center text-sm text-gray-500">Loading matches…</p>
       ) : playableMatches.length === 0 && completedMatches.length === 0 ? (
-        <p className="mt-10 text-center text-sm text-gray-600">
-          No matches yet. Add rows to <code className="text-xs">game_matches</code> in Supabase to
-          test.
-        </p>
+        <p className="mt-10 text-center text-sm text-gray-600">No matches available yet. Check back soon.</p>
       ) : (
         <>
           {playableMatches.length > 0 ? (

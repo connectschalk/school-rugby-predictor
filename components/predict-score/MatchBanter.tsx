@@ -48,7 +48,7 @@ export default function MatchBanter({ matchId, signedIn, userId }: Props) {
         msg.includes('does not exist')
       setError(
         missingTable
-          ? 'Match comments are not available yet. Apply the Supabase migration that creates public.game_match_comments, then reload this page.'
+          ? 'Comments are not available yet. Please try again shortly.'
           : e.message
       )
       setRows([])

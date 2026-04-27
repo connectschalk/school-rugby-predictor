@@ -18,6 +18,12 @@ export type MatchCommentWithAuthor = GameMatchCommentRow & {
   avatar_colour: string | null
 }
 
+export type DiscussionCommentRow = MatchCommentWithAuthor & {
+  home_team: string
+  away_team: string
+  kickoff_time: string
+}
+
 const MAX_BODY = 500
 
 export function normalizeCommentBody(raw: string): string {
@@ -101,4 +107,83 @@ export async function insertMatchComment(
   })
 
   return { error: error ? new Error(error.message) : null }
+}
+
+export async function fetchDiscussionComments(
+  client: SupabaseClient,
+  opts?: { matchId?: string | null }
+): Promise<{ rows: DiscussionCommentRow[]; error: Error | null }> {
+  let query = client
+    .from('game_match_comments')
+    .select('id, match_id, user_id, body, created_at')
+    .order('created_at', { ascending: false })
+    .limit(500)
+
+  if (opts?.matchId) {
+    query = query.eq('match_id', opts.matchId)
+  }
+
+  const { data: comments, error } = await query
+  if (error) return { rows: [], error: new Error(error.message) }
+
+  const list = (comments as GameMatchCommentRow[]) || []
+  if (list.length === 0) return { rows: [], error: null }
+
+  const profileIds = [...new Set(list.map((c) => c.user_id))]
+  const matchIds = [...new Set(list.map((c) => c.match_id))]
+
+  const [{ data: profiles, error: pErr }, { data: matches, error: mErr }] = await Promise.all([
+    client
+      .from('user_profiles')
+      .select('id, display_name, first_name, avatar_url, avatar_letter, avatar_colour')
+      .in('id', profileIds),
+    client.from('game_matches').select('id, home_team, away_team, kickoff_time').in('id', matchIds),
+  ])
+
+  if (pErr) return { rows: [], error: new Error(pErr.message) }
+  if (mErr) return { rows: [], error: new Error(mErr.message) }
+
+  const pm = new Map(
+    (
+      profiles as {
+        id: string
+        display_name: string
+        first_name: string | null
+        avatar_url: string | null
+        avatar_letter: string | null
+        avatar_colour: string | null
+      }[] | null
+    )?.map((p) => [p.id, p]) ?? []
+  )
+
+  const mm = new Map(
+    (
+      matches as {
+        id: string
+        home_team: string
+        away_team: string
+        kickoff_time: string
+      }[] | null
+    )?.map((m) => [m.id, m]) ?? []
+  )
+
+  const rows: DiscussionCommentRow[] = []
+  for (const c of list) {
+    const p = pm.get(c.user_id)
+    const m = mm.get(c.match_id)
+    if (!m) continue
+    rows.push({
+      ...c,
+      display_name: p?.display_name?.trim() || 'Player',
+      first_name: p?.first_name ?? null,
+      avatar_url: p?.avatar_url ?? null,
+      avatar_letter: p?.avatar_letter ?? null,
+      avatar_colour: p?.avatar_colour ?? null,
+      home_team: m.home_team,
+      away_team: m.away_team,
+      kickoff_time: m.kickoff_time,
+    })
+  }
+
+  return { rows, error: null }
 }

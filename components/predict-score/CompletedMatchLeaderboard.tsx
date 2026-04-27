@@ -119,9 +119,8 @@ export default function CompletedMatchLeaderboard({ match, signedIn }: Props) {
           <p className="text-sm text-gray-500">Loading results…</p>
         ) : rows.length === 0 ? (
           <p className="text-sm text-gray-600">
-            No scores yet. After the final score is saved on this fixture, use{' '}
-            <strong>Run scoring</strong> (or call <code className="text-xs">score_predictions_for_match</code>{' '}
-            in SQL).
+            No predictions have been scored yet. Run scoring to update the leaderboard. Leaderboard will appear once
+            scoring has run.
           </p>
         ) : (
           <table className="w-full min-w-[320px] border-collapse text-left text-sm">

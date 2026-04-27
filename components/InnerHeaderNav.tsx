@@ -347,6 +347,14 @@ export default function InnerHeaderNav() {
                   >
                     How it works
                   </Link>
+                  <Link
+                    role="menuitem"
+                    href="/discussion"
+                    className="block px-4 py-2.5 text-sm font-medium text-gray-900 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-red-700"
+                    onClick={closeMenu}
+                  >
+                    Discussion
+                  </Link>
                   <button
                     type="button"
                     role="menuitem"
