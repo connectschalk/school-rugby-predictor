@@ -1,7 +1,9 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import type { User } from '@supabase/supabase-js'
+import { supabase } from '@/lib/supabase'
 import { trackEvent } from '@/lib/trackEvent'
 
 function PredictIconDot() {
@@ -19,9 +21,34 @@ function RankingsListIcon() {
 }
 
 export default function HomePage() {
+  const [user, setUser] = useState<User | null>(null)
+  const [authReady, setAuthReady] = useState(false)
+
   // 🔥 Track landing page visits
   useEffect(() => {
     trackEvent('page_view', 'landing')
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!cancelled) {
+        setUser(session?.user ?? null)
+        setAuthReady(true)
+      }
+    })
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null)
+    })
+
+    return () => {
+      cancelled = true
+      subscription.unsubscribe()
+    }
   }, [])
 
   return (
@@ -63,6 +90,27 @@ export default function HomePage() {
             <p className="mt-12 text-center text-lg font-extrabold uppercase tracking-[0.28em] text-gray-500 md:text-xl">
               PICK - PREDICT - CLIMB
             </p>
+
+            {authReady && !user ? (
+              <div className="mt-6 text-center">
+                <p className="text-xs text-gray-500 md:text-sm">Save your picks and climb the rankings.</p>
+                <p className="mt-2 text-xs text-gray-600 md:text-sm">
+                  <Link
+                    href="/login"
+                    className="font-medium text-gray-900 underline decoration-gray-900 underline-offset-2"
+                  >
+                    Log in
+                  </Link>{' '}
+                  or{' '}
+                  <Link
+                    href="/signup"
+                    className="font-medium text-red-700 underline decoration-red-700 underline-offset-2"
+                  >
+                    Sign up
+                  </Link>
+                </p>
+              </div>
+            ) : null}
           </div>
         </section>
 

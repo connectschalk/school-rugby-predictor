@@ -28,6 +28,7 @@ type Props = {
   onPredict: (matchId: string) => void
   onLock?: (matchId: string) => void
   lockingMatchId?: string | null
+  onRequireAuth?: () => void
 }
 
 function formatKickoffShort(iso: string) {
@@ -106,6 +107,7 @@ export default function PredictionSlipRow({
   onPredict,
   onLock,
   lockingMatchId = null,
+  onRequireAuth,
 }: Props) {
   const at = new Date()
   const cutoffPassed = predictionCutoffPassed(match, at)
@@ -113,6 +115,7 @@ export default function PredictionSlipRow({
   const timeAllowsEdit = canEditPredictionOnMatch(match, at)
   const userLocked = prediction?.is_locked === true
   const editable = signedIn && timeAllowsEdit && !userLocked
+  const guestCanAttempt = !signedIn && timeAllowsEdit && !userLocked && Boolean(onRequireAuth)
   const showSavedPick = Boolean(prediction && (!timeAllowsEdit || userLocked))
   const winner = showSavedPick ? prediction!.predicted_winner : slip.winner
   const marginVal = showSavedPick ? String(prediction!.predicted_margin) : slip.margin
@@ -190,16 +193,20 @@ export default function PredictionSlipRow({
             name={match.home_team}
             logoSrc={homeLogo}
             selected={homeSelected}
-            disabled={!editable}
-            onSelect={() => onSlipChange(match.id, { winner: 'home' })}
+            disabled={!editable && !guestCanAttempt}
+            onSelect={() =>
+              guestCanAttempt ? onRequireAuth?.() : onSlipChange(match.id, { winner: 'home' })
+            }
           />
           <TeamLogoBlock
             label="Away"
             name={match.away_team}
             logoSrc={awayLogo}
             selected={awaySelected}
-            disabled={!editable}
-            onSelect={() => onSlipChange(match.id, { winner: 'away' })}
+            disabled={!editable && !guestCanAttempt}
+            onSelect={() =>
+              guestCanAttempt ? onRequireAuth?.() : onSlipChange(match.id, { winner: 'away' })
+            }
           />
         </div>
         <div className="mt-3">
@@ -211,10 +218,20 @@ export default function PredictionSlipRow({
             inputMode="numeric"
             min={1}
             step={1}
-            disabled={!editable}
+            readOnly={guestCanAttempt}
+            disabled={!editable && !guestCanAttempt}
             value={marginVal}
             onChange={(e) => onSlipChange(match.id, { margin: e.target.value })}
-            className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-center text-base font-semibold tabular-nums outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 disabled:bg-gray-50"
+            onFocus={(e) => {
+              if (guestCanAttempt) {
+                e.target.blur()
+                onRequireAuth?.()
+              }
+            }}
+            onClick={() => {
+              if (guestCanAttempt) onRequireAuth?.()
+            }}
+            className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-center text-base font-semibold tabular-nums outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 disabled:bg-gray-50 read-only:bg-white"
             placeholder="—"
           />
         </div>
@@ -231,17 +248,14 @@ export default function PredictionSlipRow({
             {cutoffPassed ? 'No prediction saved before close.' : 'No prediction saved before lock.'}
           </p>
         ) : null}
-        {!signedIn ? (
-          <p className="mt-3 text-center text-xs text-gray-600">Sign in above to predict.</p>
-        ) : null}
         {flashSubmitted ? (
           <p className="mt-2 text-center text-xs font-semibold text-red-700">Saved</p>
         ) : null}
         <div className="mt-4 flex flex-col gap-2 sm:flex-row">
           <button
             type="button"
-            disabled={!editable || submitting}
-            onClick={() => onPredict(match.id)}
+            disabled={submitting || (!editable && !guestCanAttempt)}
+            onClick={() => (guestCanAttempt ? onRequireAuth?.() : onPredict(match.id))}
             className={`flex-1 rounded-xl border py-3 text-sm font-bold uppercase tracking-wide transition-colors duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 disabled:opacity-40 ${predictButtonColors}`}
           >
             {predictButtonLabel}
@@ -305,16 +319,20 @@ export default function PredictionSlipRow({
           name={match.home_team}
           logoSrc={homeLogo}
           selected={homeSelected}
-          disabled={!editable}
-          onSelect={() => onSlipChange(match.id, { winner: 'home' })}
+          disabled={!editable && !guestCanAttempt}
+          onSelect={() =>
+            guestCanAttempt ? onRequireAuth?.() : onSlipChange(match.id, { winner: 'home' })
+          }
         />
         <TeamLogoBlock
           label="Away"
           name={match.away_team}
           logoSrc={awayLogo}
           selected={awaySelected}
-          disabled={!editable}
-          onSelect={() => onSlipChange(match.id, { winner: 'away' })}
+          disabled={!editable && !guestCanAttempt}
+          onSelect={() =>
+            guestCanAttempt ? onRequireAuth?.() : onSlipChange(match.id, { winner: 'away' })
+          }
         />
         <div>
           <label className="sr-only" htmlFor={`m-${match.id}`}>
@@ -326,18 +344,28 @@ export default function PredictionSlipRow({
             inputMode="numeric"
             min={1}
             step={1}
-            disabled={!editable}
+            readOnly={guestCanAttempt}
+            disabled={!editable && !guestCanAttempt}
             value={marginVal}
             onChange={(e) => onSlipChange(match.id, { margin: e.target.value })}
-            className="w-full rounded-lg border border-gray-300 px-2 py-2.5 text-center text-sm font-semibold tabular-nums outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 disabled:bg-gray-50"
+            onFocus={(e) => {
+              if (guestCanAttempt) {
+                e.target.blur()
+                onRequireAuth?.()
+              }
+            }}
+            onClick={() => {
+              if (guestCanAttempt) onRequireAuth?.()
+            }}
+            className="w-full rounded-lg border border-gray-300 px-2 py-2.5 text-center text-sm font-semibold tabular-nums outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 disabled:bg-gray-50 read-only:bg-white"
             placeholder="—"
           />
         </div>
         <div className="flex flex-col items-stretch gap-1">
           <button
             type="button"
-            disabled={!editable || submitting}
-            onClick={() => onPredict(match.id)}
+            disabled={submitting || (!editable && !guestCanAttempt)}
+            onClick={() => (guestCanAttempt ? onRequireAuth?.() : onPredict(match.id))}
             className={`rounded-lg border px-2 py-2.5 text-xs font-bold uppercase tracking-wide transition-colors duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 disabled:opacity-40 ${predictButtonColors}`}
           >
             {predictButtonLabel}

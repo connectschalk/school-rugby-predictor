@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
 import HowItWorksModal from '@/components/HowItWorksModal'
 import CompletedMatchLeaderboard from '@/components/predict-score/CompletedMatchLeaderboard'
+import PredictScoreAuthModal from '@/components/predict-score/PredictScoreAuthModal'
 import PredictScoreSlipListSection, {
   CLOSED_SLIP_HEADER_CLASS,
 } from '@/components/predict-score/PredictScoreSlipListSection'
@@ -72,6 +73,7 @@ export default function PredictScorePage() {
   const [bulkSaveMsg, setBulkSaveMsg] = useState('')
   const [lockAllMsg, setLockAllMsg] = useState('')
   const [howModalOpen, setHowModalOpen] = useState(false)
+  const [authModalOpen, setAuthModalOpen] = useState(false)
   const [teamSearch, setTeamSearch] = useState('')
   const [aliasRowsForSearch, setAliasRowsForSearch] = useState<Record<string, unknown>[]>([])
   const [teamsForSearch, setTeamsForSearch] = useState<TeamRow[]>([])
@@ -418,8 +420,8 @@ export default function PredictScorePage() {
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8 md:px-6 md:py-12">
-      <div className="text-center md:text-left">
-        <div className="flex flex-col items-center justify-center gap-3 sm:flex-row sm:flex-wrap sm:gap-4 md:justify-start">
+      <div className="mx-auto max-w-3xl text-center">
+        <div className="flex flex-col items-center justify-center gap-3 sm:flex-row sm:flex-wrap sm:justify-center">
           <h1 className="text-3xl font-black tracking-tight text-gray-900 md:text-4xl">
             Predict a Score
           </h1>
@@ -431,22 +433,10 @@ export default function PredictScorePage() {
             How it works
           </button>
         </div>
-        <p className="mx-auto mt-2 max-w-2xl text-sm text-gray-600 md:mx-0">
-          Pick only the matches you want — every scored prediction counts. Tap the winning school,
-          enter the margin, then use <strong>Predict</strong> on that row. Use{' '}
-          <strong>Submit all</strong> to save every row that already has both winner and margin;
-          empty rows are skipped.{' '}
-          <Link href="/profile" className="font-semibold text-gray-900 underline decoration-red-600 underline-offset-2">
-            Profile
-          </Link>{' '}
-          for your public name and photo. Comments live on each match page.
-        </p>
-        <p className="mx-auto mt-2 max-w-2xl text-sm font-semibold text-gray-900 md:mx-0">
-          Predict one match or many. You choose.
-        </p>
       </div>
 
       <HowItWorksModal open={howModalOpen} onClose={() => setHowModalOpen(false)} />
+      <PredictScoreAuthModal open={authModalOpen} onClose={() => setAuthModalOpen(false)} />
 
       {!authReady ? (
         <p className="mt-10 text-center text-sm text-gray-500">Loading…</p>
@@ -511,8 +501,8 @@ export default function PredictScorePage() {
         <>
           {playableMatches.length > 0 ? (
             <section className="mt-10">
-              <div className="mb-4">
-                <label className="block w-full max-w-md">
+              <div className="mx-auto mb-4 max-w-xl text-center">
+                <label className="block w-full">
                   <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-700">
                     Find a team
                   </span>
@@ -556,6 +546,7 @@ export default function PredictScorePage() {
                     onPredict={handleSubmitOne}
                     onLock={handleLockOne}
                     lockingMatchId={lockingMatchId}
+                    onRequireAuth={() => setAuthModalOpen(true)}
                   />
                   <PredictScoreSlipListSection
                     title="Open games"
@@ -573,6 +564,7 @@ export default function PredictScorePage() {
                     onPredict={handleSubmitOne}
                     onLock={handleLockOne}
                     lockingMatchId={lockingMatchId}
+                    onRequireAuth={() => setAuthModalOpen(true)}
                   />
                   <PredictScoreSlipListSection
                     title="Starting soon"
@@ -590,6 +582,7 @@ export default function PredictScorePage() {
                     onPredict={handleSubmitOne}
                     onLock={handleLockOne}
                     lockingMatchId={lockingMatchId}
+                    onRequireAuth={() => setAuthModalOpen(true)}
                   />
                   <PredictScoreSlipListSection
                     title="Predictions closed"
@@ -609,23 +602,36 @@ export default function PredictScorePage() {
                     onPredict={handleSubmitOne}
                     onLock={handleLockOne}
                     lockingMatchId={lockingMatchId}
+                    onRequireAuth={() => setAuthModalOpen(true)}
                   />
                   </div>
                 </>
               )}
 
-              {signedIn && hasEditablePredictRows ? (
+              {hasEditablePredictRows ? (
                 <div className="mt-4 flex flex-col items-end gap-3">
                   <div className="flex flex-wrap justify-end gap-2">
                     <button
                       type="button"
-                      disabled={submittingAll || submittingMatchId !== null || lockingMatchId !== null || lockingAll}
-                      onClick={() => void handleSubmitAll()}
+                      disabled={
+                        signedIn &&
+                        (submittingAll ||
+                          submittingMatchId !== null ||
+                          lockingMatchId !== null ||
+                          lockingAll)
+                      }
+                      onClick={() => {
+                        if (!signedIn) {
+                          setAuthModalOpen(true)
+                          return
+                        }
+                        void handleSubmitAll()
+                      }}
                       className="rounded-xl border border-gray-900 bg-gray-900 px-6 py-3 text-sm font-black uppercase tracking-wide text-white hover:bg-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 disabled:opacity-40"
                     >
                       {submittingAll ? 'Submitting…' : 'Submit all'}
                     </button>
-                    {canLockAnySaved ? (
+                    {signedIn && canLockAnySaved ? (
                       <button
                         type="button"
                         disabled={
@@ -642,8 +648,14 @@ export default function PredictScorePage() {
                     ) : null}
                   </div>
                   <p className="max-w-md text-right text-xs text-gray-600">
-                    Submit all saves open rows with a winner and margin. Lock freezes your pick for
-                    Community Picks — lock all only affects games you already saved.
+                    {signedIn ? (
+                      <>
+                        Submit all saves open rows with a winner and margin. Lock freezes your pick
+                        for Community Picks — lock all only affects games you already saved.
+                      </>
+                    ) : (
+                      <>Log in or sign up to save predictions with Submit all.</>
+                    )}
                   </p>
                 </div>
               ) : null}

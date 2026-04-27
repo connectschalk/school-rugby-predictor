@@ -29,6 +29,8 @@ type Props = {
   onPredict: (matchId: string) => void
   onLock?: (matchId: string) => void
   lockingMatchId?: string | null
+  /** Logged-out users: open auth prompt instead of changing slips or saving. */
+  onRequireAuth?: () => void
 }
 
 export default function PredictScoreSlipListSection({
@@ -50,6 +52,7 @@ export default function PredictScoreSlipListSection({
   onPredict,
   onLock,
   lockingMatchId = null,
+  onRequireAuth,
 }: Props) {
   if (matches.length === 0) return null
 
@@ -84,6 +87,7 @@ export default function PredictScoreSlipListSection({
                 onPredict={onPredict}
                 onLock={onLock}
                 lockingMatchId={lockingMatchId}
+                onRequireAuth={onRequireAuth}
               />
             )
           })}
