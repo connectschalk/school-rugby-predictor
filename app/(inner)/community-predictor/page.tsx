@@ -51,47 +51,44 @@ function localYmd(iso: string): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 
-function buildDefaultOrderedMatches(matches: GameMatch[], predictions: Map<string, UserPredictionRow>, at: Date) {
-  const lockedUpcoming = matches.filter((m) => !isRevealFree(m, at) && predictions.get(m.id)?.is_locked)
-  const past = matches.filter((m) => isRevealFree(m, at))
-  const byKick = (a: GameMatch, b: GameMatch) => +new Date(b.kickoff_time) - +new Date(a.kickoff_time)
-  lockedUpcoming.sort(byKick)
-  past.sort(byKick)
-  const seen = new Set<string>()
-  const out: GameMatch[] = []
-  for (const m of lockedUpcoming) {
-    if (seen.has(m.id)) continue
-    seen.add(m.id)
-    out.push(m)
-  }
-  for (const m of past) {
-    if (seen.has(m.id)) continue
-    seen.add(m.id)
-    out.push(m)
-  }
-  return out
+function sortUpcomingAsc(list: GameMatch[]): GameMatch[] {
+  return [...list].sort((a, b) => new Date(a.kickoff_time).getTime() - new Date(b.kickoff_time).getTime())
 }
 
-function getDefaultCommunityMatch(matches: GameMatch[], at: Date): GameMatch | null {
-  if (matches.length === 0) return null
+function sortCompletedDesc(list: GameMatch[]): GameMatch[] {
+  return [...list].sort((a, b) => new Date(b.kickoff_time).getTime() - new Date(a.kickoff_time).getTime())
+}
+
+function sortLiveDesc(list: GameMatch[]): GameMatch[] {
+  return [...list].sort((a, b) => new Date(b.kickoff_time).getTime() - new Date(a.kickoff_time).getTime())
+}
+
+function getOrderedMatchesForTab(tab: FilterTab, matches: GameMatch[], at: Date): GameMatch[] {
   const nowMs = at.getTime()
+  const live = matches.filter((m) => {
+    const kickMs = new Date(m.kickoff_time).getTime()
+    return kickMs <= nowMs && m.status !== 'completed'
+  })
+  const upcoming = matches.filter((m) => new Date(m.kickoff_time).getTime() > nowMs)
+  const past = matches.filter((m) => m.status === 'completed' || new Date(m.kickoff_time).getTime() <= nowMs)
 
-  const live = matches
-    .filter((m) => new Date(m.kickoff_time).getTime() <= nowMs && m.status !== 'completed')
-    .sort((a, b) => new Date(b.kickoff_time).getTime() - new Date(a.kickoff_time).getTime())[0]
-  if (live) return live
-
-  const nextUpcoming = matches
-    .filter((m) => new Date(m.kickoff_time).getTime() > nowMs)
-    .sort((a, b) => new Date(a.kickoff_time).getTime() - new Date(b.kickoff_time).getTime())[0]
-  if (nextUpcoming) return nextUpcoming
-
-  const mostRecentCompleted = matches
-    .filter((m) => m.status === 'completed')
-    .sort((a, b) => new Date(b.kickoff_time).getTime() - new Date(a.kickoff_time).getTime())[0]
-  if (mostRecentCompleted) return mostRecentCompleted
-
-  return null
+  if (tab === 'default') {
+    const liveSorted = sortLiveDesc(live)
+    if (liveSorted.length) return liveSorted
+    const upcomingSorted = sortUpcomingAsc(upcoming)
+    if (upcomingSorted.length) return upcomingSorted
+    return sortCompletedDesc(past)
+  }
+  if (tab === 'upcoming') return sortUpcomingAsc(upcoming)
+  if (tab === 'past') return sortCompletedDesc(past)
+  if (tab === 'all') {
+    const liveSorted = sortLiveDesc(live)
+    const upcomingSorted = sortUpcomingAsc(upcoming)
+    const seen = new Set<string>([...liveSorted, ...upcomingSorted].map((m) => m.id))
+    const completedPast = sortCompletedDesc(past.filter((m) => !seen.has(m.id)))
+    return [...liveSorted, ...upcomingSorted, ...completedPast]
+  }
+  return matches
 }
 
 type UnlockModalProps = {
@@ -208,8 +205,8 @@ export default function CommunityPicksPage() {
   const [stats, setStats] = useState<CommunityStatsResponse | null>(null)
   const [statsLoading, setStatsLoading] = useState(false)
   const touchStartX = useRef<number | null>(null)
-  const hasAutoSelectedInitial = useRef(false)
   const lastFilterTabRef = useRef<FilterTab>('default')
+  const selectedMatchIdRef = useRef<string | null>(null)
   /** From sessionStorage — “Not now” / backdrop / ✕ for this browser session only. */
   const [sessionOnboardingDismissed, setSessionOnboardingDismissed] = useState(false)
   const [onboardingStorageRead, setOnboardingStorageRead] = useState(false)
@@ -373,43 +370,35 @@ export default function CommunityPicksPage() {
     if (dateFilter) {
       list = list.filter((m) => localYmd(m.kickoff_time) === dateFilter)
     }
-    if (filterTab === 'past') {
-      list = list.filter((m) => isRevealFree(m, at))
-    } else if (filterTab === 'upcoming') {
-      list = list.filter((m) => !isRevealFree(m, at))
-    } else if (filterTab === 'default') {
-      list = buildDefaultOrderedMatches(list, predictions, at)
-      return list
-    }
-    const byKick = (a: GameMatch, b: GameMatch) => +new Date(b.kickoff_time) - +new Date(a.kickoff_time)
-    return [...list].sort(byKick)
-  }, [matches, searchTrim, dateFilter, filterTab, aliasRows, teams, at, predictions])
+    return list
+  }, [matches, searchTrim, dateFilter, aliasRows, teams])
 
   const orderedList = useMemo(() => {
-    if (filterTab === 'default') return filteredByControls
-    const byKick = (a: GameMatch, b: GameMatch) => +new Date(b.kickoff_time) - +new Date(a.kickoff_time)
-    return [...filteredByControls].sort(byKick)
-  }, [filteredByControls, filterTab])
+    return getOrderedMatchesForTab(filterTab, filteredByControls, at)
+  }, [filteredByControls, filterTab, at])
 
   useEffect(() => {
     setIndex((i) => {
       if (orderedList.length === 0) return 0
-      const switchedToDefault =
-        lastFilterTabRef.current !== 'default' && filterTab === 'default'
+      const tabChanged = lastFilterTabRef.current !== filterTab
       lastFilterTabRef.current = filterTab
 
-      if (!hasAutoSelectedInitial.current || switchedToDefault) {
-        hasAutoSelectedInitial.current = true
-        const def = getDefaultCommunityMatch(orderedList, at)
-        if (!def) return 0
-        const idx = orderedList.findIndex((m) => m.id === def.id)
+      if (tabChanged) return 0
+
+      const selectedId = selectedMatchIdRef.current
+      if (selectedId) {
+        const idx = orderedList.findIndex((m) => m.id === selectedId)
         return idx >= 0 ? idx : 0
       }
       return Math.min(i, orderedList.length - 1)
     })
-  }, [orderedList, at, filterTab])
+  }, [orderedList, filterTab])
 
   const currentMatch = orderedList[index] ?? null
+
+  useEffect(() => {
+    selectedMatchIdRef.current = currentMatch?.id ?? null
+  }, [currentMatch?.id])
 
   useEffect(() => {
     if (!currentMatch) {
@@ -496,7 +485,6 @@ export default function CommunityPicksPage() {
               value={teamSearch}
               onChange={(e) => {
                 setTeamSearch(e.target.value)
-                setIndex(0)
               }}
               placeholder="School name…"
               className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
@@ -511,7 +499,6 @@ export default function CommunityPicksPage() {
               value={dateFilter}
               onChange={(e) => {
                 setDateFilter(e.target.value)
-                setIndex(0)
               }}
               className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
             />
