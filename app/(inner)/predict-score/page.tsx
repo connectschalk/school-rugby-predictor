@@ -54,6 +54,7 @@ async function ensureUserProfile(user: User) {
 }
 
 export default function PredictScorePage() {
+  const PREDICT_BANNER_SEEN_KEY = 'predict-banner-seen'
   const [user, setUser] = useState<User | null>(null)
   const [authReady, setAuthReady] = useState(false)
   const [playableMatches, setPlayableMatches] = useState<GameMatch[]>([])
@@ -74,6 +75,7 @@ export default function PredictScorePage() {
   const [lockAllMsg, setLockAllMsg] = useState('')
   const [howModalOpen, setHowModalOpen] = useState(false)
   const [authModalOpen, setAuthModalOpen] = useState(false)
+  const [showInfoBanner, setShowInfoBanner] = useState(false)
   const [teamSearch, setTeamSearch] = useState('')
   const [aliasRowsForSearch, setAliasRowsForSearch] = useState<Record<string, unknown>[]>([])
   const [teamsForSearch, setTeamsForSearch] = useState<TeamRow[]>([])
@@ -113,6 +115,18 @@ export default function PredictScorePage() {
 
   useEffect(() => {
     trackEvent('page_view', 'predict-score')
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const seen = window.localStorage.getItem(PREDICT_BANNER_SEEN_KEY) === '1'
+    if (seen) return
+    setShowInfoBanner(true)
+    const t = window.setTimeout(() => {
+      setShowInfoBanner(false)
+      window.localStorage.setItem(PREDICT_BANNER_SEEN_KEY, '1')
+    }, 6000)
+    return () => window.clearTimeout(t)
   }, [])
 
   useEffect(() => {
@@ -437,6 +451,25 @@ export default function PredictScorePage() {
           You can predict one match or many. You do not have to predict every fixture. Have fun!
         </p>
       </div>
+
+      {showInfoBanner ? (
+        <div className="relative mx-auto mt-4 max-w-3xl rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-gray-700">
+          <span>You don't have to predict every game. Pick just one or as many as you like.</span>
+          <button
+            type="button"
+            onClick={() => {
+              setShowInfoBanner(false)
+              if (typeof window !== 'undefined') {
+                window.localStorage.setItem(PREDICT_BANNER_SEEN_KEY, '1')
+              }
+            }}
+            className="absolute right-3 top-2 text-gray-400 hover:text-gray-600"
+            aria-label="Dismiss notice"
+          >
+            ×
+          </button>
+        </div>
+      ) : null}
 
       <HowItWorksModal open={howModalOpen} onClose={() => setHowModalOpen(false)} />
       <PredictScoreAuthModal open={authModalOpen} onClose={() => setAuthModalOpen(false)} />

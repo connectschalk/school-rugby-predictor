@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
 import LetterAvatar from '@/components/LetterAvatar'
 import MatchBanter from '@/components/predict-score/MatchBanter'
@@ -23,6 +23,20 @@ function fmtTime(iso: string): string {
 }
 
 export default function DiscussionPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="mx-auto max-w-4xl px-4 py-8 md:px-6 md:py-12">
+          <p className="text-sm text-gray-500">Loading discussion…</p>
+        </main>
+      }
+    >
+      <DiscussionPageContent />
+    </Suspense>
+  )
+}
+
+function DiscussionPageContent() {
   const params = useSearchParams()
   const matchId = params.get('matchId')
   const [user, setUser] = useState<User | null>(null)

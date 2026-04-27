@@ -538,6 +538,8 @@ export default function AdminGameMatchesPage() {
         return
       }
     }
+    const prev = fixtures.find((f) => f.id === matchId) ?? null
+    const hadSavedResult = Boolean(prev && prev.status === 'completed' && prev.home_score != null && prev.away_score != null)
 
     const patch: Record<string, unknown> = {
       kickoff_time: kickIso,
@@ -552,7 +554,24 @@ export default function AdminGameMatchesPage() {
     }
 
     const { error } = await supabase.from('game_matches').update(patch).eq('id', matchId)
-    if (error) setMessage(`Update failed: ${error.message}`)
+    if (error) {
+      setMessage(`Update failed: ${error.message}`)
+      await loadFixtures()
+      setRowBusyId(null)
+      return
+    }
+
+    const shouldAutoScore = d.status === 'completed' && homeScore != null && awayScore != null
+    if (shouldAutoScore) {
+      const { error: scoreErr } = await supabase.rpc('score_predictions_for_match', { p_match_id: matchId })
+      if (scoreErr) {
+        setMessage('Result saved, but scoring failed. Please try Run scoring.')
+      } else {
+        setMessage(hadSavedResult ? 'Score updated and scoring updated.' : 'Score saved and scoring updated.')
+      }
+    } else {
+      setMessage(hadSavedResult ? 'Score updated.' : 'Score saved.')
+    }
     await loadFixtures()
     setRowBusyId(null)
   }
@@ -560,11 +579,8 @@ export default function AdminGameMatchesPage() {
   async function runScoring(id: string) {
     setRowBusyId(id)
     const { data, error } = await supabase.rpc('score_predictions_for_match', { p_match_id: id })
-    if (error) {
-      setMessage(`Scoring failed: ${error.message}`)
-    } else {
-      setMessage(`Scoring wrote ${data ?? 0} row(s) for this match.`)
-    }
+    if (error) setMessage(`Scoring failed: ${error.message}`)
+    else setMessage(`Scoring wrote ${data ?? 0} row(s) for this match.`)
     await loadFixtures()
     setRowBusyId(null)
   }
@@ -960,7 +976,8 @@ export default function AdminGameMatchesPage() {
               <h2 className="text-lg font-semibold">Current fixtures</h2>
               <p className="mt-2 max-w-3xl text-sm text-gray-600">
                 Edit kickoff (predictions close at kickoff), status, and scores, then <strong>Save row</strong>. Featured
-                toggles save immediately. Use <strong>Run scoring</strong> after a match is completed.
+                toggles save immediately. Completed results auto-run scoring; use <strong>Re-run scoring</strong> if
+                you need to retry.
               </p>
             </div>
             <button
@@ -995,6 +1012,11 @@ export default function AdminGameMatchesPage() {
                   {fixtures.map((m) => {
                     const busy = rowBusyId === m.id
                     const fd = fixtureFieldDraft[m.id]
+                    const hasSavedResult = Boolean(
+                      fd && fd.status === 'completed' && fd.homeScore.trim() !== '' && fd.awayScore.trim() !== ''
+                    )
+                    const hasAnyScoreInDraft = Boolean(fd && (fd.homeScore.trim() !== '' || fd.awayScore.trim() !== ''))
+                    const scoreStatusMismatch = Boolean(fd && hasAnyScoreInDraft && fd.status !== 'completed')
                     const adminAt = new Date(adminNowTick)
                     const windowBadge = matchPredictionsClosed(m, adminAt) ? (
                       <span className="inline-block rounded bg-gray-200 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-gray-800">
@@ -1047,24 +1069,41 @@ export default function AdminGameMatchesPage() {
                         </td>
                         <td className="py-2 pr-3">
                           {fd ? (
-                            <div className="flex flex-wrap items-center gap-1">
-                              <input
-                                type="number"
-                                placeholder="H"
-                                className="w-14 rounded border border-gray-300 px-1 py-0.5 text-xs"
-                                disabled={busy}
-                                value={fd.homeScore}
-                                onChange={(e) => patchFixtureField(m.id, { homeScore: e.target.value })}
-                              />
-                              <span className="text-gray-400">–</span>
-                              <input
-                                type="number"
-                                placeholder="A"
-                                className="w-14 rounded border border-gray-300 px-1 py-0.5 text-xs"
-                                disabled={busy}
-                                value={fd.awayScore}
-                                onChange={(e) => patchFixtureField(m.id, { awayScore: e.target.value })}
-                              />
+                            <div className="space-y-1.5">
+                              {hasSavedResult ? (
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="inline-flex rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-900">
+                                    Score saved
+                                  </span>
+                                  <span className="text-xs font-semibold tabular-nums text-gray-900">
+                                    {fd.homeScore} - {fd.awayScore}
+                                  </span>
+                                </div>
+                              ) : null}
+                              <div className="flex flex-wrap items-center gap-1">
+                                <input
+                                  type="number"
+                                  placeholder="H"
+                                  className="w-14 rounded border border-gray-300 px-1 py-0.5 text-xs"
+                                  disabled={busy}
+                                  value={fd.homeScore}
+                                  onChange={(e) => patchFixtureField(m.id, { homeScore: e.target.value })}
+                                />
+                                <span className="text-gray-400">–</span>
+                                <input
+                                  type="number"
+                                  placeholder="A"
+                                  className="w-14 rounded border border-gray-300 px-1 py-0.5 text-xs"
+                                  disabled={busy}
+                                  value={fd.awayScore}
+                                  onChange={(e) => patchFixtureField(m.id, { awayScore: e.target.value })}
+                                />
+                              </div>
+                              {scoreStatusMismatch ? (
+                                <p className="text-[11px] font-medium text-amber-800">
+                                  This match has a score but is not marked completed.
+                                </p>
+                              ) : null}
                             </div>
                           ) : (
                             `${m.home_score ?? '—'} – ${m.away_score ?? '—'}`
@@ -1096,15 +1135,15 @@ export default function AdminGameMatchesPage() {
                               className="w-fit rounded bg-gray-900 px-2 py-1 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
                               onClick={() => void saveFixtureFromDraft(m.id)}
                             >
-                              Save row
+                              {hasSavedResult ? 'Update score' : 'Save result'}
                             </button>
                             <button
                               type="button"
                               disabled={busy || m.status !== 'completed'}
-                              className="w-fit rounded border border-blue-600 px-2 py-1 text-xs text-blue-800 hover:bg-blue-50 disabled:opacity-50"
+                              className="w-fit rounded border border-gray-400 px-2 py-1 text-xs text-gray-800 hover:bg-gray-50 disabled:opacity-50"
                               onClick={() => void runScoring(m.id)}
                             >
-                              Run scoring
+                              Re-run scoring
                             </button>
                             <button
                               type="button"
