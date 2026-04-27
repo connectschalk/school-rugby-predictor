@@ -20,6 +20,14 @@ function RankingsListIcon() {
   )
 }
 
+function CommunityPicksIcon() {
+  return (
+    <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden>
+      <span className="h-2.5 w-2.5 rounded-full border-2 border-red-500" />
+    </span>
+  )
+}
+
 export default function HomePage() {
   const [user, setUser] = useState<User | null>(null)
   const [authReady, setAuthReady] = useState(false)
@@ -84,6 +92,14 @@ export default function HomePage() {
               >
                 <RankingsListIcon />
                 Rankings
+              </Link>
+              <Link
+                href="/community-predictor"
+                onClick={() => trackEvent('navigation_click', 'landing', { destination: '/community-predictor' })}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-300 bg-white px-8 py-3.5 text-base font-semibold text-gray-900 transition hover:border-gray-400 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 sm:w-auto"
+              >
+                <CommunityPicksIcon />
+                Community Picks
               </Link>
             </div>
 

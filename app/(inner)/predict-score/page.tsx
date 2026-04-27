@@ -433,6 +433,9 @@ export default function PredictScorePage() {
             How it works
           </button>
         </div>
+        <p className="mx-auto mt-2 max-w-2xl text-center text-sm leading-relaxed text-gray-500">
+          You can predict one match or many. You do not have to predict every fixture. Have fun!
+        </p>
       </div>
 
       <HowItWorksModal open={howModalOpen} onClose={() => setHowModalOpen(false)} />

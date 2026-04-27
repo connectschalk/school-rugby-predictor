@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CommunityBucketRow, CommunityMarginBucket, CommunityStatsOk } from '@/lib/community-predictor'
 import { getSchoolTeamLogoPath } from '@/lib/school-team-logos'
 
@@ -34,7 +35,14 @@ type BucketSlotProps = {
   awayTeam: string
 }
 
-function CommunityBucketSlot({ side, bucket, colorClass, lookup, homeTeam, awayTeam }: BucketSlotProps) {
+function CommunityBucketSlot({
+  side,
+  bucket,
+  colorClass,
+  lookup,
+  homeTeam,
+  awayTeam,
+}: BucketSlotProps) {
   const row = lookup.get(`${side}:${bucket}`)
   const pct = row?.percentage ?? 0
   const teamName = row?.team_name ?? (side === 'home' ? homeTeam : awayTeam)
@@ -77,6 +85,17 @@ function CommunityCenterAxisSlot() {
   )
 }
 
+function marginToBucket(margin: number): CommunityMarginBucket {
+  if (margin <= 5) return '5'
+  if (margin <= 10) return '10'
+  if (margin <= 15) return '15'
+  return '20+'
+}
+
+function clamp(n: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, n))
+}
+
 export default function CommunityDistributionPanel({ stats }: { stats: CommunityStatsOk }) {
   const homeLogo = getSchoolTeamLogoPath(stats.home_team)
   const awayLogo = getSchoolTeamLogoPath(stats.away_team)
@@ -96,6 +115,74 @@ export default function CommunityDistributionPanel({ stats }: { stats: Community
     month: 'short',
     day: 'numeric',
   })
+  const scoresExist = stats.home_score != null && stats.away_score != null
+  const scoreLine = scoresExist ? `${stats.home_score} - ${stats.away_score}` : null
+  const actualBucket = stats.actual_margin != null ? marginToBucket(stats.actual_margin) : null
+  const actualDotTitle =
+    !scoresExist || stats.actual_winner == null
+      ? undefined
+      : stats.actual_winner === 'draw'
+        ? 'Actual margin: Draw'
+        : `Actual margin: ${stats.actual_winner === 'home' ? stats.home_team : stats.away_team} by ${stats.actual_margin ?? 0}`
+  const actualLine =
+    !scoresExist || stats.actual_winner == null
+      ? null
+      : stats.actual_winner === 'draw'
+        ? 'Actual: Draw'
+        : `Actual: ${stats.actual_winner === 'home' ? stats.home_team : stats.away_team} by ${stats.actual_margin ?? 0}`
+  const showDotAt = (side: 'home' | 'away', bucket: CommunityMarginBucket): boolean =>
+    Boolean(scoresExist && stats.actual_winner === side && actualBucket === bucket)
+  const showDrawDot = Boolean(scoresExist && stats.actual_winner === 'draw')
+  const chartRef = useRef<HTMLDivElement | null>(null)
+  const [chartWidth, setChartWidth] = useState(0)
+
+  useEffect(() => {
+    if (!chartRef.current) return
+    const node = chartRef.current
+    const update = () => setChartWidth(node.offsetWidth)
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(node)
+    window.addEventListener('resize', update)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('resize', update)
+    }
+  }, [])
+
+  const actualAxisPosition = useMemo(() => {
+    if (!scoresExist || stats.actual_winner == null) return null
+    if (stats.actual_winner === 'draw') return 4
+    const margin = Math.max(0, stats.actual_margin ?? 0)
+    if (margin >= 20) return stats.actual_winner === 'home' ? 0 : 8
+    const wholeSteps = Math.floor(margin / 5)
+    const fraction = (margin % 5) / 5
+    if (stats.actual_winner === 'home') {
+      return clamp(4 - wholeSteps - fraction, 0, 8)
+    }
+    return clamp(4 + wholeSteps + fraction, 0, 8)
+  }, [scoresExist, stats.actual_margin, stats.actual_winner])
+
+  const slotWidth = chartWidth > 0 ? chartWidth / 9 : 0
+  const actualLeftPx = actualAxisPosition != null && slotWidth > 0 ? actualAxisPosition * slotWidth + slotWidth / 2 : null
+
+  const pctAtSlot = (i: number): number => {
+    if (i === 0) return lookup.get('home:20+')?.percentage ?? 0
+    if (i === 1) return lookup.get('home:15')?.percentage ?? 0
+    if (i === 2) return lookup.get('home:10')?.percentage ?? 0
+    if (i === 3) return lookup.get('home:5')?.percentage ?? 0
+    if (i === 4) return 0
+    if (i === 5) return lookup.get('away:5')?.percentage ?? 0
+    if (i === 6) return lookup.get('away:10')?.percentage ?? 0
+    if (i === 7) return lookup.get('away:15')?.percentage ?? 0
+    return lookup.get('away:20+')?.percentage ?? 0
+  }
+
+  const nearestIndex = actualAxisPosition == null ? null : clamp(Math.round(actualAxisPosition), 0, 8)
+  const nearestPct = nearestIndex == null ? 0 : pctAtSlot(nearestIndex)
+  const nearestBarHeight = Math.max(0, (nearestPct / 100) * CHART_PX)
+  const LABEL_ZONE_PX = 22
+  const actualBottomPx = LABEL_ZONE_PX + (nearestPct > 0 ? nearestBarHeight + 8 : 8)
 
   return (
     <div className="rounded-3xl border border-gray-200 bg-white p-5 shadow-lg shadow-black/10 sm:p-8">
@@ -119,8 +206,12 @@ export default function CommunityDistributionPanel({ stats }: { stats: Community
 
           {/* CENTER (VS + DATE) */}
           <div className="flex flex-col items-center justify-center text-center">
-            <div className="text-xs tracking-widest text-gray-400">VS</div>
-            <div className="text-sm text-gray-500">{formattedDate}</div>
+            {scoreLine ? (
+              <div className="text-2xl font-black tracking-tight text-gray-900 sm:text-3xl">{scoreLine}</div>
+            ) : (
+              <div className="text-xs tracking-widest text-gray-400">VS</div>
+            )}
+            <div className="mt-1 text-sm text-gray-500">{formattedDate}</div>
           </div>
 
           {/* RIGHT TEAM (AWAY) */}
@@ -156,11 +247,32 @@ export default function CommunityDistributionPanel({ stats }: { stats: Community
       </div>
 
       <p className="mt-6 text-center text-sm font-semibold text-gray-900">{avgLine}</p>
+      {actualLine ? (
+        <div className="mt-2 flex items-center justify-center gap-2 text-sm font-semibold text-gray-900">
+          <span className="inline-flex h-4 w-4 rounded-full bg-green-600" aria-hidden />
+          <span>{actualLine}</span>
+        </div>
+      ) : null}
 
       <div className="mt-6">
         <div className="overflow-x-auto">
           <div className="mx-auto min-w-[360px] max-w-[420px] sm:min-w-[420px]">
-            <div className="mx-auto grid w-full grid-cols-9 items-end gap-x-1 pb-1">
+            <div ref={chartRef} className="relative mx-auto">
+              {actualLeftPx != null ? (
+                <div
+                  className="pointer-events-none absolute z-10"
+                  style={{
+                    left: `${actualLeftPx}px`,
+                    bottom: `${actualBottomPx}px`,
+                    transform: 'translateX(-50%)',
+                  }}
+                  title={actualDotTitle}
+                  aria-label={actualDotTitle}
+                >
+                  <span className="inline-flex h-5 w-5 rounded-full bg-green-600 ring-2 ring-white" />
+                </div>
+              ) : null}
+              <div className="mx-auto grid w-full grid-cols-9 items-end gap-x-1 pb-1">
               {HOME_BUCKETS.map((b) => (
                 <CommunityBucketSlot
                   key={`home-${b}`}
@@ -184,6 +296,7 @@ export default function CommunityDistributionPanel({ stats }: { stats: Community
                   awayTeam={stats.away_team}
                 />
               ))}
+              </div>
             </div>
           </div>
         </div>

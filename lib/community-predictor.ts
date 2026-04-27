@@ -34,6 +34,12 @@ export type CommunityStatsOk = {
   away_team: string
   kickoff_time: string
   status: string
+  home_score: number | null
+  away_score: number | null
+  /** From final scores when both set; else null. */
+  actual_winner: 'home' | 'away' | 'draw' | null
+  /** abs(home_score - away_score) when both scores set; else null. */
+  actual_margin: number | null
   total_predictions: number
   home_prediction_count: number
   away_prediction_count: number
@@ -57,6 +63,21 @@ function num(v: unknown, fallback = 0): number {
     return Number.isFinite(n) ? n : fallback
   }
   return fallback
+}
+
+function parseNullableInt(v: unknown): number | null {
+  if (v === null || v === undefined) return null
+  if (typeof v === 'number' && Number.isFinite(v)) return Math.trunc(v)
+  if (typeof v === 'string' && v.trim() !== '') {
+    const n = Number(v)
+    return Number.isFinite(n) ? Math.trunc(n) : null
+  }
+  return null
+}
+
+function parseActualWinner(v: unknown): 'home' | 'away' | 'draw' | null {
+  if (v === 'home' || v === 'away' || v === 'draw') return v
+  return null
 }
 
 function parseBucketRows(raw: unknown): CommunityBucketRow[] {
@@ -109,6 +130,8 @@ export function parseCommunityStatsRpc(data: unknown): CommunityStatsResponse {
   if (!Number.isFinite(awayPct)) awayPct = 0
 
   const avgRaw = o.community_average_label
+  const hs = parseNullableInt(o.home_score)
+  const ascr = parseNullableInt(o.away_score)
   return {
     allowed: true,
     reason: null,
@@ -117,6 +140,10 @@ export function parseCommunityStatsRpc(data: unknown): CommunityStatsResponse {
     away_team: String(o.away_team ?? ''),
     kickoff_time: String(o.kickoff_time ?? ''),
     status: String(o.status ?? ''),
+    home_score: hs,
+    away_score: ascr,
+    actual_winner: parseActualWinner(o.actual_winner),
+    actual_margin: o.actual_margin === null || o.actual_margin === undefined ? null : parseNullableInt(o.actual_margin),
     total_predictions: total,
     home_prediction_count: homeC,
     away_prediction_count: awayC,
