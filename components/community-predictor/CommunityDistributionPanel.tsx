@@ -185,9 +185,9 @@ export default function CommunityDistributionPanel({ stats }: { stats: Community
   const actualBottomPx = LABEL_ZONE_PX + (nearestPct > 0 ? nearestBarHeight + 8 : 8)
 
   return (
-    <div className="rounded-3xl border border-gray-200 bg-white p-5 shadow-lg shadow-black/10 sm:p-8">
+    <div className="w-full max-w-full overflow-hidden rounded-3xl border border-gray-200 bg-white p-4 shadow-lg shadow-black/10 sm:p-8">
       <div className="border-b border-gray-100">
-        <div className="grid grid-cols-3 items-center w-full mb-8 px-2 sm:px-6">
+        <div className="mb-8 grid w-full grid-cols-3 items-center px-2 sm:px-6">
           {/* LEFT TEAM (HOME) */}
           <div className="flex min-w-0 flex-col items-end text-right">
             <div className="flex h-16 w-16 shrink-0 items-center justify-center sm:h-20 sm:w-20">
@@ -255,7 +255,7 @@ export default function CommunityDistributionPanel({ stats }: { stats: Community
       ) : null}
 
       <div className="mt-6">
-        <div className="overflow-x-auto">
+        <div className="max-w-full overflow-x-auto">
           <div className="mx-auto min-w-[360px] max-w-[420px] sm:min-w-[420px]">
             <div ref={chartRef} className="relative mx-auto">
               {actualLeftPx != null ? (

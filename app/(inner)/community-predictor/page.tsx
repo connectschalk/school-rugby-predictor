@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
+import { Calendar } from 'lucide-react'
 import CommunityDistributionPanel from '@/components/community-predictor/CommunityDistributionPanel'
 import {
   fetchCommunityPredictionStats,
@@ -450,7 +451,8 @@ export default function CommunityPicksPage() {
   )
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8 md:max-w-4xl md:px-6 md:py-12">
+    <main className="w-full max-w-full overflow-x-hidden px-4 py-8 md:py-12">
+      <div className="mx-auto w-full max-w-4xl">
       <UnlockCommunityPicksModal
         open={showUnlockModal}
         showLockAll={showLockAllInModal}
@@ -468,7 +470,7 @@ export default function CommunityPicksPage() {
         </p>
       </div>
 
-      <div className="mt-8 space-y-4 rounded-2xl border border-gray-200 bg-gray-50/80 p-4 sm:p-5">
+      <div className="mt-8 w-full max-w-full space-y-4 rounded-2xl border border-gray-200 bg-gray-50/80 p-4 sm:p-5">
         <div className="flex flex-wrap gap-2">
           {tabBtn('default', 'Default')}
           {tabBtn('past', 'Past')}
@@ -476,7 +478,7 @@ export default function CommunityPicksPage() {
           {tabBtn('all', 'All')}
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
-          <label className="block">
+          <label className="block w-full min-w-0">
             <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-gray-600">
               Search team
             </span>
@@ -487,21 +489,27 @@ export default function CommunityPicksPage() {
                 setTeamSearch(e.target.value)
               }}
               placeholder="School name…"
-              className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
+              className="w-full min-w-0 rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
             />
           </label>
-          <label className="block">
+          <label className="block w-full min-w-0">
             <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-gray-600">
               Filter by date
             </span>
-            <input
-              type="date"
-              value={dateFilter}
-              onChange={(e) => {
-                setDateFilter(e.target.value)
-              }}
-              className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
-            />
+            <div className="relative w-full min-w-0">
+              <input
+                type="date"
+                value={dateFilter}
+                onChange={(e) => {
+                  setDateFilter(e.target.value)
+                }}
+                className="w-full min-w-0 appearance-none rounded-xl border border-gray-300 bg-white px-3 py-2.5 pr-10 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
+              />
+              <Calendar
+                className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-600"
+                aria-hidden
+              />
+            </div>
           </label>
         </div>
       </div>
@@ -544,7 +552,9 @@ export default function CommunityPicksPage() {
             {statsLoading ? (
               <p className="py-16 text-center text-sm text-gray-500">Loading community picks…</p>
             ) : stats?.allowed === true ? (
-              <CommunityDistributionPanel stats={stats as CommunityStatsOk} />
+              <div className="w-full max-w-full overflow-hidden">
+                <CommunityDistributionPanel stats={stats as CommunityStatsOk} />
+              </div>
             ) : stats?.allowed === false && stats.reason === 'lock_required' ? (
               <div className="rounded-3xl border border-gray-200 bg-white px-6 py-14 text-center shadow-inner">
                 <p className="text-lg font-bold text-gray-900">
@@ -587,6 +597,7 @@ export default function CommunityPicksPage() {
           </div>
         </section>
       )}
+      </div>
     </main>
   )
 }
