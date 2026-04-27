@@ -72,6 +72,37 @@ function buildDefaultOrderedMatches(matches: GameMatch[], predictions: Map<strin
   return out
 }
 
+function pickInitialCommunityMatchIndex(matches: GameMatch[], at: Date): number {
+  if (matches.length === 0) return 0
+  const nowMs = at.getTime()
+
+  const live = matches
+    .filter((m) => new Date(m.kickoff_time).getTime() <= nowMs && m.status !== 'completed')
+    .sort((a, b) => new Date(b.kickoff_time).getTime() - new Date(a.kickoff_time).getTime())[0]
+  if (live) {
+    const i = matches.findIndex((m) => m.id === live.id)
+    if (i >= 0) return i
+  }
+
+  const mostRecentCompleted = matches
+    .filter((m) => m.status === 'completed')
+    .sort((a, b) => new Date(b.kickoff_time).getTime() - new Date(a.kickoff_time).getTime())[0]
+  if (mostRecentCompleted) {
+    const i = matches.findIndex((m) => m.id === mostRecentCompleted.id)
+    if (i >= 0) return i
+  }
+
+  const nextUpcoming = matches
+    .filter((m) => new Date(m.kickoff_time).getTime() > nowMs)
+    .sort((a, b) => new Date(a.kickoff_time).getTime() - new Date(b.kickoff_time).getTime())[0]
+  if (nextUpcoming) {
+    const i = matches.findIndex((m) => m.id === nextUpcoming.id)
+    if (i >= 0) return i
+  }
+
+  return 0
+}
+
 type UnlockModalProps = {
   open: boolean
   showLockAll: boolean
@@ -186,6 +217,7 @@ export default function CommunityPicksPage() {
   const [stats, setStats] = useState<CommunityStatsResponse | null>(null)
   const [statsLoading, setStatsLoading] = useState(false)
   const touchStartX = useRef<number | null>(null)
+  const hasAutoSelectedInitial = useRef(false)
   /** From sessionStorage — “Not now” / backdrop / ✕ for this browser session only. */
   const [sessionOnboardingDismissed, setSessionOnboardingDismissed] = useState(false)
   const [onboardingStorageRead, setOnboardingStorageRead] = useState(false)
@@ -370,9 +402,13 @@ export default function CommunityPicksPage() {
   useEffect(() => {
     setIndex((i) => {
       if (orderedList.length === 0) return 0
+      if (!hasAutoSelectedInitial.current) {
+        hasAutoSelectedInitial.current = true
+        return pickInitialCommunityMatchIndex(orderedList, at)
+      }
       return Math.min(i, orderedList.length - 1)
     })
-  }, [orderedList.length])
+  }, [orderedList, at])
 
   const currentMatch = orderedList[index] ?? null
 
