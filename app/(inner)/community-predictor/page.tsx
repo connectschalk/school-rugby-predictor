@@ -72,35 +72,26 @@ function buildDefaultOrderedMatches(matches: GameMatch[], predictions: Map<strin
   return out
 }
 
-function pickInitialCommunityMatchIndex(matches: GameMatch[], at: Date): number {
-  if (matches.length === 0) return 0
+function getDefaultCommunityMatch(matches: GameMatch[], at: Date): GameMatch | null {
+  if (matches.length === 0) return null
   const nowMs = at.getTime()
 
   const live = matches
     .filter((m) => new Date(m.kickoff_time).getTime() <= nowMs && m.status !== 'completed')
     .sort((a, b) => new Date(b.kickoff_time).getTime() - new Date(a.kickoff_time).getTime())[0]
-  if (live) {
-    const i = matches.findIndex((m) => m.id === live.id)
-    if (i >= 0) return i
-  }
-
-  const mostRecentCompleted = matches
-    .filter((m) => m.status === 'completed')
-    .sort((a, b) => new Date(b.kickoff_time).getTime() - new Date(a.kickoff_time).getTime())[0]
-  if (mostRecentCompleted) {
-    const i = matches.findIndex((m) => m.id === mostRecentCompleted.id)
-    if (i >= 0) return i
-  }
+  if (live) return live
 
   const nextUpcoming = matches
     .filter((m) => new Date(m.kickoff_time).getTime() > nowMs)
     .sort((a, b) => new Date(a.kickoff_time).getTime() - new Date(b.kickoff_time).getTime())[0]
-  if (nextUpcoming) {
-    const i = matches.findIndex((m) => m.id === nextUpcoming.id)
-    if (i >= 0) return i
-  }
+  if (nextUpcoming) return nextUpcoming
 
-  return 0
+  const mostRecentCompleted = matches
+    .filter((m) => m.status === 'completed')
+    .sort((a, b) => new Date(b.kickoff_time).getTime() - new Date(a.kickoff_time).getTime())[0]
+  if (mostRecentCompleted) return mostRecentCompleted
+
+  return null
 }
 
 type UnlockModalProps = {
@@ -218,6 +209,7 @@ export default function CommunityPicksPage() {
   const [statsLoading, setStatsLoading] = useState(false)
   const touchStartX = useRef<number | null>(null)
   const hasAutoSelectedInitial = useRef(false)
+  const lastFilterTabRef = useRef<FilterTab>('default')
   /** From sessionStorage — “Not now” / backdrop / ✕ for this browser session only. */
   const [sessionOnboardingDismissed, setSessionOnboardingDismissed] = useState(false)
   const [onboardingStorageRead, setOnboardingStorageRead] = useState(false)
@@ -402,13 +394,20 @@ export default function CommunityPicksPage() {
   useEffect(() => {
     setIndex((i) => {
       if (orderedList.length === 0) return 0
-      if (!hasAutoSelectedInitial.current) {
+      const switchedToDefault =
+        lastFilterTabRef.current !== 'default' && filterTab === 'default'
+      lastFilterTabRef.current = filterTab
+
+      if (!hasAutoSelectedInitial.current || switchedToDefault) {
         hasAutoSelectedInitial.current = true
-        return pickInitialCommunityMatchIndex(orderedList, at)
+        const def = getDefaultCommunityMatch(orderedList, at)
+        if (!def) return 0
+        const idx = orderedList.findIndex((m) => m.id === def.id)
+        return idx >= 0 ? idx : 0
       }
       return Math.min(i, orderedList.length - 1)
     })
-  }, [orderedList, at])
+  }, [orderedList, at, filterTab])
 
   const currentMatch = orderedList[index] ?? null
 
