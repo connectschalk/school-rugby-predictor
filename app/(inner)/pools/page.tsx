@@ -67,6 +67,7 @@ function PoolsPageContent() {
   const [savingMatches, setSavingMatches] = useState(false)
 
   const [inviteCopied, setInviteCopied] = useState(false)
+  const [initialSessionLoaded, setInitialSessionLoaded] = useState(false)
 
   const [leaderRows, setLeaderRows] = useState<
     {
@@ -85,6 +86,10 @@ function PoolsPageContent() {
   const [leaderMetric, setLeaderMetric] = useState<LeaderMetric>('total')
   const showManagement = false
   const inviteFromUrl = (searchParams.get('invite') ?? '').trim()
+
+  useEffect(() => {
+    console.log('AUTH USER SET', user?.id)
+  }, [user])
 
   const membershipByPool = useMemo(() => {
     const map = new Map<string, PoolMemberRow>()
@@ -185,53 +190,56 @@ function PoolsPageContent() {
   }, [selectedPoolId, loadProfiles])
 
   useEffect(() => {
-    let mounted = true
+    let cancelled = false
     const fallbackId = window.setTimeout(() => {
-      if (!mounted) return
-      setUser(null)
+      if (cancelled) return
       setAuthReady(true)
       setLoading(false)
     }, 5000)
 
-    void (async () => {
+    const loadSession = async () => {
       try {
         setLoading(true)
         const { data, error } = await supabase.auth.getSession()
         if (error) console.error('Pools getSession error:', error)
-        if (!mounted) return
+        if (cancelled) return
         setUser(data.session?.user ?? null)
       } catch (err) {
         console.error('Pools getSession failed:', err)
-        if (!mounted) return
-        setUser(null)
       } finally {
-        if (!mounted) return
+        if (cancelled) return
+        setInitialSessionLoaded(true)
         setAuthReady(true)
         setLoading(false)
       }
-    })()
+    }
+    void loadSession()
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (!mounted) return
-      setUser(session?.user ?? null)
+      if (cancelled) return
+      console.log('AUTH EVENT', event, !!session?.user)
       setAuthReady(true)
       setLoading(false)
       if (event === 'SIGNED_OUT') {
+        setUser(null)
         setMyPools([])
         setMyMemberships([])
         setSelectedPoolId(null)
       } else if (session?.user) {
+        setUser(session.user)
         await loadPools(session.user.id)
+      } else if (!initialSessionLoaded) {
+        setUser(null)
       }
     })
     return () => {
-      mounted = false
+      cancelled = true
       window.clearTimeout(fallbackId)
       subscription.unsubscribe()
     }
-  }, [loadPools])
+  }, [initialSessionLoaded, loadPools])
 
   useEffect(() => {
     void loadPools()

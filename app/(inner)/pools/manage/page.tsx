@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
 import LetterAvatar from '@/components/LetterAvatar'
 import { fetchUserIsAdmin } from '@/lib/admin-access'
+import { buildTeamAliasResolverMap } from '@/lib/team-aliases-db'
 import {
   deletePool,
   fetchFixtureGroups,
@@ -25,6 +26,7 @@ import {
 } from '@/lib/pools'
 import { fetchGameMatchesForCommunityHub, type GameMatch } from '@/lib/public-prediction-game'
 import { supabase } from '@/lib/supabase'
+import { normalizeTeamKey, normalizeTeamKeyLoose, type TeamRow } from '@/lib/team-name-match'
 
 function teamVs(m: GameMatch) {
   return `${m.home_team} vs ${m.away_team}`
@@ -38,6 +40,11 @@ const GROUP_TYPE_LABEL: Record<string, string> = {
   league: 'League',
   festival: 'Festival',
   custom: 'Custom',
+}
+const KNOWN_TEAM_ALIAS_TO_CANONICAL: Record<string, string> = {
+  'paarl boys': 'Paarl Boys High',
+  'paarl gim': 'Paarl Gimnasium',
+  affies: 'Afrikaans Hoer Seuns',
 }
 
 export default function ManagePoolsPage() {
@@ -81,6 +88,7 @@ export default function ManagePoolsPage() {
   } | null>(null)
   const [createPreviewLoading, setCreatePreviewLoading] = useState(false)
   const [editPreviewLoading, setEditPreviewLoading] = useState(false)
+  const [teamAliasMap, setTeamAliasMap] = useState<Map<string, string>>(new Map())
 
   const selectedPool = useMemo(() => myPools.find((p) => p.id === selectedPoolId) ?? null, [myPools, selectedPoolId])
   const totalPools = myPools.length
@@ -179,6 +187,15 @@ export default function ManagePoolsPage() {
         setMessage(`Could not load fixture groups: ${error.message}`)
       }
     })
+    void (async () => {
+      const [aliasRes, teamsRes] = await Promise.all([
+        supabase.from('team_aliases').select('*'),
+        supabase.from('teams').select('id, name'),
+      ])
+      const aliases = (aliasRes.data as Record<string, unknown>[] | null) ?? []
+      const teams = (teamsRes.data as TeamRow[] | null) ?? []
+      setTeamAliasMap(buildTeamAliasResolverMap(aliases, teams))
+    })()
   }, [])
 
   useEffect(() => {
@@ -363,6 +380,19 @@ export default function ManagePoolsPage() {
   }) {
     const { title = 'Preview selected groups', selectedCount, loading, preview } = params
     const hasFixtures = (preview?.total_matches ?? 0) > 0
+    const normalizeTeamName = (name: string): string => {
+      const trimmed = name.trim()
+      if (!trimmed) return ''
+      const key = normalizeTeamKey(trimmed)
+      const loose = normalizeTeamKeyLoose(trimmed)
+      const viaTeamAliases = teamAliasMap.get(key) ?? (loose ? teamAliasMap.get(loose) : undefined)
+      if (viaTeamAliases) return viaTeamAliases
+      const viaKnownAliases = KNOWN_TEAM_ALIAS_TO_CANONICAL[key] ?? (loose ? KNOWN_TEAM_ALIAS_TO_CANONICAL[loose] : undefined)
+      return viaKnownAliases ?? trimmed
+    }
+    const canonicalTeams = [...new Set((preview?.teams ?? []).map(normalizeTeamName).filter(Boolean))].sort((a, b) =>
+      a.localeCompare(b)
+    )
     return (
       <div className="rounded-xl border border-gray-200 p-3">
         <h3 className="text-sm font-black text-gray-900">{title}</h3>
@@ -378,16 +408,20 @@ export default function ManagePoolsPage() {
           <>
             <p className="mt-2 text-xs text-gray-600">Total fixtures included: {preview?.total_matches ?? 0}</p>
             <h4 className="mt-3 text-xs font-bold uppercase tracking-wide text-gray-600">Core teams included</h4>
-            <p className="mt-1 text-[11px] text-gray-500">These are the official teams in the selected group.</p>
+            <p className="mt-1 text-[11px] text-gray-500">
+              These are the selected province/league teams. Fixtures may also include opponents from outside the selected province or league.
+            </p>
             <div className="mt-2 flex flex-wrap gap-1.5">
-              {(preview?.teams ?? []).map((t) => (
+              {canonicalTeams.map((t) => (
                 <span key={t} className="rounded-full border border-gray-300 bg-gray-50 px-2 py-0.5 text-[11px] font-semibold text-gray-700">
                   {t}
                 </span>
               ))}
             </div>
             <h4 className="mt-3 text-xs font-bold uppercase tracking-wide text-gray-600">Fixtures included</h4>
-            <p className="mt-1 text-[11px] text-gray-500">Fixtures may include opponents from outside the group.</p>
+            <p className="mt-1 text-[11px] text-gray-500">
+              These fixtures include games involving the selected teams, even when they play teams outside the province or league.
+            </p>
             <div className="mt-2 space-y-1.5">
               {(preview?.fixtures ?? []).map((f) => (
                 <div key={f.match_id} className="rounded-lg border border-gray-200 px-2.5 py-2 text-xs">

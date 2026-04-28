@@ -42,12 +42,17 @@ export default function InnerHeaderNav() {
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const mobileMoreRef = useRef<HTMLDivElement>(null)
+  const userRef = useRef<User | null>(null)
 
   useEffect(() => {
-    let mounted = true
+    userRef.current = user
+    console.log('AUTH USER SET', user?.id)
+  }, [user])
+
+  useEffect(() => {
+    let cancelled = false
     const fallbackId = window.setTimeout(() => {
-      if (!mounted) return
-      setUser(null)
+      if (cancelled) return
       setAuthReady(true)
     }, 5000)
 
@@ -55,26 +60,36 @@ export default function InnerHeaderNav() {
       try {
         const { data, error } = await supabase.auth.getSession()
         if (error) console.error('InnerHeaderNav getSession error:', error)
-        if (!mounted) return
+        if (cancelled) return
         setUser(data.session?.user ?? null)
       } catch (err) {
         console.error('InnerHeaderNav getSession failed:', err)
-        if (!mounted) return
-        setUser(null)
       } finally {
-        if (!mounted) return
+        if (cancelled) return
         setAuthReady(true)
       }
     })()
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (cancelled) return
+      console.log('AUTH EVENT', event, !!session?.user)
       setAuthReady(true)
-      setUser(session?.user ?? null)
+      if (event === 'SIGNED_OUT') {
+        setUser(null)
+        return
+      }
+      if (session?.user) {
+        setUser(session.user)
+        return
+      }
+      // Keep current user for non-signed-out null sessions.
+      if (userRef.current) return
+      setUser(null)
     })
     return () => {
-      mounted = false
+      cancelled = true
       window.clearTimeout(fallbackId)
       subscription.unsubscribe()
     }

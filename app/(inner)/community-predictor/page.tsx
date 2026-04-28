@@ -220,8 +220,13 @@ export default function CommunityPicksPage() {
   const [dismissedAfterModalLockAll, setDismissedAfterModalLockAll] = useState(false)
   const [lockAllModalBusy, setLockAllModalBusy] = useState(false)
   const [lockAllModalError, setLockAllModalError] = useState('')
+  const [initialSessionLoaded, setInitialSessionLoaded] = useState(false)
 
   const at = useMemo(() => new Date(nowTick), [nowTick])
+
+  useEffect(() => {
+    console.log('AUTH USER SET', user?.id)
+  }, [user])
 
   useEffect(() => {
     trackEvent('page_view', 'community-picks')
@@ -239,42 +244,53 @@ export default function CommunityPicksPage() {
   }, [])
 
   useEffect(() => {
-    let mounted = true
+    let cancelled = false
     const fallbackId = window.setTimeout(() => {
-      if (!mounted) return
-      setUser(null)
+      if (cancelled) return
       setAuthReady(true)
     }, 5000)
 
-    void (async () => {
+    const loadSession = async () => {
       try {
         const { data, error } = await supabase.auth.getSession()
         if (error) console.error('Community getSession error:', error)
-        if (!mounted) return
+        if (cancelled) return
         setUser(data.session?.user ?? null)
       } catch (err) {
         console.error('Community getSession failed:', err)
-        if (!mounted) return
-        setUser(null)
       } finally {
-        if (!mounted) return
+        if (cancelled) return
+        setInitialSessionLoaded(true)
         setAuthReady(true)
       }
-    })()
+    }
+    void loadSession()
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!mounted) return
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (cancelled) return
+      console.log('AUTH EVENT', event, !!session?.user)
       setAuthReady(true)
-      setUser(session?.user ?? null)
+      if (event === 'SIGNED_OUT') {
+        setUser(null)
+        setViewerProfile(null)
+        return
+      }
+      if (session?.user) {
+        setUser(session.user)
+        return
+      }
+      if (!initialSessionLoaded) {
+        setUser(null)
+      }
     })
     return () => {
-      mounted = false
+      cancelled = true
       window.clearTimeout(fallbackId)
       subscription.unsubscribe()
     }
-  }, [])
+  }, [initialSessionLoaded])
 
   const loadBase = useCallback(async () => {
     setLoading(true)

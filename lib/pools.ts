@@ -61,6 +61,20 @@ export type PoolGroupsPreview = {
   }>
 }
 
+const PREVIEW_TEAM_ALIAS_MAP: Record<string, string> = {
+  'paarl boys': 'paarl boys high',
+  'paarl boys high': 'paarl boys high',
+  'paarl gim': 'paarl gimnasium',
+  'paarl gimnasium': 'paarl gimnasium',
+  affies: 'afrikaans hoer seuns',
+  'afrikaans hoer seuns': 'afrikaans hoer seuns',
+}
+
+function normalizePreviewTeamName(name: string): string {
+  const n = name.trim().toLowerCase()
+  return PREVIEW_TEAM_ALIAS_MAP[n] ?? n
+}
+
 function num(v: unknown, fallback = 0): number {
   if (typeof v === 'number' && Number.isFinite(v)) return v
   if (typeof v === 'string' && v.trim() !== '') {
@@ -366,6 +380,45 @@ export async function previewPoolGroups(client: SupabaseClient, groupIds: string
     }
   }
 
+  const groupsWithCore = new Set(
+    [...coreTeamsByGroup.entries()].filter(([, set]) => set.size > 0).map(([gid]) => gid)
+  )
+
+  // If a selected group has core teams, only include fixtures where at least one side matches
+  // a core team (after canonical normalization). Groups without core keep linked-match behavior.
+  const allowedMatchIdsByCoreRule = new Set<string>()
+  for (const row of
+    ((linksRes.data as {
+      group_id: string
+      game_matches:
+        | { id?: string; home_team?: string; away_team?: string; kickoff_time?: string; status?: string }
+        | {
+            id?: string
+            home_team?: string
+            away_team?: string
+            kickoff_time?: string
+            status?: string
+          }[]
+        | null
+    }[] | null) ?? [])) {
+    const gmRaw = Array.isArray(row.game_matches) ? row.game_matches[0] : row.game_matches
+    if (!gmRaw?.id || (gmRaw.status ?? '') === 'cancelled') continue
+    const matchId = String(gmRaw.id)
+    const homeNorm = normalizePreviewTeamName(String(gmRaw.home_team ?? ''))
+    const awayNorm = normalizePreviewTeamName(String(gmRaw.away_team ?? ''))
+    if (!groupsWithCore.has(row.group_id)) {
+      allowedMatchIdsByCoreRule.add(matchId)
+      continue
+    }
+    const coreNames = [...(coreTeamsByGroup.get(row.group_id) ?? new Set<string>())].map((t) =>
+      normalizePreviewTeamName(t)
+    )
+    if (coreNames.includes(homeNorm) || coreNames.includes(awayNorm)) {
+      allowedMatchIdsByCoreRule.add(matchId)
+    }
+  }
+
+  const filteredMatches = matches.filter((m) => allowedMatchIdsByCoreRule.has(m.id))
   const includedTeams = new Set<string>()
   for (const groupId of uniqueIds) {
     const coreTeams = coreTeamsByGroup.get(groupId)
@@ -379,7 +432,7 @@ export async function previewPoolGroups(client: SupabaseClient, groupIds: string
   }
   const teams = [...includedTeams].sort((a, b) => a.localeCompare(b))
   const nowTs = Date.now()
-  const fixtures = matches
+  const fixtures = filteredMatches
     .filter((m) => {
       const t = new Date(m.kickoff_time).getTime()
       return Number.isFinite(t) && t >= nowTs
@@ -396,7 +449,7 @@ export async function previewPoolGroups(client: SupabaseClient, groupIds: string
 
   return {
     preview: {
-      total_matches: matches.length,
+      total_matches: filteredMatches.length,
       teams,
       fixtures,
     },
