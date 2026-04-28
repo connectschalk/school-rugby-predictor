@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { useRouter, useSearchParams } from 'next/navigation'
 import type { User } from '@supabase/supabase-js'
 import LetterAvatar from '@/components/LetterAvatar'
 import {
@@ -33,7 +34,11 @@ function requestDisplayName(r: PoolJoinRequestRow, profilesById: Record<string, 
   return r.display_name?.trim() || profilesById[r.user_id]?.display_name?.trim() || 'Player'
 }
 
+const PENDING_POOL_INVITE_KEY = 'pending_pool_invite_id'
+
 export default function PoolsPage() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const [user, setUser] = useState<User | null>(null)
   const [authReady, setAuthReady] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -79,6 +84,7 @@ export default function PoolsPage() {
   const [leaderLoading, setLeaderLoading] = useState(false)
   const [leaderMetric, setLeaderMetric] = useState<LeaderMetric>('total')
   const showManagement = false
+  const inviteFromUrl = (searchParams.get('invite') ?? '').trim()
 
   const membershipByPool = useMemo(() => {
     const map = new Map<string, PoolMemberRow>()
@@ -179,16 +185,39 @@ export default function PoolsPage() {
   }, [selectedPoolId, loadProfiles])
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
+    let mounted = true
+    const fallbackId = window.setTimeout(() => {
+      if (!mounted) return
+      setUser(null)
       setAuthReady(true)
       setLoading(false)
-    })
+    }, 5000)
+
+    void (async () => {
+      try {
+        setLoading(true)
+        const { data, error } = await supabase.auth.getSession()
+        if (error) console.error('Pools getSession error:', error)
+        if (!mounted) return
+        setUser(data.session?.user ?? null)
+      } catch (err) {
+        console.error('Pools getSession failed:', err)
+        if (!mounted) return
+        setUser(null)
+      } finally {
+        if (!mounted) return
+        setAuthReady(true)
+        setLoading(false)
+      }
+    })()
+
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!mounted) return
       setUser(session?.user ?? null)
       setAuthReady(true)
+      setLoading(false)
       if (event === 'SIGNED_OUT') {
         setMyPools([])
         setMyMemberships([])
@@ -197,7 +226,11 @@ export default function PoolsPage() {
         await loadPools(session.user.id)
       }
     })
-    return () => subscription.unsubscribe()
+    return () => {
+      mounted = false
+      window.clearTimeout(fallbackId)
+      subscription.unsubscribe()
+    }
   }, [loadPools])
 
   useEffect(() => {
@@ -217,6 +250,64 @@ export default function PoolsPage() {
     const id = window.setTimeout(() => setInviteCopied(false), 4000)
     return () => window.clearTimeout(id)
   }, [inviteCopied])
+
+  useEffect(() => {
+    if (!authReady) return
+    const pendingFromStorage =
+      typeof window === 'undefined' ? '' : (window.localStorage.getItem(PENDING_POOL_INVITE_KEY) ?? '').trim()
+    const invitePoolId = inviteFromUrl || pendingFromStorage
+    if (!invitePoolId) return
+
+    const handleInvite = async () => {
+      if (!user) {
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem(PENDING_POOL_INVITE_KEY, invitePoolId)
+        }
+        router.replace('/login')
+        return
+      }
+
+      const { data: memberRow, error: memberErr } = await supabase
+        .from('pool_members')
+        .select('pool_id')
+        .eq('pool_id', invitePoolId)
+        .eq('user_id', user.id)
+        .maybeSingle()
+      if (memberErr) {
+        setMessage(memberErr.message)
+        return
+      }
+      if (memberRow?.pool_id) {
+        setMessage('You are already a member of this pool.')
+        if (typeof window !== 'undefined') {
+          window.localStorage.removeItem(PENDING_POOL_INVITE_KEY)
+        }
+        if (inviteFromUrl) router.replace('/pools')
+        return
+      }
+
+      const { data: poolRow } = await supabase
+        .from('pools')
+        .select('name')
+        .eq('id', invitePoolId)
+        .maybeSingle()
+      const poolName = String((poolRow as { name?: string } | null)?.name ?? 'pool')
+
+      const { error } = await requestJoinPool(supabase, invitePoolId)
+      if (error) {
+        setMessage(error.message)
+        return
+      }
+      setMessage(`Request sent to join ${poolName}`)
+      if (typeof window !== 'undefined') {
+        window.localStorage.removeItem(PENDING_POOL_INVITE_KEY)
+      }
+      if (inviteFromUrl) router.replace('/pools')
+      await loadPools(user.id)
+    }
+
+    void handleInvite()
+  }, [authReady, inviteFromUrl, loadPools, router, user])
 
   useEffect(() => {
     void loadPoolDetails()

@@ -44,16 +44,40 @@ export default function InnerHeaderNav() {
   const mobileMoreRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
+    let mounted = true
+    const fallbackId = window.setTimeout(() => {
+      if (!mounted) return
+      setUser(null)
       setAuthReady(true)
-    })
+    }, 5000)
+
+    void (async () => {
+      try {
+        const { data, error } = await supabase.auth.getSession()
+        if (error) console.error('InnerHeaderNav getSession error:', error)
+        if (!mounted) return
+        setUser(data.session?.user ?? null)
+      } catch (err) {
+        console.error('InnerHeaderNav getSession failed:', err)
+        if (!mounted) return
+        setUser(null)
+      } finally {
+        if (!mounted) return
+        setAuthReady(true)
+      }
+    })()
+
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuthReady(true)
       setUser(session?.user ?? null)
     })
-    return () => subscription.unsubscribe()
+    return () => {
+      mounted = false
+      window.clearTimeout(fallbackId)
+      subscription.unsubscribe()
+    }
   }, [])
 
   useEffect(() => {

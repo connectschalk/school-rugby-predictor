@@ -234,35 +234,69 @@ export default function CommunityPicksPage() {
   }, [])
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
+    let mounted = true
+    const fallbackId = window.setTimeout(() => {
+      if (!mounted) return
+      setUser(null)
       setAuthReady(true)
-    })
+    }, 5000)
+
+    void (async () => {
+      try {
+        const { data, error } = await supabase.auth.getSession()
+        if (error) console.error('Community getSession error:', error)
+        if (!mounted) return
+        setUser(data.session?.user ?? null)
+      } catch (err) {
+        console.error('Community getSession failed:', err)
+        if (!mounted) return
+        setUser(null)
+      } finally {
+        if (!mounted) return
+        setAuthReady(true)
+      }
+    })()
+
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return
+      setAuthReady(true)
       setUser(session?.user ?? null)
     })
-    return () => subscription.unsubscribe()
+    return () => {
+      mounted = false
+      window.clearTimeout(fallbackId)
+      subscription.unsubscribe()
+    }
   }, [])
 
   const loadBase = useCallback(async () => {
     setLoading(true)
     setLoadError('')
-    const [gmRes, aliasRes, teamsRes] = await Promise.all([
-      fetchGameMatchesForCommunityHub(supabase, 200),
-      supabase.from('team_aliases').select('*'),
-      supabase.from('teams').select('id, name'),
-    ])
-    if (gmRes.error) {
-      setLoadError(gmRes.error.message)
+    try {
+      const [gmRes, aliasRes, teamsRes] = await Promise.all([
+        fetchGameMatchesForCommunityHub(supabase, 200),
+        supabase.from('team_aliases').select('*'),
+        supabase.from('teams').select('id, name'),
+      ])
+      if (gmRes.error) {
+        setLoadError(gmRes.error.message)
+        setMatches([])
+      } else {
+        setMatches(gmRes.data)
+      }
+      setAliasRows((aliasRes.data as Record<string, unknown>[]) ?? [])
+      setTeams((teamsRes.data as TeamRow[]) ?? [])
+    } catch (err) {
+      console.error('Community loadBase failed:', err)
+      setLoadError('Could not load community picks right now.')
       setMatches([])
-    } else {
-      setMatches(gmRes.data)
+      setAliasRows([])
+      setTeams([])
+    } finally {
+      setLoading(false)
     }
-    setAliasRows((aliasRes.data as Record<string, unknown>[]) ?? [])
-    setTeams((teamsRes.data as TeamRow[]) ?? [])
-    setLoading(false)
   }, [])
 
   useEffect(() => {
