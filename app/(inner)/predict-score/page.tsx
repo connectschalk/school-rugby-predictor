@@ -22,6 +22,7 @@ import {
 import { LOCK_ALL_NO_CANDIDATES, lockAllUnlockedSavedForEditableMatches } from '@/lib/lock-user-predictions'
 import { matchGameAgainstTeamSearch } from '@/lib/team-aliases-db'
 import type { TeamRow } from '@/lib/team-name-match'
+import { fetchEffectivePoolMatches, fetchMyPools, type PoolRow } from '@/lib/pools'
 import { supabase } from '@/lib/supabase'
 import { trackEvent } from '@/lib/trackEvent'
 
@@ -80,6 +81,10 @@ export default function PredictScorePage() {
   const [aliasRowsForSearch, setAliasRowsForSearch] = useState<Record<string, unknown>[]>([])
   const [teamsForSearch, setTeamsForSearch] = useState<TeamRow[]>([])
   const [nowTick, setNowTick] = useState(() => Date.now())
+  const [myPools, setMyPools] = useState<PoolRow[]>([])
+  const [selectedPoolFilter, setSelectedPoolFilter] = useState<string>('all')
+  const [poolFilterMatchIds, setPoolFilterMatchIds] = useState<Set<string>>(() => new Set())
+  const [poolFilterLoading, setPoolFilterLoading] = useState(false)
 
   const signedIn = !!user
 
@@ -181,6 +186,48 @@ export default function PredictScorePage() {
   }, [user, playableMatches, reloadPredictions])
 
   useEffect(() => {
+    if (!user) {
+      setMyPools([])
+      setSelectedPoolFilter('all')
+      setPoolFilterMatchIds(new Set())
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      const { pools } = await fetchMyPools(supabase, user.id)
+      if (cancelled) return
+      setMyPools(pools)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [user])
+
+  useEffect(() => {
+    if (!user || selectedPoolFilter === 'all') {
+      setPoolFilterMatchIds(new Set())
+      setPoolFilterLoading(false)
+      return
+    }
+    let cancelled = false
+    setPoolFilterLoading(true)
+    void (async () => {
+      const { matchIds, error } = await fetchEffectivePoolMatches(supabase, selectedPoolFilter)
+      if (cancelled) return
+      if (error) {
+        setSubmitError(error.message)
+        setPoolFilterMatchIds(new Set())
+      } else {
+        setPoolFilterMatchIds(new Set(matchIds))
+      }
+      setPoolFilterLoading(false)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [selectedPoolFilter, user])
+
+  useEffect(() => {
     setSlipByMatch((prev) => {
       const next: Record<string, SlipPick> = { ...prev }
       for (const m of playableMatches) {
@@ -215,11 +262,16 @@ export default function PredictScorePage() {
 
   const matchIds = useMemo(() => playableMatches.map((m) => m.id), [playableMatches])
 
+  const poolFilteredPlayable = useMemo(() => {
+    if (!user || selectedPoolFilter === 'all') return playableMatches
+    return playableMatches.filter((m) => poolFilterMatchIds.has(m.id))
+  }, [playableMatches, poolFilterMatchIds, selectedPoolFilter, user])
+
   const filteredPlayable = useMemo(() => {
     const q = teamSearch.trim()
-    if (!q) return playableMatches
-    return playableMatches.filter((m) => matchGameAgainstTeamSearch(m, q, aliasRowsForSearch, teamsForSearch))
-  }, [playableMatches, teamSearch, aliasRowsForSearch, teamsForSearch])
+    if (!q) return poolFilteredPlayable
+    return poolFilteredPlayable.filter((m) => matchGameAgainstTeamSearch(m, q, aliasRowsForSearch, teamsForSearch))
+  }, [poolFilteredPlayable, teamSearch, aliasRowsForSearch, teamsForSearch])
 
   const atDate = useMemo(() => new Date(nowTick), [nowTick])
 
@@ -268,7 +320,7 @@ export default function PredictScorePage() {
 
   const searchActive = teamSearch.trim().length > 0
   const noSearchResults =
-    searchActive && filteredPlayable.length === 0 && playableMatches.length > 0
+    searchActive && filteredPlayable.length === 0 && poolFilteredPlayable.length > 0
 
   const patchSlip = useCallback((matchId: string, patch: Partial<SlipPick>) => {
     setSlipByMatch((prev) => ({
@@ -550,7 +602,15 @@ export default function PredictScorePage() {
                 </label>
               </div>
 
-              {noSearchResults ? (
+              {poolFilterLoading ? (
+                <p className="mt-6 border-2 border-gray-300 bg-gray-50 px-4 py-3 text-center text-sm text-gray-700">
+                  Loading pool games...
+                </p>
+              ) : !searchActive && signedIn && selectedPoolFilter !== 'all' && poolFilteredPlayable.length === 0 ? (
+                <p className="mt-6 border-2 border-gray-300 bg-gray-50 px-4 py-3 text-center text-sm text-gray-700">
+                  No available games for this pool right now.
+                </p>
+              ) : noSearchResults ? (
                 <p className="mt-6 border-2 border-gray-300 bg-gray-50 px-4 py-3 text-center text-sm text-gray-700">
                   No matches found for this team.
                 </p>
@@ -562,6 +622,35 @@ export default function PredictScorePage() {
                       locked. You can still open comments below.
                     </p>
                   ) : null}
+                  <div className="mt-3 flex flex-wrap items-center gap-2 md:gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPoolFilter('all')}
+                      className={`inline-flex items-center rounded-xl border px-5 py-2 text-base font-black uppercase tracking-wide shadow-sm transition ${
+                        selectedPoolFilter === 'all'
+                          ? 'border-gray-900 bg-gray-900 text-white shadow-black/10'
+                          : 'border-gray-300 bg-white text-gray-900 hover:bg-gray-50'
+                      }`}
+                    >
+                      All games
+                    </button>
+                    {signedIn
+                      ? myPools.map((pool) => (
+                          <button
+                            key={pool.id}
+                            type="button"
+                            onClick={() => setSelectedPoolFilter(pool.id)}
+                            className={`inline-flex items-center rounded-xl border px-5 py-2 text-base font-black uppercase tracking-wide shadow-sm transition ${
+                              selectedPoolFilter === pool.id
+                                ? 'border-gray-900 bg-gray-900 text-white shadow-black/10'
+                                : 'border-gray-300 bg-white text-gray-900 hover:bg-gray-50'
+                            }`}
+                          >
+                            {pool.name}
+                          </button>
+                        ))
+                      : null}
+                  </div>
                   <div className="mt-2 flex flex-col gap-10">
                   <PredictScoreSlipListSection
                     title="Featured games"
@@ -582,7 +671,8 @@ export default function PredictScorePage() {
                     onRequireAuth={() => setAuthModalOpen(true)}
                   />
                   <PredictScoreSlipListSection
-                    title="Open games"
+                    title="All games"
+                    hideTitle
                     titleClassName="inline-flex items-center rounded-xl border border-gray-900 bg-gray-900 px-5 py-2 text-base font-black uppercase tracking-wide text-white shadow-sm shadow-black/10"
                     description="Kickoff more than 60 minutes away — predictions close at kickoff."
                     matches={openOtherMatches}

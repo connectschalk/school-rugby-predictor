@@ -58,6 +58,12 @@ type FixturePreviewRow = {
   featuredOrder: number | null
   provinceGroup: string
   leagueGroup: string
+  provinceGroupRaw: string
+  provinceGroupResolved: string
+  provinceGroupIsNew: boolean
+  leagueGroupRaw: string
+  leagueGroupResolved: string
+  leagueGroupIsNew: boolean
   prestige: boolean
   status: GameMatchStatus
   previewAction?: 'create' | 'update' | 'error'
@@ -322,6 +328,12 @@ function buildPreviewRows(
         featuredOrder: null,
         provinceGroup: '',
         leagueGroup: '',
+        provinceGroupRaw: '',
+        provinceGroupResolved: '',
+        provinceGroupIsNew: false,
+        leagueGroupRaw: '',
+        leagueGroupResolved: '',
+        leagueGroupIsNew: false,
         prestige: false,
         status: 'upcoming',
       })
@@ -354,6 +366,12 @@ function buildPreviewRows(
       featuredOrder: null,
       provinceGroup: '',
       leagueGroup: '',
+      provinceGroupRaw: '',
+      provinceGroupResolved: '',
+      provinceGroupIsNew: false,
+      leagueGroupRaw: '',
+      leagueGroupResolved: '',
+      leagueGroupIsNew: false,
       prestige: false,
       status: 'upcoming',
     })
@@ -590,17 +608,30 @@ export default function AdminGameMatchesPage() {
     setPreviewLoading(true)
     try {
       const base = merged.map(({ inputSource: _s, ...rest }) => rest)
-      const rows = buildPreviewRows(base, teams, teamAliasMap).map((r, i) => {
+      const previewBase = buildPreviewRows(base, teams, teamAliasMap)
+      const rows: FixturePreviewRow[] = []
+      for (let i = 0; i < previewBase.length; i += 1) {
+        const r = previewBase[i]
         const sourceRow = useGroupCsv ? fromGroupCsv.rows[i] : null
-        return {
+        const provinceGroupRaw = sourceRow?.provinceGroup ?? ''
+        const leagueGroupRaw = sourceRow?.leagueGroup ?? ''
+        const provinceResolved = await resolveFixtureGroupForPreview(provinceGroupRaw)
+        const leagueResolved = await resolveFixtureGroupForPreview(leagueGroupRaw)
+        rows.push({
           ...r,
           source: merged[i].inputSource,
-          provinceGroup: sourceRow?.provinceGroup ?? '',
-          leagueGroup: sourceRow?.leagueGroup ?? '',
+          provinceGroup: provinceGroupRaw,
+          leagueGroup: leagueGroupRaw,
+          provinceGroupRaw,
+          provinceGroupResolved: provinceResolved.resolvedName,
+          provinceGroupIsNew: provinceResolved.isNew,
+          leagueGroupRaw,
+          leagueGroupResolved: leagueResolved.resolvedName,
+          leagueGroupIsNew: leagueResolved.isNew,
           prestige: sourceRow?.prestige ?? false,
           status: sourceRow?.status ?? 'upcoming',
-        }
-      })
+        })
+      }
 
       if (useGroupCsv) {
         for (let i = 0; i < rows.length; i += 1) {
@@ -635,6 +666,70 @@ export default function AdminGameMatchesPage() {
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '')
   }
+
+type GroupResolvePreview = {
+  id: string | null
+  resolvedName: string
+  isNew: boolean
+}
+
+async function resolveFixtureGroupForPreview(rawInput: string): Promise<GroupResolvePreview> {
+  const raw = rawInput.trim()
+  if (!raw) return { id: null, resolvedName: '', isNew: false }
+
+  const { data: aliasRow } = await supabase
+    .from('fixture_group_aliases')
+    .select('group_id, fixture_groups(name)')
+    .ilike('alias', raw)
+    .maybeSingle()
+  if (aliasRow?.group_id) {
+    const fg = aliasRow as {
+      group_id: string
+      fixture_groups: { name?: string } | { name?: string }[] | null
+    }
+    const fgr = Array.isArray(fg.fixture_groups) ? fg.fixture_groups[0] : fg.fixture_groups
+    return {
+      id: String(fg.group_id),
+      resolvedName: String(fgr?.name ?? raw),
+      isNew: false,
+    }
+  }
+
+  const { data: byName } = await supabase
+    .from('fixture_groups')
+    .select('id, name')
+    .ilike('name', raw)
+    .maybeSingle()
+  if (byName?.id) {
+    return {
+      id: String(byName.id),
+      resolvedName: String(byName.name ?? raw),
+      isNew: false,
+    }
+  }
+
+  const slug = slugifyGroupName(raw)
+  if (slug) {
+    const { data: bySlug } = await supabase
+      .from('fixture_groups')
+      .select('id, name')
+      .eq('slug', slug)
+      .maybeSingle()
+    if (bySlug?.id) {
+      return {
+        id: String(bySlug.id),
+        resolvedName: String(bySlug.name ?? raw),
+        isNew: false,
+      }
+    }
+  }
+
+  return {
+    id: null,
+    resolvedName: raw,
+    isNew: true,
+  }
+}
 
   async function ensureFixtureGroupId(
     name: string,
@@ -1419,10 +1514,32 @@ export default function AdminGameMatchesPage() {
                           )}
                         </td>
                         {showGroupPreviewColumns.province ? (
-                          <td className="py-2 pr-2">{r.provinceGroup || '—'}</td>
+                          <td className="py-2 pr-2">
+                            {r.provinceGroupRaw || '—'}
+                            {r.provinceGroupRaw && r.provinceGroupIsNew ? (
+                              <p className="mt-0.5 text-[11px] text-gray-500">new group</p>
+                            ) : null}
+                            {r.provinceGroupRaw &&
+                            !r.provinceGroupIsNew &&
+                            r.provinceGroupResolved &&
+                            r.provinceGroupResolved.toLowerCase() !== r.provinceGroupRaw.toLowerCase() ? (
+                              <p className="mt-0.5 text-[11px] text-gray-500">→ {r.provinceGroupResolved}</p>
+                            ) : null}
+                          </td>
                         ) : null}
                         {showGroupPreviewColumns.league ? (
-                          <td className="py-2 pr-2">{r.leagueGroup || '—'}</td>
+                          <td className="py-2 pr-2">
+                            {r.leagueGroupRaw || '—'}
+                            {r.leagueGroupRaw && r.leagueGroupIsNew ? (
+                              <p className="mt-0.5 text-[11px] text-gray-500">new group</p>
+                            ) : null}
+                            {r.leagueGroupRaw &&
+                            !r.leagueGroupIsNew &&
+                            r.leagueGroupResolved &&
+                            r.leagueGroupResolved.toLowerCase() !== r.leagueGroupRaw.toLowerCase() ? (
+                              <p className="mt-0.5 text-[11px] text-gray-500">→ {r.leagueGroupResolved}</p>
+                            ) : null}
+                          </td>
                         ) : null}
                         {showGroupPreviewColumns.prestige ? (
                           <td className="py-2 pr-2">{r.prestige ? 'Yes' : 'No'}</td>

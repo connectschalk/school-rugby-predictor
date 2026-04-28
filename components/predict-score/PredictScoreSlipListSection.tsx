@@ -13,6 +13,7 @@ export const CLOSED_SLIP_HEADER_CLASS =
 type Props = {
   title: string
   titleClassName: string
+  hideTitle?: boolean
   sectionClassName?: string
   description?: string
   listWrapClassName?: string
@@ -36,6 +37,7 @@ type Props = {
 export default function PredictScoreSlipListSection({
   title,
   titleClassName,
+  hideTitle = false,
   sectionClassName = '',
   description,
   listWrapClassName = 'overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm shadow-black/5',
@@ -58,7 +60,7 @@ export default function PredictScoreSlipListSection({
 
   return (
     <div className={sectionClassName || undefined}>
-      <div className={titleClassName}>{title}</div>
+      {!hideTitle ? <div className={titleClassName}>{title}</div> : null}
       {description ? <p className="mt-2 max-w-2xl text-sm text-gray-600">{description}</p> : null}
       <div className={listWrapClassName}>
         <div className={headerClassName}>

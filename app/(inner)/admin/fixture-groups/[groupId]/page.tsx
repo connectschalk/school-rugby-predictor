@@ -36,25 +36,30 @@ export default function AdminFixtureGroupDetailPage() {
   const [message, setMessage] = useState('')
   const [group, setGroup] = useState<GroupRow | null>(null)
   const [teams, setTeams] = useState<string[]>([])
+  const [allKnownTeams, setAllKnownTeams] = useState<string[]>([])
   const [teamInput, setTeamInput] = useState('')
   const [bulkTeamsInput, setBulkTeamsInput] = useState('')
   const [fixtures, setFixtures] = useState<GroupFixtureRow[]>([])
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false)
+  const [highlightedSuggestion, setHighlightedSuggestion] = useState(-1)
 
   const loadData = useCallback(async () => {
     if (!groupId) return
     setLoading(true)
 
-    const [groupRes, teamsRes, fixturesRes] = await Promise.all([
+    const [groupRes, teamsRes, allCoreTeamsRes, fixturesRes, matchTeamsRes] = await Promise.all([
       supabase
         .from('fixture_groups')
         .select('id, name, slug, group_type, is_active, visible_in_pools')
         .eq('id', groupId)
         .maybeSingle(),
       supabase.from('fixture_group_teams').select('team_name').eq('group_id', groupId).order('team_name'),
+      supabase.from('fixture_group_teams').select('team_name'),
       supabase
         .from('game_match_groups')
         .select('match_id, game_matches(kickoff_time, home_team, away_team, status)')
         .eq('group_id', groupId),
+      supabase.from('game_matches').select('home_team, away_team'),
     ])
 
     if (groupRes.error) {
@@ -75,6 +80,16 @@ export default function AdminFixtureGroupDetailPage() {
       (((teamsRes.data as { team_name: string | null }[] | null) ?? [])
         .map((r) => (r.team_name ?? '').trim())
         .filter(Boolean) as string[])
+    )
+    const knownFromCore =
+      (((allCoreTeamsRes.data as { team_name: string | null }[] | null) ?? [])
+        .map((r) => (r.team_name ?? '').trim())
+        .filter(Boolean) as string[])
+    const knownFromMatches = (
+      ((matchTeamsRes.data as { home_team: string | null; away_team: string | null }[] | null) ?? [])
+    ).flatMap((r) => [r.home_team ?? '', r.away_team ?? '']).map((t) => t.trim()).filter(Boolean)
+    setAllKnownTeams(
+      [...new Set([...knownFromCore, ...knownFromMatches])].sort((a, b) => a.localeCompare(b))
     )
 
     const fixtureRows: GroupFixtureRow[] = (((fixturesRes.data as {
@@ -162,25 +177,41 @@ export default function AdminFixtureGroupDetailPage() {
   async function addTeam(teamName: string) {
     if (!group) return
     const trimmed = teamName.trim()
-    if (!trimmed) return
+    if (!trimmed) return false
+    const existsAlready = teams.some((t) => t.toLowerCase() === trimmed.toLowerCase())
+    if (existsAlready) {
+      setMessage('Team already exists in this group.')
+      return false
+    }
     setSaving(true)
     setMessage('')
-    const { error } = await supabase.rpc('admin_add_group_team', {
+    const payload = {
       p_group_id: group.id,
       p_team_name: trimmed,
-    })
+    }
+    console.log('admin_add_group_team payload', payload)
+    const { data, error } = await supabase.rpc('admin_add_group_team', payload)
+    console.log('admin_add_group_team response', data)
+    if (error) console.error('admin_add_group_team error', error)
     if (error) {
       setMessage(`Could not add team: ${error.message}`)
     } else {
       await loadData()
+      setSaving(false)
+      return true
     }
     setSaving(false)
+    return false
   }
 
   async function onAddSingleTeam(e: React.FormEvent) {
     e.preventDefault()
-    await addTeam(teamInput)
-    setTeamInput('')
+    const ok = await addTeam(teamInput)
+    if (ok) {
+      setTeamInput('')
+      setSuggestionsOpen(false)
+      setHighlightedSuggestion(-1)
+    }
   }
 
   async function onBulkAddTeams() {
@@ -201,10 +232,14 @@ export default function AdminFixtureGroupDetailPage() {
     setMessage('')
     for (const lower of deduped) {
       const name = originalByLower.get(lower) ?? lower
-      const { error } = await supabase.rpc('admin_add_group_team', {
+      const payload = {
         p_group_id: groupId,
         p_team_name: name,
-      })
+      }
+      console.log('admin_add_group_team payload', payload)
+      const { data, error } = await supabase.rpc('admin_add_group_team', payload)
+      console.log('admin_add_group_team response', data)
+      if (error) console.error('admin_add_group_team error', error)
       if (error) {
         setMessage(`Some teams could not be added: ${error.message}`)
         break
@@ -229,6 +264,46 @@ export default function AdminFixtureGroupDetailPage() {
       await loadData()
     }
     setSaving(false)
+  }
+
+  const filteredSuggestions = useMemo(() => {
+    const q = teamInput.trim().toLowerCase()
+    if (q.length < 2) return [] as string[]
+    const existing = new Set(teams.map((t) => t.toLowerCase()))
+    return allKnownTeams
+      .filter((t) => !existing.has(t.toLowerCase()))
+      .filter((t) => t.toLowerCase().includes(q))
+      .slice(0, 8)
+  }, [allKnownTeams, teamInput, teams])
+
+  function applySuggestion(value: string) {
+    setTeamInput(value)
+    setSuggestionsOpen(false)
+    setHighlightedSuggestion(-1)
+  }
+
+  function onTeamInputKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!suggestionsOpen || filteredSuggestions.length === 0) return
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setHighlightedSuggestion((prev) => (prev + 1) % filteredSuggestions.length)
+      return
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setHighlightedSuggestion((prev) => (prev <= 0 ? filteredSuggestions.length - 1 : prev - 1))
+      return
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      setSuggestionsOpen(false)
+      setHighlightedSuggestion(-1)
+      return
+    }
+    if (e.key === 'Enter' && highlightedSuggestion >= 0 && highlightedSuggestion < filteredSuggestions.length) {
+      e.preventDefault()
+      applySuggestion(filteredSuggestions[highlightedSuggestion])
+    }
   }
 
   if (!authChecked || loading) {
@@ -302,12 +377,44 @@ export default function AdminFixtureGroupDetailPage() {
         <section className="mt-6 rounded-2xl border border-gray-200 p-4">
           <h2 className="text-base font-semibold">Core teams management</h2>
           <form onSubmit={onAddSingleTeam} className="mt-3 flex gap-2">
-            <input
-              value={teamInput}
-              onChange={(e) => setTeamInput(e.target.value)}
-              placeholder="Add team name"
-              className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm"
-            />
+            <div className="relative w-full">
+              <input
+                value={teamInput}
+                onChange={(e) => {
+                  setTeamInput(e.target.value)
+                  setSuggestionsOpen(true)
+                  setHighlightedSuggestion(-1)
+                }}
+                onFocus={() => {
+                  if (teamInput.trim().length >= 2) setSuggestionsOpen(true)
+                }}
+                onBlur={() => {
+                  window.setTimeout(() => {
+                    setSuggestionsOpen(false)
+                    setHighlightedSuggestion(-1)
+                  }, 120)
+                }}
+                onKeyDown={onTeamInputKeyDown}
+                placeholder="Add team name"
+                className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm"
+              />
+              {suggestionsOpen && filteredSuggestions.length > 0 ? (
+                <div className="absolute z-20 mt-1 w-full rounded-xl border border-gray-200 bg-white shadow-sm">
+                  {filteredSuggestions.map((name, idx) => (
+                    <button
+                      key={name}
+                      type="button"
+                      onMouseDown={() => applySuggestion(name)}
+                      className={`block w-full px-3 py-2 text-left text-sm ${
+                        idx === highlightedSuggestion ? 'bg-gray-100 text-gray-900' : 'text-gray-800 hover:bg-gray-50'
+                      }`}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
             <button
               type="submit"
               disabled={saving || !teamInput.trim()}

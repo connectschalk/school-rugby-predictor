@@ -13,7 +13,6 @@ import {
 import { lockAllUnlockedSavedForEditableMatches, LOCK_ALL_NO_CANDIDATES } from '@/lib/lock-user-predictions'
 import { predictionCutoffPassed } from '@/lib/prediction-cutoff'
 import {
-  fetchGameMatchesForCommunityHub,
   fetchUserPredictionsForMatches,
   type GameMatch,
   type UserPredictionRow,
@@ -194,6 +193,12 @@ export default function CommunityPicksPage() {
   const [authReady, setAuthReady] = useState(false)
   const [matches, setMatches] = useState<GameMatch[]>([])
   const [predictions, setPredictions] = useState<Map<string, UserPredictionRow>>(() => new Map())
+  const [viewerProfile, setViewerProfile] = useState<{
+    display_name: string | null
+    avatar_url: string | null
+    avatar_letter: string | null
+    avatar_colour: string | null
+  } | null>(null)
   const [aliasRows, setAliasRows] = useState<Record<string, unknown>[]>([])
   const [teams, setTeams] = useState<TeamRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -276,7 +281,15 @@ export default function CommunityPicksPage() {
     setLoadError('')
     try {
       const [gmRes, aliasRes, teamsRes] = await Promise.all([
-        fetchGameMatchesForCommunityHub(supabase, 200),
+        supabase
+          .from('game_matches')
+          .select(
+            'id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at, is_featured, featured_order'
+          )
+          .in('status', ['upcoming', 'locked', 'completed'])
+          .neq('status', 'cancelled')
+          .order('kickoff_time', { ascending: false })
+          .limit(1000),
         supabase.from('team_aliases').select('*'),
         supabase.from('teams').select('id, name'),
       ])
@@ -284,7 +297,13 @@ export default function CommunityPicksPage() {
         setLoadError(gmRes.error.message)
         setMatches([])
       } else {
-        setMatches(gmRes.data)
+        const rows = (gmRes.data as GameMatch[] | null) ?? []
+        setMatches(rows)
+        const statusCount = rows.reduce<Record<string, number>>((acc, row) => {
+          acc[row.status] = (acc[row.status] ?? 0) + 1
+          return acc
+        }, {})
+        console.log('loadedCommunityMatches', rows.length, statusCount)
       }
       setAliasRows((aliasRes.data as Record<string, unknown>[]) ?? [])
       setTeams((teamsRes.data as TeamRow[]) ?? [])
@@ -328,6 +347,33 @@ export default function CommunityPicksPage() {
       matches.map((m) => m.id)
     )
   }, [user, matches, reloadUserPreds])
+
+  useEffect(() => {
+    if (!user) {
+      setViewerProfile(null)
+      return
+    }
+    let cancelled = false
+    void supabase
+      .from('user_profiles')
+      .select('display_name, avatar_url, avatar_letter, avatar_colour')
+      .eq('id', user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled) return
+        setViewerProfile(
+          (data as {
+            display_name: string | null
+            avatar_url: string | null
+            avatar_letter: string | null
+            avatar_colour: string | null
+          } | null) ?? null
+        )
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [user])
 
   const hasUpcomingNotKickedOff = useMemo(
     () => matches.some((m) => matchNotYetKickedOff(m, at)),
@@ -411,6 +457,8 @@ export default function CommunityPicksPage() {
   const orderedList = useMemo(() => {
     return getOrderedMatchesForTab(filterTab, filteredByControls, at)
   }, [filteredByControls, filterTab, at])
+  const noDateResultsInPast =
+    filterTab === 'past' && !!dateFilter && !searchTrim && orderedList.length === 0 && matches.length > 0
 
   useEffect(() => {
     setIndex((i) => {
@@ -474,6 +522,7 @@ export default function CommunityPicksPage() {
       type="button"
       onClick={() => {
         setFilterTab(tab)
+        setDateFilter('')
         setIndex(0)
       }}
       className={`rounded-full px-3 py-1.5 text-xs font-bold uppercase tracking-wide transition sm:text-sm ${
@@ -544,6 +593,16 @@ export default function CommunityPicksPage() {
                 aria-hidden
               />
             </div>
+            <div className="mt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setDateFilter('')}
+                disabled={!dateFilter}
+                className="rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Clear date
+              </button>
+            </div>
           </label>
         </div>
       </div>
@@ -555,7 +614,11 @@ export default function CommunityPicksPage() {
       ) : loading ? (
         <p className="mt-10 text-center text-sm text-gray-500">Loading matches…</p>
       ) : orderedList.length === 0 ? (
-        <p className="mt-10 text-center text-sm text-gray-600">No matches match your filters.</p>
+        <p className="mt-10 text-center text-sm text-gray-600">
+          {noDateResultsInPast
+            ? 'No matches found for this date. Clear the date filter to see all past matches.'
+            : 'No matches match your filters.'}
+        </p>
       ) : (
         <section className="mt-10">
           <div className="mb-4 flex items-center justify-between gap-3">
@@ -587,7 +650,19 @@ export default function CommunityPicksPage() {
               <p className="py-16 text-center text-sm text-gray-500">Loading community picks…</p>
             ) : stats?.allowed === true ? (
               <div className="w-full max-w-full overflow-hidden">
-                <CommunityDistributionPanel stats={stats as CommunityStatsOk} />
+                <CommunityDistributionPanel
+                  stats={stats as CommunityStatsOk}
+                  viewerAvatar={
+                    user
+                      ? {
+                          displayName: viewerProfile?.display_name ?? user.user_metadata?.full_name ?? user.email ?? 'You',
+                          avatarUrl: viewerProfile?.avatar_url ?? null,
+                          avatarLetter: viewerProfile?.avatar_letter ?? null,
+                          avatarColour: viewerProfile?.avatar_colour ?? null,
+                        }
+                      : null
+                  }
+                />
               </div>
             ) : stats?.allowed === false && stats.reason === 'lock_required' ? (
               <div className="rounded-3xl border border-gray-200 bg-white px-6 py-14 text-center shadow-inner">

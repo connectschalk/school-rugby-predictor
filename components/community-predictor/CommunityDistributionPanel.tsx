@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import LetterAvatar from '@/components/LetterAvatar'
 import type { CommunityBucketRow, CommunityMarginBucket, CommunityStatsOk } from '@/lib/community-predictor'
 import { getSchoolTeamLogoPath } from '@/lib/school-team-logos'
 
@@ -96,7 +97,31 @@ function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n))
 }
 
-export default function CommunityDistributionPanel({ stats }: { stats: CommunityStatsOk }) {
+function formatMatchDate(value: string | null | undefined): string {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return new Intl.DateTimeFormat('en-ZA', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).format(date)
+}
+
+type ViewerAvatar = {
+  displayName: string
+  avatarUrl: string | null
+  avatarLetter: string | null
+  avatarColour: string | null
+}
+
+export default function CommunityDistributionPanel({
+  stats,
+  viewerAvatar,
+}: {
+  stats: CommunityStatsOk
+  viewerAvatar: ViewerAvatar | null
+}) {
   const homeLogo = getSchoolTeamLogoPath(stats.home_team)
   const awayLogo = getSchoolTeamLogoPath(stats.away_team)
   const lookup = buildBucketLookup(stats.bucket_rows)
@@ -111,10 +136,10 @@ export default function CommunityDistributionPanel({ stats }: { stats: Community
       ? `Community average: ${stats.community_average_label}`
       : 'Community average: —'
 
-  const formattedDate = new Date(stats.kickoff_time).toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-  })
+  const isPast =
+    stats.status === 'completed' || new Date(stats.kickoff_time).getTime() < Date.now()
+  const formattedDate = formatMatchDate(stats.kickoff_time)
+  const pastDateLabel = isPast ? formattedDate || 'Date TBC' : ''
   const scoresExist = stats.home_score != null && stats.away_score != null
   const scoreLine = scoresExist ? `${stats.home_score} - ${stats.away_score}` : null
   const actualBucket = stats.actual_margin != null ? marginToBucket(stats.actual_margin) : null
@@ -165,6 +190,19 @@ export default function CommunityDistributionPanel({ stats }: { stats: Community
 
   const slotWidth = chartWidth > 0 ? chartWidth / 9 : 0
   const actualLeftPx = actualAxisPosition != null && slotWidth > 0 ? actualAxisPosition * slotWidth + slotWidth / 2 : null
+  const viewerAxisPosition = useMemo(() => {
+    if (stats.user_locked_winner == null || stats.user_locked_margin == null) return null
+    const margin = Math.max(0, stats.user_locked_margin)
+    if (margin >= 20) return stats.user_locked_winner === 'home' ? 0 : 8
+    const wholeSteps = Math.floor(margin / 5)
+    const fraction = (margin % 5) / 5
+    if (stats.user_locked_winner === 'home') {
+      return clamp(4 - wholeSteps - fraction, 0, 8)
+    }
+    return clamp(4 + wholeSteps + fraction, 0, 8)
+  }, [stats.user_locked_margin, stats.user_locked_winner])
+  const viewerLeftPx =
+    viewerAxisPosition != null && slotWidth > 0 ? viewerAxisPosition * slotWidth + slotWidth / 2 : null
 
   const pctAtSlot = (i: number): number => {
     if (i === 0) return lookup.get('home:20+')?.percentage ?? 0
@@ -182,7 +220,16 @@ export default function CommunityDistributionPanel({ stats }: { stats: Community
   const nearestPct = nearestIndex == null ? 0 : pctAtSlot(nearestIndex)
   const nearestBarHeight = Math.max(0, (nearestPct / 100) * CHART_PX)
   const LABEL_ZONE_PX = 22
-  const actualBottomPx = LABEL_ZONE_PX + (nearestPct > 0 ? nearestBarHeight + 8 : 8)
+  const markerBaselinePx = LABEL_ZONE_PX + (nearestPct > 0 ? nearestBarHeight + 8 : 8)
+  const ACTUAL_MARKER_SIZE = 20
+  const VIEWER_MARKER_SIZE = 26
+  const overlapThreshold = Math.min(ACTUAL_MARKER_SIZE, VIEWER_MARKER_SIZE) * 0.5
+  const markersOverlap =
+    actualLeftPx != null &&
+    viewerLeftPx != null &&
+    Math.abs(actualLeftPx - viewerLeftPx) < overlapThreshold
+  const actualBottomPx = markerBaselinePx
+  const viewerBottomPx = markersOverlap ? markerBaselinePx + 18 : markerBaselinePx
 
   return (
     <div className="w-full max-w-full overflow-hidden rounded-3xl border border-gray-200 bg-white p-4 shadow-lg shadow-black/10 sm:p-8">
@@ -211,7 +258,7 @@ export default function CommunityDistributionPanel({ stats }: { stats: Community
             ) : (
               <div className="text-xs tracking-widest text-gray-400">VS</div>
             )}
-            <div className="mt-1 text-sm text-gray-500">{formattedDate}</div>
+            {isPast ? <div className="mt-1 text-sm text-gray-500">{pastDateLabel}</div> : null}
           </div>
 
           {/* RIGHT TEAM (AWAY) */}
@@ -239,18 +286,47 @@ export default function CommunityDistributionPanel({ stats }: { stats: Community
         <span className="rounded-full bg-red-700 px-3 py-1 font-semibold text-white">
           Away {formatPctLabel(stats.away_prediction_pct)}%
         </span>
-        {yours ? (
-          <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1 font-medium text-red-900">
-            You: <strong>{yours}</strong>
-          </span>
-        ) : null}
       </div>
+      {yours && viewerAvatar ? (
+        <div className="mt-3 flex items-center justify-center gap-2 text-sm text-gray-800">
+          <LetterAvatar
+            letter={viewerAvatar.avatarLetter}
+            colour={viewerAvatar.avatarColour}
+            avatarUrl={viewerAvatar.avatarUrl}
+            displayName={viewerAvatar.displayName}
+            name={viewerAvatar.displayName}
+            size={22}
+            className="ring-1 ring-gray-300 shadow-sm"
+          />
+          <span>
+            You picked: <strong>{yours}</strong>
+          </span>
+        </div>
+      ) : null}
 
       <p className="mt-6 text-center text-sm font-semibold text-gray-900">{avgLine}</p>
-      {actualLine ? (
-        <div className="mt-2 flex items-center justify-center gap-2 text-sm font-semibold text-gray-900">
-          <span className="inline-flex h-4 w-4 rounded-full bg-green-600" aria-hidden />
-          <span>{actualLine}</span>
+      {(actualLine || (yours && viewerAvatar)) ? (
+        <div className="mt-2 flex flex-wrap items-center justify-center gap-3 text-sm font-semibold text-gray-900">
+          {actualLine ? (
+            <div className="inline-flex items-center gap-2">
+              <span className="inline-flex h-4 w-4 rounded-full bg-green-600" aria-hidden />
+              <span>Actual</span>
+            </div>
+          ) : null}
+          {yours && viewerAvatar ? (
+            <div className="inline-flex items-center gap-2">
+              <LetterAvatar
+                letter={viewerAvatar.avatarLetter}
+                colour={viewerAvatar.avatarColour}
+                avatarUrl={viewerAvatar.avatarUrl}
+                displayName={viewerAvatar.displayName}
+                name={viewerAvatar.displayName}
+                size={18}
+                className="ring-1 ring-gray-300"
+              />
+              <span>You</span>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -270,6 +346,28 @@ export default function CommunityDistributionPanel({ stats }: { stats: Community
                   aria-label={actualDotTitle}
                 >
                   <span className="inline-flex h-5 w-5 rounded-full bg-green-600 ring-2 ring-white" />
+                </div>
+              ) : null}
+              {viewerLeftPx != null && viewerAvatar ? (
+                <div
+                  className="pointer-events-none absolute z-20"
+                  style={{
+                    left: `${viewerLeftPx}px`,
+                    bottom: `${viewerBottomPx}px`,
+                    transform: 'translateX(-50%)',
+                  }}
+                  title={yours ?? undefined}
+                  aria-label={yours ?? undefined}
+                >
+                  <LetterAvatar
+                    letter={viewerAvatar.avatarLetter}
+                    colour={viewerAvatar.avatarColour}
+                    avatarUrl={viewerAvatar.avatarUrl}
+                    displayName={viewerAvatar.displayName}
+                    name={viewerAvatar.displayName}
+                    size={26}
+                    className="ring-2 ring-white shadow-md"
+                  />
                 </div>
               ) : null}
               <div className="mx-auto grid w-full grid-cols-9 items-end gap-x-1 pb-1">
