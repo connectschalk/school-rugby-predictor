@@ -19,6 +19,8 @@ export type FixtureGroupRow = {
   name: string
   slug: string
   is_active: boolean
+  visible_in_pools?: boolean
+  group_type?: string | null
 }
 
 export type PoolMemberRow = {
@@ -45,6 +47,18 @@ export type PoolLeaderboardRow = {
   total_points: number
   total_margin_difference: number
   average_margin_difference: number | null
+}
+
+export type PoolGroupsPreview = {
+  total_matches: number
+  teams: string[]
+  fixtures: Array<{
+    match_id: string
+    home_team: string
+    away_team: string
+    kickoff_time: string
+    group_names: string[]
+  }>
 }
 
 function num(v: unknown, fallback = 0): number {
@@ -176,8 +190,26 @@ export async function deletePool(client: SupabaseClient, poolId: string) {
 }
 
 export async function fetchFixtureGroups(client: SupabaseClient) {
-  const { data, error } = await client.rpc('list_fixture_groups')
-  return { rows: (data as FixtureGroupRow[] | null) ?? [], error }
+  const { data, error } = await client
+    .from('fixture_groups')
+    .select('id, name, slug, is_active, visible_in_pools, group_type')
+    .eq('is_active', true)
+    .eq('visible_in_pools', true)
+    .order('name', { ascending: true })
+  if (!error) {
+    return { rows: (data as FixtureGroupRow[] | null) ?? [], error: null }
+  }
+
+  // Fallback for environments where `group_type` column isn't migrated yet.
+  const rpcRes = await client.rpc('list_fixture_groups')
+  if (rpcRes.error) {
+    return { rows: [] as FixtureGroupRow[], error }
+  }
+  const rows = ((rpcRes.data as FixtureGroupRow[] | null) ?? []).map((r) => ({
+    ...r,
+    group_type: null,
+  }))
+  return { rows, error: null }
 }
 
 export async function fetchPoolGroups(client: SupabaseClient, poolId: string) {
@@ -199,6 +231,177 @@ export async function setPoolGroups(client: SupabaseClient, poolId: string, grou
     p_group_ids: groupIds,
   })
   return { count: num(data), error }
+}
+
+export async function previewPoolGroups(client: SupabaseClient, groupIds: string[]) {
+  const uniqueIds = [...new Set(groupIds.filter(Boolean))]
+  if (uniqueIds.length === 0) {
+    return {
+      preview: { total_matches: 0, teams: [], fixtures: [] } as PoolGroupsPreview,
+      error: null,
+    }
+  }
+
+  const normalize = (row: Record<string, unknown> | null): PoolGroupsPreview => {
+    if (!row) return { total_matches: 0, teams: [], fixtures: [] }
+    const rawFixtures = row.fixtures
+    let fixturesArr: Record<string, unknown>[] = []
+    if (Array.isArray(rawFixtures)) {
+      fixturesArr = rawFixtures as Record<string, unknown>[]
+    } else if (typeof rawFixtures === 'string') {
+      try {
+        const parsed = JSON.parse(rawFixtures) as unknown
+        if (Array.isArray(parsed)) fixturesArr = parsed as Record<string, unknown>[]
+      } catch {
+        fixturesArr = []
+      }
+    }
+    return {
+      total_matches: num(row.total_matches),
+      teams: (row.teams as string[] | null) ?? [],
+      fixtures: fixturesArr.map((f) => ({
+        match_id: String(f.match_id ?? ''),
+        home_team: String(f.home_team ?? ''),
+        away_team: String(f.away_team ?? ''),
+        kickoff_time: String(f.kickoff_time ?? ''),
+        group_names: (f.group_names as string[] | null) ?? [],
+      })),
+    }
+  }
+
+  const rpcRes = await client.rpc('preview_pool_groups', {
+    p_group_ids: uniqueIds,
+  })
+
+  if (!rpcRes.error) {
+    const row = ((rpcRes.data as Record<string, unknown>[] | null) ?? [])[0] ?? null
+    return { preview: normalize(row), error: null }
+  }
+
+  // Fallback path for environments where preview RPC is not yet migrated.
+  const [linksRes, groupsRes, coreTeamsRes] = await Promise.all([
+    client
+      .from('game_match_groups')
+      .select('group_id, fixture_groups(name), game_matches(id, home_team, away_team, kickoff_time, status)')
+      .in('group_id', uniqueIds),
+    client.from('fixture_groups').select('id, name').in('id', uniqueIds),
+    client.from('fixture_group_teams').select('group_id, team_name').in('group_id', uniqueIds),
+  ])
+
+  if (linksRes.error) {
+    return { preview: null as PoolGroupsPreview | null, error: linksRes.error }
+  }
+
+  const selectedGroupNameById = new Map<string, string>()
+  for (const row of (groupsRes.data as { id: string; name: string }[] | null) ?? []) {
+    selectedGroupNameById.set(row.id, row.name)
+  }
+
+  type MatchItem = { id: string; home_team: string; away_team: string; kickoff_time: string; status: string }
+  const matchMap = new Map<string, MatchItem>()
+  const groupNamesByMatch = new Map<string, Set<string>>()
+
+  for (const row of
+    ((linksRes.data as {
+      group_id: string
+      fixture_groups: { name?: string } | { name?: string }[] | null
+      game_matches:
+        | { id?: string; home_team?: string; away_team?: string; kickoff_time?: string; status?: string }
+        | {
+            id?: string
+            home_team?: string
+            away_team?: string
+            kickoff_time?: string
+            status?: string
+          }[]
+        | null
+    }[] | null) ?? [])) {
+    const gmRaw = Array.isArray(row.game_matches) ? row.game_matches[0] : row.game_matches
+    if (!gmRaw?.id) continue
+    if ((gmRaw.status ?? '') === 'cancelled') continue
+    const matchId = String(gmRaw.id)
+    matchMap.set(matchId, {
+      id: matchId,
+      home_team: String(gmRaw.home_team ?? ''),
+      away_team: String(gmRaw.away_team ?? ''),
+      kickoff_time: String(gmRaw.kickoff_time ?? ''),
+      status: String(gmRaw.status ?? ''),
+    })
+    if (!groupNamesByMatch.has(matchId)) groupNamesByMatch.set(matchId, new Set<string>())
+    const fgRaw = Array.isArray(row.fixture_groups) ? row.fixture_groups[0] : row.fixture_groups
+    const groupName = fgRaw?.name ?? selectedGroupNameById.get(row.group_id) ?? ''
+    if (groupName) groupNamesByMatch.get(matchId)?.add(groupName)
+  }
+
+  const matches = [...matchMap.values()]
+  const matchedTeamsByGroup = new Map<string, Set<string>>()
+  for (const row of
+    ((linksRes.data as {
+      group_id: string
+      game_matches:
+        | { id?: string; home_team?: string; away_team?: string; kickoff_time?: string; status?: string }
+        | {
+            id?: string
+            home_team?: string
+            away_team?: string
+            kickoff_time?: string
+            status?: string
+          }[]
+        | null
+    }[] | null) ?? [])) {
+    const gmRaw = Array.isArray(row.game_matches) ? row.game_matches[0] : row.game_matches
+    if (!gmRaw?.id || (gmRaw.status ?? '') === 'cancelled') continue
+    if (!matchedTeamsByGroup.has(row.group_id)) matchedTeamsByGroup.set(row.group_id, new Set<string>())
+    if (gmRaw.home_team) matchedTeamsByGroup.get(row.group_id)?.add(String(gmRaw.home_team))
+    if (gmRaw.away_team) matchedTeamsByGroup.get(row.group_id)?.add(String(gmRaw.away_team))
+  }
+
+  const coreTeamsByGroup = new Map<string, Set<string>>()
+  if (!coreTeamsRes.error) {
+    for (const row of ((coreTeamsRes.data as { group_id: string; team_name: string | null }[] | null) ?? [])) {
+      const teamName = (row.team_name ?? '').trim()
+      if (!teamName) continue
+      if (!coreTeamsByGroup.has(row.group_id)) coreTeamsByGroup.set(row.group_id, new Set<string>())
+      coreTeamsByGroup.get(row.group_id)?.add(teamName)
+    }
+  }
+
+  const includedTeams = new Set<string>()
+  for (const groupId of uniqueIds) {
+    const coreTeams = coreTeamsByGroup.get(groupId)
+    if (coreTeams && coreTeams.size > 0) {
+      for (const team of coreTeams) includedTeams.add(team)
+      continue
+    }
+    for (const team of matchedTeamsByGroup.get(groupId) ?? new Set<string>()) {
+      includedTeams.add(team)
+    }
+  }
+  const teams = [...includedTeams].sort((a, b) => a.localeCompare(b))
+  const nowTs = Date.now()
+  const fixtures = matches
+    .filter((m) => {
+      const t = new Date(m.kickoff_time).getTime()
+      return Number.isFinite(t) && t >= nowTs
+    })
+    .sort((a, b) => new Date(a.kickoff_time).getTime() - new Date(b.kickoff_time).getTime())
+    .slice(0, 10)
+    .map((m) => ({
+      match_id: m.id,
+      home_team: m.home_team,
+      away_team: m.away_team,
+      kickoff_time: m.kickoff_time,
+      group_names: [...(groupNamesByMatch.get(m.id) ?? new Set<string>())].sort((a, b) => a.localeCompare(b)),
+    }))
+
+  return {
+    preview: {
+      total_matches: matches.length,
+      teams,
+      fixtures,
+    },
+    error: null,
+  }
 }
 
 export async function fetchPoolLeaderboard(client: SupabaseClient, poolId: string) {

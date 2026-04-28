@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
 import LetterAvatar from '@/components/LetterAvatar'
 import CommunityPicksIcon from '@/components/icons/CommunityPicksIcon'
+import { fetchUserIsAdmin } from '@/lib/admin-access'
 import { supabase } from '@/lib/supabase'
 
 function PredictIconDot() {
@@ -36,6 +37,7 @@ export default function InnerHeaderNav() {
     first_name: string | null
     surname: string | null
   } | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -57,9 +59,14 @@ export default function InnerHeaderNav() {
   useEffect(() => {
     if (!user) {
       setProfile(null)
+      setIsAdmin(false)
       return
     }
     let cancelled = false
+    void fetchUserIsAdmin(supabase, user.id).then(({ isAdmin: nextIsAdmin }) => {
+      if (cancelled) return
+      setIsAdmin(nextIsAdmin)
+    })
     void supabase
       .from('user_profiles')
       .select('display_name, avatar_url, avatar_letter, avatar_colour, first_name, surname')
@@ -348,14 +355,6 @@ export default function InnerHeaderNav() {
                   </div>
                   <Link
                     role="menuitem"
-                    href="/"
-                    className="block px-4 py-2.5 text-sm font-medium text-gray-900 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-red-700"
-                    onClick={closeMenu}
-                  >
-                    Home
-                  </Link>
-                  <Link
-                    role="menuitem"
                     href="/profile"
                     className="block px-4 py-2.5 text-sm font-medium text-gray-900 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-red-700"
                     onClick={closeMenu}
@@ -372,12 +371,22 @@ export default function InnerHeaderNav() {
                   </Link>
                   <Link
                     role="menuitem"
-                    href="/discussion"
+                    href="/"
                     className="block px-4 py-2.5 text-sm font-medium text-gray-900 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-red-700"
                     onClick={closeMenu}
                   >
-                    Discussion
+                    Home
                   </Link>
+                  {isAdmin ? (
+                    <Link
+                      role="menuitem"
+                      href="/admin"
+                      className="block px-4 py-2.5 text-sm font-medium text-gray-900 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-red-700"
+                      onClick={closeMenu}
+                    >
+                      Admin
+                    </Link>
+                  ) : null}
                   <button
                     type="button"
                     role="menuitem"

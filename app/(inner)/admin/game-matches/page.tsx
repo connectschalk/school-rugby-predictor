@@ -643,6 +643,44 @@ export default function AdminGameMatchesPage() {
   ): Promise<string | null> {
     const raw = name.trim()
     if (!raw) return null
+
+    const aliasKey = `alias:${raw.toLowerCase()}`
+    const cachedAlias = cache.get(aliasKey)
+    if (cachedAlias) return cachedAlias
+
+    // 1) Alias table first (case-insensitive).
+    const { data: aliasRow, error: aliasErr } = await supabase
+      .from('fixture_group_aliases')
+      .select('group_id')
+      .ilike('alias', raw)
+      .maybeSingle()
+    if (aliasErr) throw new Error(aliasErr.message)
+    if (aliasRow?.group_id) {
+      const id = String(aliasRow.group_id)
+      cache.set(aliasKey, id)
+      const slugKey = slugifyGroupName(raw)
+      if (slugKey) cache.set(slugKey, id)
+      return id
+    }
+
+    // 2) Canonical group by name (case-insensitive).
+    const nameKey = `name:${raw.toLowerCase()}`
+    const cachedName = cache.get(nameKey)
+    if (cachedName) return cachedName
+    const { data: byName, error: byNameErr } = await supabase
+      .from('fixture_groups')
+      .select('id, slug')
+      .ilike('name', raw)
+      .maybeSingle()
+    if (byNameErr) throw new Error(byNameErr.message)
+    if (byName?.id) {
+      const id = String(byName.id)
+      cache.set(nameKey, id)
+      if (byName.slug) cache.set(String(byName.slug), id)
+      return id
+    }
+
+    // 3) Fallback by slug, then create only if not found.
     const slug = slugifyGroupName(raw)
     if (!slug) return null
     const cached = cache.get(slug)
@@ -820,6 +858,26 @@ export default function AdminGameMatchesPage() {
             setMessage(`Group link failed: ${linkErr.message}`)
             setSubmitting(false)
             return
+          }
+        }
+
+        // Province groups only: keep fixture_group_teams populated for canonical province groups.
+        // Never auto-add for league groups or Prestige Pool.
+        if (provinceGroupId) {
+          const teamsToAdd = [home.trim(), away.trim()].filter(Boolean)
+          if (teamsToAdd.length > 0) {
+            const coreRows = [...new Set(teamsToAdd)].map((teamName) => ({
+              group_id: provinceGroupId,
+              team_name: teamName,
+            }))
+            const { error: coreTeamErr } = await supabase
+              .from('fixture_group_teams')
+              .upsert(coreRows, { onConflict: 'group_id,team_name', ignoreDuplicates: true })
+            if (coreTeamErr) {
+              setMessage(`Province core-team sync failed: ${coreTeamErr.message}`)
+              setSubmitting(false)
+              return
+            }
           }
         }
       }

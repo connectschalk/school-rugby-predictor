@@ -12,6 +12,7 @@ import {
   fetchPoolGroups,
   fetchPoolJoinRequests,
   fetchPoolLeaderboard,
+  previewPoolGroups,
   removePoolMember,
   requestJoinPool,
   reviewPoolJoinRequest,
@@ -30,6 +31,14 @@ function teamVs(m: GameMatch) {
 }
 
 const MAX_USER_POOLS = 3
+const GROUP_TYPE_ORDER = ['prestige', 'province', 'league', 'festival', 'custom'] as const
+const GROUP_TYPE_LABEL: Record<string, string> = {
+  prestige: 'Prestige',
+  province: 'Province',
+  league: 'League',
+  festival: 'Festival',
+  custom: 'Custom',
+}
 
 export default function ManagePoolsPage() {
   const [user, setUser] = useState<User | null>(null)
@@ -60,6 +69,18 @@ export default function ManagePoolsPage() {
   const [savingGroups, setSavingGroups] = useState(false)
   const [requestsLoading, setRequestsLoading] = useState(false)
   const [deletingPoolId, setDeletingPoolId] = useState<string | null>(null)
+  const [createPreview, setCreatePreview] = useState<{
+    total_matches: number
+    teams: string[]
+    fixtures: { match_id: string; home_team: string; away_team: string; kickoff_time: string; group_names: string[] }[]
+  } | null>(null)
+  const [editPreview, setEditPreview] = useState<{
+    total_matches: number
+    teams: string[]
+    fixtures: { match_id: string; home_team: string; away_team: string; kickoff_time: string; group_names: string[] }[]
+  } | null>(null)
+  const [createPreviewLoading, setCreatePreviewLoading] = useState(false)
+  const [editPreviewLoading, setEditPreviewLoading] = useState(false)
 
   const selectedPool = useMemo(() => myPools.find((p) => p.id === selectedPoolId) ?? null, [myPools, selectedPoolId])
   const totalPools = myPools.length
@@ -72,6 +93,20 @@ export default function ManagePoolsPage() {
     () => createSelectedGroupIds.filter((id) => fixtureGroups.some((g) => g.id === id)),
     [createSelectedGroupIds, fixtureGroups]
   )
+  const groupedFixtureGroups = useMemo(() => {
+    const normalized = fixtureGroups.map((g) => {
+      const t = (g.group_type ?? 'custom').toLowerCase()
+      const groupType = GROUP_TYPE_ORDER.includes(t as (typeof GROUP_TYPE_ORDER)[number]) ? t : 'custom'
+      return { ...g, group_type: groupType }
+    })
+    return GROUP_TYPE_ORDER.map((type) => ({
+      type,
+      label: GROUP_TYPE_LABEL[type],
+      items: normalized
+        .filter((g) => g.group_type === type)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    })).filter((group) => group.items.length > 0)
+  }, [fixtureGroups])
 
   const loadPools = useCallback(async (explicitUserId?: string) => {
     const { data: sessionData } = await supabase.auth.getSession()
@@ -138,7 +173,12 @@ export default function ManagePoolsPage() {
 
   useEffect(() => {
     fetchGameMatchesForCommunityHub(supabase, 250).then(({ data }) => setAllMatches(data))
-    fetchFixtureGroups(supabase).then(({ rows }) => setFixtureGroups(rows))
+    fetchFixtureGroups(supabase).then(({ rows, error }) => {
+      setFixtureGroups(rows)
+      if (error) {
+        setMessage(`Could not load fixture groups: ${error.message}`)
+      }
+    })
   }, [])
 
   useEffect(() => {
@@ -150,6 +190,42 @@ export default function ManagePoolsPage() {
   useEffect(() => {
     void loadPoolDetails()
   }, [loadPoolDetails])
+
+  useEffect(() => {
+    const ids = [...new Set(createGroupIds)]
+    if (ids.length === 0) {
+      setCreatePreview(null)
+      return
+    }
+    setCreatePreviewLoading(true)
+    previewPoolGroups(supabase, ids).then(({ preview, error }) => {
+      if (error) {
+        setMessage(error.message)
+        setCreatePreview(null)
+      } else {
+        setCreatePreview(preview)
+      }
+      setCreatePreviewLoading(false)
+    })
+  }, [createGroupIds])
+
+  useEffect(() => {
+    const ids = [...new Set(selectedGroupIds)]
+    if (ids.length === 0) {
+      setEditPreview(null)
+      return
+    }
+    setEditPreviewLoading(true)
+    previewPoolGroups(supabase, ids).then(({ preview, error }) => {
+      if (error) {
+        setMessage(error.message)
+        setEditPreview(null)
+      } else {
+        setEditPreview(preview)
+      }
+      setEditPreviewLoading(false)
+    })
+  }, [selectedGroupIds])
 
   async function onCreatePool() {
     if (!createNameValid || !canCreatePool) return
@@ -275,6 +351,59 @@ export default function ManagePoolsPage() {
     }
   }
 
+  function renderPreviewPanel(params: {
+    title?: string
+    selectedCount: number
+    loading: boolean
+    preview: {
+      total_matches: number
+      teams: string[]
+      fixtures: { match_id: string; home_team: string; away_team: string; kickoff_time: string; group_names: string[] }[]
+    } | null
+  }) {
+    const { title = 'Preview selected groups', selectedCount, loading, preview } = params
+    const hasFixtures = (preview?.total_matches ?? 0) > 0
+    return (
+      <div className="rounded-xl border border-gray-200 p-3">
+        <h3 className="text-sm font-black text-gray-900">{title}</h3>
+        {selectedCount === 0 ? (
+          <p className="mt-2 text-sm text-gray-500">
+            Select one or more fixture groups to preview included teams and fixtures.
+          </p>
+        ) : loading ? (
+          <p className="mt-2 text-sm text-gray-500">Loading preview…</p>
+        ) : !hasFixtures ? (
+          <p className="mt-2 text-sm text-gray-500">No fixtures found for the selected groups yet.</p>
+        ) : (
+          <>
+            <p className="mt-2 text-xs text-gray-600">Total fixtures included: {preview?.total_matches ?? 0}</p>
+            <h4 className="mt-3 text-xs font-bold uppercase tracking-wide text-gray-600">Core teams included</h4>
+            <p className="mt-1 text-[11px] text-gray-500">These are the official teams in the selected group.</p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {(preview?.teams ?? []).map((t) => (
+                <span key={t} className="rounded-full border border-gray-300 bg-gray-50 px-2 py-0.5 text-[11px] font-semibold text-gray-700">
+                  {t}
+                </span>
+              ))}
+            </div>
+            <h4 className="mt-3 text-xs font-bold uppercase tracking-wide text-gray-600">Fixtures included</h4>
+            <p className="mt-1 text-[11px] text-gray-500">Fixtures may include opponents from outside the group.</p>
+            <div className="mt-2 space-y-1.5">
+              {(preview?.fixtures ?? []).map((f) => (
+                <div key={f.match_id} className="rounded-lg border border-gray-200 px-2.5 py-2 text-xs">
+                  <p className="font-semibold text-gray-900">
+                    {new Date(f.kickoff_time).toLocaleString()} — {f.home_team} vs {f.away_team}
+                  </p>
+                  <p className="mt-1 text-gray-600">{f.group_names.join(', ')}</p>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    )
+  }
+
   if (!authReady || loading) {
     return <main className="mx-auto max-w-6xl px-4 py-8 md:px-6 md:py-12"><p className="text-sm text-gray-500">Loading…</p></main>
   }
@@ -296,59 +425,7 @@ export default function ManagePoolsPage() {
       </div>
       {message ? <p className="mt-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-2 text-sm text-gray-700">{message}</p> : null}
 
-      <section className="mt-8 grid gap-4 lg:grid-cols-2">
-        <div className="rounded-2xl border border-gray-200 bg-white p-4">
-          <h2 className="text-base font-black text-gray-900">Create pool</h2>
-          <p className="mt-1 text-xs text-gray-500">
-            {isUserAdmin ? 'Admin users can create and manage unlimited pools.' : `You can belong to up to ${MAX_USER_POOLS} pools.`}
-          </p>
-          {hasReachedPoolLimit ? (
-            <p className="mt-2 text-xs font-semibold text-red-700">You have reached the limit of 3 pools.</p>
-          ) : null}
-          <input
-            type="text"
-            value={createName}
-            onChange={(e) => setCreateName(e.target.value)}
-            placeholder="Pool name"
-            disabled={!canCreatePool}
-            className="mt-3 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm disabled:bg-gray-100"
-          />
-          <label className="mt-3 inline-flex items-center gap-2 text-sm text-gray-700">
-            <input type="checkbox" checked={createPublic} onChange={(e) => setCreatePublic(e.target.checked)} disabled={!canCreatePool} />
-            Public/searchable pool
-          </label>
-          <div className="mt-3 rounded-xl border border-gray-200 p-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">Fixture groups</p>
-            <div className="mt-2 space-y-2">
-              {fixtureGroups.map((g) => (
-                <label key={g.id} className="flex items-center gap-2 text-sm text-gray-800">
-                  <input
-                    type="checkbox"
-                    disabled={!canCreatePool}
-                    checked={createGroupIds.includes(g.id)}
-                    onChange={(e) =>
-                      setCreateSelectedGroupIds((prev) =>
-                        e.target.checked ? [...new Set([...prev, g.id])] : prev.filter((id) => id !== g.id)
-                      )
-                    }
-                  />
-                  <span>{g.name}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-          <div className="mt-3">
-            <button
-              type="button"
-              onClick={() => void onCreatePool()}
-              disabled={!canCreatePool || creating || !createNameValid || createGroupIds.length === 0}
-              className="rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-            >
-              {creating ? 'Creating...' : 'Create pool'}
-            </button>
-          </div>
-        </div>
-
+      <section className="mt-8">
         <div className="rounded-2xl border border-gray-200 bg-white p-4">
           <h2 className="text-base font-black text-gray-900">Search public pools</h2>
           <p className="mt-1 text-xs text-gray-500">
@@ -395,6 +472,75 @@ export default function ManagePoolsPage() {
             })}
           </div>
         </div>
+      </section>
+
+      <section className="mt-4 grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+        <div className="rounded-2xl border border-gray-200 bg-white p-4">
+          <h2 className="text-base font-black text-gray-900">Create pool</h2>
+          <p className="mt-1 text-xs text-gray-500">
+            {isUserAdmin ? 'Admin users can create and manage unlimited pools.' : `You can belong to up to ${MAX_USER_POOLS} pools.`}
+          </p>
+          {hasReachedPoolLimit ? (
+            <p className="mt-2 text-xs font-semibold text-red-700">You have reached the limit of 3 pools.</p>
+          ) : null}
+          <input
+            type="text"
+            value={createName}
+            onChange={(e) => setCreateName(e.target.value)}
+            placeholder="Pool name"
+            disabled={!canCreatePool}
+            className="mt-3 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm disabled:bg-gray-100"
+          />
+          <label className="mt-3 inline-flex items-center gap-2 text-sm text-gray-700">
+            <input type="checkbox" checked={createPublic} onChange={(e) => setCreatePublic(e.target.checked)} disabled={!canCreatePool} />
+            Public/searchable pool
+          </label>
+          <div className="mt-3 rounded-xl border border-gray-200 p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">Fixture groups</p>
+            <div className="mt-2 space-y-3">
+              {groupedFixtureGroups.length === 0 ? (
+                <p className="text-sm text-gray-500">
+                  No fixture groups found. Create groups in Admin {'>'} Fixture groups / leagues.
+                </p>
+              ) : (
+                groupedFixtureGroups.map((group) => (
+                  <div key={group.type}>
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-gray-500">{group.label}</p>
+                    <div className="mt-1 space-y-1.5">
+                      {group.items.map((g) => (
+                        <label key={g.id} className="flex items-center gap-2 text-sm text-gray-800">
+                          <input
+                            type="checkbox"
+                            disabled={!canCreatePool}
+                            checked={createGroupIds.includes(g.id)}
+                            onChange={(e) =>
+                              setCreateSelectedGroupIds((prev) =>
+                                e.target.checked ? [...new Set([...prev, g.id])] : prev.filter((id) => id !== g.id)
+                              )
+                            }
+                          />
+                          <span>{g.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={() => void onCreatePool()}
+              disabled={!canCreatePool || creating || !createNameValid || createGroupIds.length === 0}
+              className="rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              {creating ? 'Creating...' : 'Create pool'}
+            </button>
+          </div>
+        </div>
+
+        <div>{renderPreviewPanel({ selectedCount: createGroupIds.length, loading: createPreviewLoading, preview: createPreview })}</div>
       </section>
 
       <section className="mt-8 grid gap-4 lg:grid-cols-[280px_1fr]">
@@ -494,33 +640,49 @@ export default function ManagePoolsPage() {
                 </div>
               </div>
 
-              <div className="mt-6">
-                <h3 className="text-sm font-black uppercase tracking-wide text-gray-700">Selected fixture groups</h3>
-                <div className="mt-3 grid gap-2">
-                  {fixtureGroups.map((m) => (
-                    <label key={m.id} className="flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={selectedGroupIds.includes(m.id)}
-                        onChange={(e) => {
-                          setSelectedGroupIds((prev) =>
-                            e.target.checked ? [...prev, m.id] : prev.filter((id) => id !== m.id)
-                          )
-                        }}
-                      />
-                      <span className="flex-1 text-gray-800">{m.name}</span>
-                    </label>
-                  ))}
+              <div className="mt-6 grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-wide text-gray-700">Selected fixture groups</h3>
+                  <div className="mt-3 space-y-3">
+                    {groupedFixtureGroups.length === 0 ? (
+                      <p className="text-sm text-gray-500">
+                        No fixture groups found. Create groups in Admin {'>'} Fixture groups / leagues.
+                      </p>
+                    ) : (
+                      groupedFixtureGroups.map((group) => (
+                        <div key={group.type}>
+                          <p className="text-[11px] font-bold uppercase tracking-wide text-gray-500">{group.label}</p>
+                          <div className="mt-1 grid gap-2">
+                            {group.items.map((m) => (
+                              <label key={m.id} className="flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedGroupIds.includes(m.id)}
+                                  onChange={(e) => {
+                                    setSelectedGroupIds((prev) =>
+                                      e.target.checked ? [...new Set([...prev, m.id])] : prev.filter((id) => id !== m.id)
+                                    )
+                                  }}
+                                />
+                                <span className="flex-1 text-gray-800">{m.name}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void onSaveMatches()}
+                    disabled={savingGroups}
+                    className="mt-3 rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                  >
+                    {savingGroups ? 'Saving…' : 'Save fixture groups'}
+                  </button>
+                  <p className="mt-2 text-xs text-gray-500">Pool effective matches are auto-derived from selected groups.</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => void onSaveMatches()}
-                  disabled={savingGroups}
-                  className="mt-3 rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-                >
-                  {savingGroups ? 'Saving…' : 'Save fixture groups'}
-                </button>
-                <p className="mt-2 text-xs text-gray-500">Pool effective matches are auto-derived from selected groups.</p>
+                <div>{renderPreviewPanel({ selectedCount: selectedGroupIds.length, loading: editPreviewLoading, preview: editPreview })}</div>
               </div>
             </>
           )}
