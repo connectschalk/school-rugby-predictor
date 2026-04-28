@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import type { User } from '@supabase/supabase-js'
@@ -36,7 +36,7 @@ function requestDisplayName(r: PoolJoinRequestRow, profilesById: Record<string, 
 
 const PENDING_POOL_INVITE_KEY = 'pending_pool_invite_id'
 
-export default function PoolsPage() {
+function PoolsPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [user, setUser] = useState<User | null>(null)
@@ -759,5 +759,13 @@ export default function PoolsPage() {
         </div>
       </section>
     </main>
+  )
+}
+
+export default function PoolsPage() {
+  return (
+    <Suspense fallback={<div className="mx-auto max-w-6xl px-6 py-12 text-slate-500">Loading pools...</div>}>
+      <PoolsPageContent />
+    </Suspense>
   )
 }
