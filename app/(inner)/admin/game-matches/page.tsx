@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { fetchUserIsAdmin } from '@/lib/admin-access'
-import { parseGameMatchesBulk, parseGameMatchesCsv } from '@/lib/parse-game-matches-bulk'
+import { parseGameMatchesBulk, parseGameMatchesCsv, splitCsvLine } from '@/lib/parse-game-matches-bulk'
 import type { ParsedGameLine } from '@/lib/parse-game-matches-bulk'
 import type { GameMatch, GameMatchStatus } from '@/lib/public-prediction-game'
 import {
@@ -36,6 +36,7 @@ function datetimeLocalToIsoOrNull(s: string): string | null {
 }
 
 type RowPreviewStatus = 'Matched' | 'Needs confirmation' | 'Unknown'
+type ImportMode = 'legacy' | 'group_csv'
 
 type FixturePreviewRow = {
   id: string
@@ -55,6 +56,205 @@ type FixturePreviewRow = {
   parseError?: string
   isFeatured: boolean
   featuredOrder: number | null
+  provinceGroup: string
+  leagueGroup: string
+  prestige: boolean
+  status: GameMatchStatus
+  previewAction?: 'create' | 'update' | 'error'
+  previewError?: string | null
+}
+
+type GroupCsvParsedRow = {
+  lineNumber: number
+  raw: string
+  raw_date: string
+  home_team: string
+  away_team: string
+  kickoff_time: string
+  provinceGroup: string | null
+  leagueGroup: string | null
+  prestige: boolean
+  status: GameMatchStatus
+}
+
+function normalizeHeaderCell(s: string): string {
+  return s.trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+function parseBoolCell(s: string): boolean {
+  const v = s.trim().toLowerCase()
+  return v === 'true' || v === '1' || v === 'yes' || v === 'y'
+}
+
+function parseStatusCell(s: string): GameMatchStatus {
+  const v = s.trim().toLowerCase()
+  if (!v) return 'upcoming'
+  if (v === 'scheduled') return 'upcoming'
+  if (v === 'upcoming') return 'upcoming'
+  if (v === 'locked') return 'locked'
+  if (v === 'completed') return 'completed'
+  if (v === 'cancelled') return 'cancelled'
+  return 'upcoming'
+}
+
+const MONTH_MAP: Record<string, number> = {
+  jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+}
+
+function toSastIso(y: number, m: number, d: number, hh: number, mm: number): string {
+  return new Date(Date.UTC(y, m - 1, d, hh - 2, mm, 0, 0)).toISOString()
+}
+
+function parseDateFlexible(dateRaw: string, now: Date): { y: number; m: number; d: number } | null {
+  const d = dateRaw.trim()
+  if (!d) return null
+  const iso = d.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (iso) return { y: Number(iso[1]), m: Number(iso[2]), d: Number(iso[3]) }
+
+  const long = d.match(/^(\d{1,2})\s+([a-zA-Z]{3,})\s+(\d{4})$/)
+  if (long) {
+    const m = MONTH_MAP[long[2].slice(0, 3).toLowerCase()]
+    if (!m) return null
+    return { y: Number(long[3]), m, d: Number(long[1]) }
+  }
+
+  const short = d.match(/^(?:[a-zA-Z]{2,5}\.?)?(\d{1,2})([a-zA-Z]{3})$/)
+  if (short) {
+    const m = MONTH_MAP[short[2].toLowerCase()]
+    if (!m) return null
+    return { y: now.getFullYear(), m, d: Number(short[1]) }
+  }
+  return null
+}
+
+function parseKickoffFromDateAndTime(dateRaw: string, timeRaw: string, now: Date): string | null {
+  const parsedDate = parseDateFlexible(dateRaw, now)
+  if (!parsedDate) return null
+  const t = timeRaw.trim()
+  let hh = 13
+  let mm = 0
+  if (t) {
+    const hm = t.match(/^(\d{1,2}):(\d{2})$/)
+    if (hm) {
+      hh = Number(hm[1]); mm = Number(hm[2])
+    } else {
+      const full = new Date(t)
+      if (!Number.isNaN(full.getTime())) return full.toISOString()
+      return null
+    }
+  }
+  return toSastIso(parsedDate.y, parsedDate.m, parsedDate.d, hh, mm)
+}
+
+function parseGroupCsv(csvText: string): {
+  rows: GroupCsvParsedRow[]
+  errors: string[]
+  hasProvinceGroupColumn: boolean
+  hasLeagueGroupColumn: boolean
+  hasPrestigeColumn: boolean
+  isNewFormatDetected: boolean
+} {
+  const lines = csvText.split(/\r?\n/).filter((l) => l.trim())
+  if (lines.length === 0) {
+    return {
+      rows: [],
+      errors: [],
+      hasProvinceGroupColumn: false,
+      hasLeagueGroupColumn: false,
+      hasPrestigeColumn: false,
+      isNewFormatDetected: false,
+    }
+  }
+
+  const header = splitCsvLine(lines[0]).map(normalizeHeaderCell)
+  const idx = {
+    date: header.indexOf('date'),
+    home: header.indexOf('home team'),
+    away: header.indexOf('away team'),
+    kick: header.indexOf('kickoff time'),
+    province: header.indexOf('province group'),
+    league: header.indexOf('league group'),
+    prestige: header.indexOf('prestige'),
+    status: header.indexOf('status'),
+  }
+
+  const requiredOk = idx.date >= 0 && idx.home >= 0 && idx.away >= 0
+  const isNewFormatDetected = idx.province >= 0 || idx.league >= 0 || idx.prestige >= 0
+  if (!requiredOk) {
+    return {
+      rows: [],
+      errors: [
+        'CSV header must include at least: Date, Home Team, Away Team (other columns optional).',
+      ],
+      hasProvinceGroupColumn: idx.province >= 0,
+      hasLeagueGroupColumn: idx.league >= 0,
+      hasPrestigeColumn: idx.prestige >= 0,
+      isNewFormatDetected,
+    }
+  }
+
+  const rows: GroupCsvParsedRow[] = []
+  const errors: string[] = []
+  for (let i = 1; i < lines.length; i += 1) {
+    const raw = lines[i]
+    const lineNumber = i + 1
+    const cells = splitCsvLine(raw)
+    const dateRaw = (cells[idx.date] ?? '').trim()
+    const home = (cells[idx.home] ?? '').trim()
+    const away = (cells[idx.away] ?? '').trim()
+    const kickRaw = idx.kick >= 0 ? (cells[idx.kick] ?? '').trim() : ''
+    const province = idx.province >= 0 ? (cells[idx.province] ?? '').trim() : ''
+    const league = idx.league >= 0 ? (cells[idx.league] ?? '').trim() : ''
+    const prestigeRaw = idx.prestige >= 0 ? (cells[idx.prestige] ?? '').trim() : ''
+    const statusRaw = idx.status >= 0 ? (cells[idx.status] ?? '').trim() : ''
+
+    if (!home || !away) {
+      errors.push(`CSV line ${lineNumber}: Home Team and Away Team are required`)
+      continue
+    }
+
+    const kickoff = parseKickoffFromDateAndTime(dateRaw, kickRaw, new Date())
+    if (!kickoff) {
+      errors.push(`CSV line ${lineNumber}: Could not parse Date/Kickoff Time`)
+      continue
+    }
+
+    rows.push({
+      lineNumber,
+      raw,
+      raw_date: dateRaw,
+      home_team: home,
+      away_team: away,
+      kickoff_time: kickoff,
+      provinceGroup: province || null,
+      leagueGroup: league || null,
+      prestige: parseBoolCell(prestigeRaw),
+      status: parseStatusCell(statusRaw),
+    })
+  }
+
+  return {
+    rows,
+    errors,
+    hasProvinceGroupColumn: idx.province >= 0,
+    hasLeagueGroupColumn: idx.league >= 0,
+    hasPrestigeColumn: idx.prestige >= 0,
+    isNewFormatDetected,
+  }
+}
+
+function shouldTryGroupCsvParse(text: string): boolean {
+  const firstLine = text.split(/\r?\n/).find((l) => l.trim())
+  if (!firstLine) return false
+  const header = splitCsvLine(firstLine).map(normalizeHeaderCell)
+  const hasCoreCsvHeader = header.includes('date') && header.includes('home team') && header.includes('away team')
+  const hasGroupHint =
+    header.includes('province group') ||
+    header.includes('league group') ||
+    header.includes('prestige') ||
+    header.includes('province/group') ||
+    header.includes('league/group')
+  return hasCoreCsvHeader || hasGroupHint
 }
 
 function sideStatus(m: TeamMatchResult, teamId: number | null): RowPreviewStatus {
@@ -120,6 +320,10 @@ function buildPreviewRows(
         parseError: p.error,
         isFeatured: false,
         featuredOrder: null,
+        provinceGroup: '',
+        leagueGroup: '',
+        prestige: false,
+        status: 'upcoming',
       })
       continue
     }
@@ -148,6 +352,10 @@ function buildPreviewRows(
       removed: false,
       isFeatured: false,
       featuredOrder: null,
+      provinceGroup: '',
+      leagueGroup: '',
+      prestige: false,
+      status: 'upcoming',
     })
   }
   return out
@@ -182,6 +390,9 @@ export default function AdminGameMatchesPage() {
         homeScore: string
         awayScore: string
         status: GameMatchStatus
+        provinceGroup: string
+        leagueGroup: string
+        isPrestige: boolean
       }
     >
   >({})
@@ -189,6 +400,12 @@ export default function AdminGameMatchesPage() {
   const csvInputRef = useRef<HTMLInputElement>(null)
   const [adminNowTick, setAdminNowTick] = useState(() => Date.now())
   const [lockExpiredBusy, setLockExpiredBusy] = useState(false)
+  const [importMode, setImportMode] = useState<ImportMode>('legacy')
+  const [showGroupPreviewColumns, setShowGroupPreviewColumns] = useState({
+    province: false,
+    league: false,
+    prestige: false,
+  })
 
   const teamById = useMemo(() => {
     const m = new Map<number, TeamRow>()
@@ -220,7 +437,7 @@ export default function AdminGameMatchesPage() {
     const { data, error } = await supabase
       .from('game_matches')
       .select(
-        'id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at, is_featured, featured_order'
+        'id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at, is_featured, featured_order, province_group, league_group, is_prestige'
       )
       .order('kickoff_time', { ascending: false })
 
@@ -288,6 +505,9 @@ export default function AdminGameMatchesPage() {
           homeScore: m.home_score != null ? String(m.home_score) : '',
           awayScore: m.away_score != null ? String(m.away_score) : '',
           status: m.status,
+          provinceGroup: m.province_group ?? '',
+          leagueGroup: m.league_group ?? '',
+          isPrestige: !!m.is_prestige,
         }
       }
       for (const id of Object.keys(next)) {
@@ -314,17 +534,48 @@ export default function AdminGameMatchesPage() {
 
     const fromTextarea = parseGameMatchesBulk(bulkText)
     const fromCsv = csvText ? parseGameMatchesCsv(csvText) : []
+    const groupParseInput = csvText || bulkText
+    const fromGroupCsv = shouldTryGroupCsvParse(groupParseInput)
+      ? parseGroupCsv(groupParseInput)
+      : {
+          rows: [] as GroupCsvParsedRow[],
+          errors: [] as string[],
+          hasProvinceGroupColumn: false,
+          hasLeagueGroupColumn: false,
+          hasPrestigeColumn: false,
+          isNewFormatDetected: false,
+        }
     const errors = [
       ...fromTextarea.filter((p) => !p.ok).map((p) => `Textarea line ${p.lineNumber}: ${p.error}`),
       ...fromCsv.filter((p) => !p.ok).map((p) => `CSV line ${p.lineNumber}: ${p.error}`),
+      ...fromGroupCsv.errors,
     ]
     setValidationErrors(errors)
 
+    const useGroupCsv = fromGroupCsv.isNewFormatDetected
+    setImportMode(useGroupCsv ? 'group_csv' : 'legacy')
+    setShowGroupPreviewColumns({
+      province: useGroupCsv,
+      league: useGroupCsv,
+      prestige: useGroupCsv,
+    })
+
     type Tagged = ParsedGameLine & { inputSource: 'textarea' | 'csv' }
-    const merged: Tagged[] = [
-      ...fromTextarea.map((p) => ({ ...p, inputSource: 'textarea' as const })),
-      ...fromCsv.map((p) => ({ ...p, inputSource: 'csv' as const })),
-    ]
+    const merged: Tagged[] = useGroupCsv
+      ? fromGroupCsv.rows.map((r) => ({
+          lineNumber: r.lineNumber,
+          raw: r.raw,
+          ok: true as const,
+          home_team: r.home_team,
+          away_team: r.away_team,
+          kickoff_time: r.kickoff_time,
+          raw_date: r.raw_date,
+          inputSource: 'csv' as const,
+        }))
+      : [
+          ...fromTextarea.map((p) => ({ ...p, inputSource: 'textarea' as const })),
+          ...fromCsv.map((p) => ({ ...p, inputSource: 'csv' as const })),
+        ]
 
     if (merged.length === 0) {
       setMessage('Nothing to preview — paste fixtures or choose a CSV file.')
@@ -339,10 +590,37 @@ export default function AdminGameMatchesPage() {
     setPreviewLoading(true)
     try {
       const base = merged.map(({ inputSource: _s, ...rest }) => rest)
-      const rows = buildPreviewRows(base, teams, teamAliasMap).map((r, i) => ({
-        ...r,
-        source: merged[i].inputSource,
-      }))
+      const rows = buildPreviewRows(base, teams, teamAliasMap).map((r, i) => {
+        const sourceRow = useGroupCsv ? fromGroupCsv.rows[i] : null
+        return {
+          ...r,
+          source: merged[i].inputSource,
+          provinceGroup: sourceRow?.provinceGroup ?? '',
+          leagueGroup: sourceRow?.leagueGroup ?? '',
+          prestige: sourceRow?.prestige ?? false,
+          status: sourceRow?.status ?? 'upcoming',
+        }
+      })
+
+      if (useGroupCsv) {
+        for (let i = 0; i < rows.length; i += 1) {
+          const r = rows[i]
+          const home = teamById.get(r.homeTeamId ?? -1)?.name
+          const away = teamById.get(r.awayTeamId ?? -1)?.name
+          if (!home || !away || !r.kickoff_time) {
+            rows[i] = { ...r, previewAction: 'error', previewError: 'Missing mapped teams or kickoff.' }
+            continue
+          }
+          const { data: existing } = await supabase
+            .from('game_matches')
+            .select('id')
+            .eq('home_team', home)
+            .eq('away_team', away)
+            .eq('kickoff_time', r.kickoff_time)
+            .maybeSingle()
+          rows[i] = { ...r, previewAction: existing?.id ? 'update' : 'create', previewError: null }
+        }
+      }
       setPreviewRows(rows)
       setMessage(`Preview: ${rows.length} row(s). Review and confirm before insert.`)
     } finally {
@@ -350,55 +628,201 @@ export default function AdminGameMatchesPage() {
     }
   }
 
+  function slugifyGroupName(name: string): string {
+    return name
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+  }
+
+  async function ensureFixtureGroupId(
+    name: string,
+    cache: Map<string, string>,
+    createdNames: Set<string>
+  ): Promise<string | null> {
+    const raw = name.trim()
+    if (!raw) return null
+    const slug = slugifyGroupName(raw)
+    if (!slug) return null
+    const cached = cache.get(slug)
+    if (cached) return cached
+
+    const { data: existing, error: findErr } = await supabase
+      .from('fixture_groups')
+      .select('id, name')
+      .eq('slug', slug)
+      .maybeSingle()
+    if (findErr) throw new Error(findErr.message)
+    if (existing?.id) {
+      cache.set(slug, existing.id as string)
+      return existing.id as string
+    }
+
+    const { data: created, error: createErr } = await supabase
+      .from('fixture_groups')
+      .insert({ name: raw, slug, is_active: true })
+      .select('id, name')
+      .single()
+    if (createErr) throw new Error(createErr.message)
+    cache.set(slug, created.id as string)
+    createdNames.add(String(created.name ?? raw))
+    return created.id as string
+  }
+
   async function insertConfirmed() {
     setMessage('')
     const insertable = previewRows.filter((r) => canInsertRow(r, teamById))
+    const skippedOrErrorCount = previewRows.filter((r) => r.parseError || r.removed || !canInsertRow(r, teamById)).length
     if (insertable.length === 0) {
       setMessage('No confirmed rows to insert. Confirm rows with both teams matched, or fix unknowns.')
       return
     }
 
-    const shapeErr = validatePreviewFeaturedShape(insertable)
-    if (shapeErr) {
-      setMessage(shapeErr)
-      return
-    }
-
-    const { data: liveRows, error: liveErr } = await supabase
-      .from('game_matches')
-      .select('id, is_featured, featured_order')
-      .in('status', ['upcoming', 'locked'])
-
-    if (liveErr) {
-      setMessage(`Could not validate featured slots: ${liveErr.message}`)
-      return
-    }
-
-    const featuredErr = validatePreviewFeaturedRowsForInsert(
-      insertable,
-      (liveRows ?? []) as LiveFeaturedRow[]
-    )
-    if (featuredErr) {
-      setMessage(featuredErr)
-      return
-    }
-
     setSubmitting(true)
-    const rows = insertable.map((r) => ({
-      home_team: teamById.get(r.homeTeamId!)!.name,
-      away_team: teamById.get(r.awayTeamId!)!.name,
-      kickoff_time: r.kickoff_time,
-      status: 'upcoming' as const,
-      is_featured: r.isFeatured,
-      featured_order: null,
-    }))
+    let insertedCount = 0
+    let updatedCount = 0
+    const createdGroups = new Set<string>()
 
-    const { data: inserted, error } = await supabase.from('game_matches').insert(rows).select('id')
+    if (importMode === 'legacy') {
+      const shapeErr = validatePreviewFeaturedShape(insertable)
+      if (shapeErr) {
+        setMessage(shapeErr)
+        setSubmitting(false)
+        return
+      }
 
-    if (error) {
-      setMessage(`Insert failed: ${error.message}`)
-      setSubmitting(false)
-      return
+      const { data: liveRows, error: liveErr } = await supabase
+        .from('game_matches')
+        .select('id, is_featured, featured_order')
+        .in('status', ['upcoming', 'locked'])
+
+      if (liveErr) {
+        setMessage(`Could not validate featured slots: ${liveErr.message}`)
+        setSubmitting(false)
+        return
+      }
+
+      const featuredErr = validatePreviewFeaturedRowsForInsert(
+        insertable,
+        (liveRows ?? []) as LiveFeaturedRow[]
+      )
+      if (featuredErr) {
+        setMessage(featuredErr)
+        setSubmitting(false)
+        return
+      }
+
+      const rows = insertable.map((r) => ({
+        home_team: teamById.get(r.homeTeamId!)!.name,
+        away_team: teamById.get(r.awayTeamId!)!.name,
+        kickoff_time: r.kickoff_time,
+        status: 'upcoming' as const,
+        is_featured: r.isFeatured,
+        featured_order: null,
+        province_group: null as string | null,
+        league_group: null as string | null,
+        is_prestige: false,
+      }))
+
+      const { data: inserted, error } = await supabase.from('game_matches').insert(rows).select('id')
+      if (error) {
+        setMessage(`Insert failed: ${error.message}`)
+        setSubmitting(false)
+        return
+      }
+      insertedCount = inserted?.length ?? rows.length
+    } else {
+      const groupIdBySlug = new Map<string, string>()
+      for (const r of insertable) {
+        const home = teamById.get(r.homeTeamId!)!.name
+        const away = teamById.get(r.awayTeamId!)!.name
+        const status = r.status ?? 'upcoming'
+
+        const { data: existing, error: existingErr } = await supabase
+          .from('game_matches')
+          .select('id')
+          .eq('home_team', home)
+          .eq('away_team', away)
+          .eq('kickoff_time', r.kickoff_time)
+          .maybeSingle()
+        if (existingErr) {
+          setMessage(`Upsert check failed: ${existingErr.message}`)
+          setSubmitting(false)
+          return
+        }
+
+        let matchId: string
+        if (existing?.id) {
+          const { error: updateErr } = await supabase
+            .from('game_matches')
+            .update({
+              status,
+              province_group: r.provinceGroup ?? null,
+              league_group: r.leagueGroup ?? null,
+              is_prestige: !!r.prestige,
+            })
+            .eq('id', existing.id)
+          if (updateErr) {
+            setMessage(`Update failed: ${updateErr.message}`)
+            setSubmitting(false)
+            return
+          }
+          updatedCount += 1
+          matchId = String(existing.id)
+        } else {
+          const { data: ins, error: insertErr } = await supabase
+            .from('game_matches')
+            .insert({
+              home_team: home,
+              away_team: away,
+              kickoff_time: r.kickoff_time,
+              status,
+              home_score: null,
+              away_score: null,
+              is_featured: false,
+              featured_order: null,
+              province_group: r.provinceGroup ?? null,
+              league_group: r.leagueGroup ?? null,
+              is_prestige: !!r.prestige,
+            })
+            .select('id')
+            .single()
+          if (insertErr || !ins?.id) {
+            setMessage(`Insert failed: ${insertErr?.message ?? 'Unknown insert error'}`)
+            setSubmitting(false)
+            return
+          }
+          insertedCount += 1
+          matchId = String(ins.id)
+        }
+
+        const provinceGroupId = await ensureFixtureGroupId(
+          r.provinceGroup ?? '',
+          groupIdBySlug,
+          createdGroups
+        )
+        const leagueGroupId = await ensureFixtureGroupId(
+          r.leagueGroup ?? '',
+          groupIdBySlug,
+          createdGroups
+        )
+        const prestigeGroupId = r.prestige
+          ? await ensureFixtureGroupId('Prestige Pool', groupIdBySlug, createdGroups)
+          : null
+        const toLink = [provinceGroupId, leagueGroupId, prestigeGroupId].filter(Boolean) as string[]
+        if (toLink.length > 0) {
+          const links = toLink.map((gid) => ({ match_id: matchId, group_id: gid }))
+          const { error: linkErr } = await supabase
+            .from('game_match_groups')
+            .upsert(links, { onConflict: 'match_id,group_id', ignoreDuplicates: true })
+          if (linkErr) {
+            setMessage(`Group link failed: ${linkErr.message}`)
+            setSubmitting(false)
+            return
+          }
+        }
+      }
     }
 
     const aliasPairs = new Map<string, { raw: string; canonicalName: string }>()
@@ -417,16 +841,27 @@ export default function AdminGameMatchesPage() {
       (a) => a.raw.toLowerCase() !== a.canonicalName.trim().toLowerCase()
     )
 
-    const insertedCount = inserted?.length ?? rows.length
-    let insertSummary = `Inserted ${insertedCount} game(s).`
+    let insertSummary =
+      importMode === 'group_csv'
+        ? `Inserted ${insertedCount} and updated ${updatedCount} game(s).`
+        : `Inserted ${insertedCount} game(s).`
     if (aliasCandidates.length > 0) {
       const aliasResult = await insertNewTeamAliasesOnly(supabase, teams, aliasCandidates)
       if (aliasResult.error) {
         insertSummary += ` Team aliases: ${aliasResult.error}`
+      } else if (aliasResult.warning) {
+        insertSummary += ` Team aliases: ${aliasResult.warning}`
       } else if (aliasResult.inserted > 0) {
         insertSummary += ` Saved ${aliasResult.inserted} new team alias(es) (existing mappings were left unchanged).`
         await loadTeamsAndAliases()
       }
+    }
+
+    if (createdGroups.size > 0) {
+      insertSummary += ` Created groups: ${[...createdGroups].join(', ')}.`
+    }
+    if (skippedOrErrorCount > 0) {
+      insertSummary += ` Skipped/error rows: ${skippedOrErrorCount}.`
     }
 
     let emailNote = ''
@@ -465,14 +900,15 @@ export default function AdminGameMatchesPage() {
     () => activePreview.filter((r) => canInsertRow(r, teamById)),
     [activePreview, teamById]
   )
-  const featuredShapeError = useMemo(
-    () => validatePreviewFeaturedShape(insertablePreview),
-    [insertablePreview]
-  )
+  const featuredShapeError = useMemo(() => {
+    if (importMode === 'group_csv') return null
+    return validatePreviewFeaturedShape(insertablePreview)
+  }, [insertablePreview, importMode])
   const insertableCount = insertablePreview.length
   const needingAttentionCount = activePreview.filter((r) => !canInsertRow(r, teamById) && !r.parseError).length
   const parseErrorCount = activePreview.filter((r) => r.parseError).length
   const featuredSelectedCount = insertablePreview.filter((r) => r.isFeatured).length
+  const prestigeInImportCount = insertablePreview.filter((r) => !!r.prestige).length
 
   async function lockExpiredUpcoming() {
     setLockExpiredBusy(true)
@@ -544,6 +980,9 @@ export default function AdminGameMatchesPage() {
     const patch: Record<string, unknown> = {
       kickoff_time: kickIso,
       status: d.status,
+      province_group: d.provinceGroup.trim() || null,
+      league_group: d.leagueGroup.trim() || null,
+      is_prestige: d.isPrestige,
     }
     if (d.status === 'completed') {
       patch.home_score = homeScore
@@ -603,6 +1042,9 @@ export default function AdminGameMatchesPage() {
       homeScore: string
       awayScore: string
       status: GameMatchStatus
+      provinceGroup: string
+      leagueGroup: string
+      isPrestige: boolean
     }>
   ) {
     setFixtureFieldDraft((prev) => {
@@ -728,33 +1170,33 @@ export default function AdminGameMatchesPage() {
         <section className="rounded-xl border border-gray-200 p-6">
           <h2 className="text-lg font-semibold">Bulk add upcoming games</h2>
           <p className="mt-2 text-sm text-gray-600">
-            Paste fixtures or upload CSV. Supported formats include{' '}
-            <code className="text-xs">Date,Home Team,Away Team</code> (header row is skipped),{' '}
-            <code className="text-xs">Home vs Away</code>, <code className="text-xs">Home, Away</code>, optional{' '}
-            <code className="text-xs">| YYYY-MM-DD HH:mm</code> or a third CSV column for kickoff. Dates like{' '}
-            <code className="text-xs">Mon.27Apr</code> sets kickoff to that day at <strong>15:00</strong> local;
-            unparseable or empty dates use the <strong>coming Saturday at 15:00</strong>. Optional fourth column{' '}
-            <code className="text-xs">Time</code> (e.g. <code className="text-xs">15:00</code>) sets kickoff clock on
-            that fixture date (24h <code className="text-xs">HH:mm</code>). Predictions close at kickoff. Explicit
-            full kickoff timestamps use{' '}
-            <code className="text-xs">YYYY-MM-DD HH:mm</code> in local time. You can mark up to{' '}
-            <strong>{FEATURED_MATCHES_MAX} featured</strong> upcoming/locked games per weekend for Predict a Score
-            .
+            Supported CSV format:
+            <br />
+            <code className="text-xs">
+              Date, Home Team, Away Team, Kickoff Time, Province Group, League Group, Prestige, Status
+            </code>
+          </p>
+          <p className="mt-2 text-sm text-gray-600">
+            Example:
+            <br />
+            <code className="text-xs">
+              2026-05-10,Paarl Boys High,Grey College,13:30,Western Province,Prestige Pool,true,upcoming
+            </code>
+          </p>
+          <p className="mt-2 text-xs font-medium text-gray-700">
+            Re-uploading the same fixture will update it, not duplicate it.
           </p>
           <textarea
             className="mt-4 w-full min-h-[160px] rounded-lg border border-gray-300 p-3 font-mono text-sm"
             value={bulkText}
             onChange={(e) => setBulkText(e.target.value)}
-            placeholder={`Date,Home Team,Away Team,Time\nMon.27Apr,Kingswood,St Stithians,15:00\nGrey College vs Paul Roos`}
+            placeholder={`Date,Home Team,Away Team,Kickoff Time,Province Group,League Group,Prestige,Status\n2026-05-10,Paarl Boys High,Grey College,13:30,Western Province,Prestige Pool,true,upcoming`}
             disabled={submitting || previewLoading}
           />
           <div className="mt-4">
             <label className="text-sm font-medium text-gray-800">CSV upload (optional)</label>
             <p className="mt-1 text-xs text-gray-600">
-              Headers: <code className="text-xs">Date,Home Team,Away Team</code> (optional{' '}
-              <code className="text-xs">Time</code>) or{' '}
-              <code className="text-xs">home_team,away_team</code> or{' '}
-              <code className="text-xs">home_team,away_team,kickoff_time</code>.
+              Headers: <code className="text-xs">Date,Home Team,Away Team,Kickoff Time,Province Group,League Group,Prestige,Status</code>.
             </p>
             <input
               ref={csvInputRef}
@@ -798,7 +1240,7 @@ export default function AdminGameMatchesPage() {
               disabled={submitting || previewLoading}
               className="rounded-xl bg-gray-800 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
-              {previewLoading ? 'Previewing…' : 'Preview fixtures'}
+              {previewLoading ? 'Validating…' : 'Validate CSV'}
             </button>
             <button
               type="button"
@@ -808,7 +1250,7 @@ export default function AdminGameMatchesPage() {
               }
               className="rounded-xl bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
-              {submitting ? 'Inserting…' : 'Insert confirmed games & notify'}
+              {submitting ? 'Importing…' : 'Import valid rows'}
             </button>
           </div>
           {featuredShapeError ? (
@@ -818,8 +1260,9 @@ export default function AdminGameMatchesPage() {
             <p className="mt-3 text-xs text-gray-600">
               Total (active): {activePreview.length} · Confirmed ready to insert: {insertableCount} · Needing attention:{' '}
               {needingAttentionCount}
-              {parseErrorCount > 0 ? ` · Parse errors: ${parseErrorCount}` : ''} · Featured in import:{' '}
-              {featuredSelectedCount}/{FEATURED_MATCHES_MAX}
+              {parseErrorCount > 0 ? ` · Parse errors: ${parseErrorCount}` : ''}
+              {importMode === 'legacy' ? ` · Featured in import: ${featuredSelectedCount}/${FEATURED_MATCHES_MAX}` : ''}
+              {importMode === 'group_csv' ? ` · Prestige in import: ${prestigeInImportCount}` : ''}
             </p>
           )}
         </section>
@@ -841,7 +1284,10 @@ export default function AdminGameMatchesPage() {
                     <th className="py-2 pr-2">Raw Away</th>
                     <th className="py-2 pr-2">Matched Away</th>
                     <th className="py-2 pr-2">Kickoff</th>
-                    <th className="py-2 pr-2">Featured</th>
+                    {showGroupPreviewColumns.province ? <th className="py-2 pr-2">Province Group</th> : null}
+                    {showGroupPreviewColumns.league ? <th className="py-2 pr-2">League Group</th> : null}
+                    {showGroupPreviewColumns.prestige ? <th className="py-2 pr-2">Prestige</th> : null}
+                    {importMode === 'legacy' ? <th className="py-2 pr-2">Featured</th> : null}
                     <th className="py-2 pr-2">Status</th>
                     <th className="py-2">Action</th>
                   </tr>
@@ -914,29 +1360,43 @@ export default function AdminGameMatchesPage() {
                             />
                           )}
                         </td>
+                        {showGroupPreviewColumns.province ? (
+                          <td className="py-2 pr-2">{r.provinceGroup || '—'}</td>
+                        ) : null}
+                        {showGroupPreviewColumns.league ? (
+                          <td className="py-2 pr-2">{r.leagueGroup || '—'}</td>
+                        ) : null}
+                        {showGroupPreviewColumns.prestige ? (
+                          <td className="py-2 pr-2">{r.prestige ? 'Yes' : 'No'}</td>
+                        ) : null}
+                        {importMode === 'legacy' ? (
+                          <td className="py-2 pr-2">
+                            {r.parseError ? (
+                              '—'
+                            ) : (
+                              <label className="flex cursor-pointer items-center gap-1 whitespace-nowrap">
+                                <input
+                                  type="checkbox"
+                                  checked={r.isFeatured}
+                                  onChange={(e) => togglePreviewFeatured(r.id, e.target.checked)}
+                                />
+                                <span className="text-xs">Featured</span>
+                              </label>
+                            )}
+                          </td>
+                        ) : null}
+                        <td className="py-2 pr-2">{r.status || 'upcoming'}</td>
                         <td className="py-2 pr-2">
-                          {r.parseError ? (
-                            '—'
-                          ) : (
-                            <label className="flex cursor-pointer items-center gap-1 whitespace-nowrap">
-                              <input
-                                type="checkbox"
-                                checked={r.isFeatured}
-                                onChange={(e) => togglePreviewFeatured(r.id, e.target.checked)}
-                              />
-                              <span className="text-xs">Featured</span>
-                            </label>
-                          )}
-                        </td>
-                        <td className="py-2 pr-2">
-                          {r.parseError ? (
-                            '—'
-                          ) : (
-                            <span>{st}</span>
-                          )}
+                          {r.parseError ? '—' : <span>{st}</span>}
                           {!r.parseError && r.confirmedForInsert && canInsertRow(r, teamById) && (
                             <span className="ml-1 text-green-700">· ready</span>
                           )}
+                          {importMode === 'group_csv' && r.previewAction ? (
+                            <span className="ml-1 text-blue-700">· {r.previewAction}</span>
+                          ) : null}
+                          {importMode === 'group_csv' && r.previewError ? (
+                            <span className="ml-1 text-red-700">· {r.previewError}</span>
+                          ) : null}
                         </td>
                         <td className="py-2">
                           {r.parseError ? (
@@ -1003,6 +1463,7 @@ export default function AdminGameMatchesPage() {
                     <th className="py-2 pr-3">Kickoff</th>
                     <th className="py-2 pr-3">Pick window</th>
                     <th className="py-2 pr-3">Status</th>
+                    <th className="py-2 pr-3">Groups</th>
                     <th className="py-2 pr-3">Scores</th>
                     <th className="py-2 pr-3">Featured</th>
                     <th className="py-2">Actions</th>
@@ -1062,10 +1523,41 @@ export default function AdminGameMatchesPage() {
                               <option value="upcoming">upcoming</option>
                               <option value="locked">locked</option>
                               <option value="completed">completed</option>
+                              <option value="cancelled">cancelled</option>
                             </select>
                           ) : (
                             m.status
                           )}
+                        </td>
+                        <td className="py-2 pr-3">
+                          {fd ? (
+                            <div className="flex flex-col gap-1">
+                              <input
+                                type="text"
+                                placeholder="Province/group"
+                                className="w-36 rounded border border-gray-300 px-1 py-0.5 text-xs"
+                                disabled={busy}
+                                value={fd.provinceGroup}
+                                onChange={(e) => patchFixtureField(m.id, { provinceGroup: e.target.value })}
+                              />
+                              <input
+                                type="text"
+                                placeholder="League/group"
+                                className="w-36 rounded border border-gray-300 px-1 py-0.5 text-xs"
+                                disabled={busy}
+                                value={fd.leagueGroup}
+                                onChange={(e) => patchFixtureField(m.id, { leagueGroup: e.target.value })}
+                              />
+                              <label className="inline-flex items-center gap-1 text-xs text-gray-700">
+                                <input
+                                  type="checkbox"
+                                  checked={fd.isPrestige}
+                                  onChange={(e) => patchFixtureField(m.id, { isPrestige: e.target.checked })}
+                                />
+                                Prestige
+                              </label>
+                            </div>
+                          ) : null}
                         </td>
                         <td className="py-2 pr-3">
                           {fd ? (

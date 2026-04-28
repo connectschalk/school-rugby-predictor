@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-export type GameMatchStatus = 'upcoming' | 'locked' | 'completed'
+export type GameMatchStatus = 'upcoming' | 'locked' | 'completed' | 'cancelled'
 
 export type GameMatch = {
   id: string
@@ -14,6 +14,9 @@ export type GameMatch = {
   /** Highlight ordering on Predict a Score (max 10 live upcoming/locked). */
   is_featured?: boolean
   featured_order?: number | null
+  province_group?: string | null
+  league_group?: string | null
+  is_prestige?: boolean
 }
 
 export type UserPredictionRow = {
@@ -54,7 +57,9 @@ export type SeasonLeaderboardRow = {
   avg_points_per_prediction: number | null
   exact_margin_count: number
   correct_winner_count: number
-  /** Sum of margin_points only (excludes winner_points). */
+  cumulative_margin_error: number
+  average_margin_error: number | null
+  /** Legacy compatibility fields. */
   margin_points_total: number
   margin_points_average: number | null
 }
@@ -266,6 +271,11 @@ export async function fetchSeasonLeaderboard(client: SupabaseClient, season: num
         : num(r.avg_points_per_prediction),
     exact_margin_count: num(r.exact_margin_count),
     correct_winner_count: num(r.correct_winner_count),
+    cumulative_margin_error: num(r.cumulative_margin_error),
+    average_margin_error:
+      r.average_margin_error === null || r.average_margin_error === undefined
+        ? null
+        : num(r.average_margin_error),
     margin_points_total: num(r.margin_points_total),
     margin_points_average:
       r.margin_points_average === null || r.margin_points_average === undefined

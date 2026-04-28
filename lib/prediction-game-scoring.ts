@@ -14,8 +14,8 @@ export type PredictionScoreBreakdown = {
  * Scoring for the public Predict a Score game (keep in sync with
  * `score_predictions_for_match` in Supabase migrations).
  *
- * Rules: wrong winner → 0 total. Correct winner → 2 pts + margin band (max 5).
- * Max per match = 7.
+ * Rules: correct winner contributes 1 point, margin band contributes up to 1.0,
+ * and closest margin bonus contributes 0.5 (max 2.5 per match).
  */
 export function computePredictionScore(
   predicted_winner: 'home' | 'away',

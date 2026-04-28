@@ -141,6 +141,7 @@ export default function InnerHeaderNav() {
     'inline-flex items-center justify-center rounded-full border px-4 py-2 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700'
 
   const rankingsActive = pathname.startsWith('/user-rankings')
+  const poolsActive = pathname.startsWith('/pools')
   const predictActive = pathname.startsWith('/predict-score')
   const communityActive =
     pathname.startsWith('/community-predictor') || pathname.startsWith('/community-picks')
@@ -215,6 +216,20 @@ export default function InnerHeaderNav() {
             </Link>
             {rankingsActive ? activeDot : null}
           </div>
+          <div className="relative hidden flex-col items-center pb-3 md:flex">
+            <Link
+              href="/pools"
+              className={rankingsClasses(poolsActive)}
+              onClick={() => {
+                closeMenu()
+                closeMobileMore()
+              }}
+            >
+              <RankingsListIcon />
+              Pools
+            </Link>
+            {poolsActive ? activeDot : null}
+          </div>
         </nav>
 
         <div ref={mobileMoreRef} className="relative md:hidden">
@@ -252,6 +267,14 @@ export default function InnerHeaderNav() {
               >
                 <RankingsListIcon />
                 Rankings
+              </Link>
+              <Link
+                href="/pools"
+                className="flex items-center gap-2 px-4 py-3 text-sm font-semibold text-gray-900 hover:bg-gray-50"
+                onClick={closeMobileMore}
+              >
+                <RankingsListIcon />
+                Pools
               </Link>
               {!signedIn && authReady ? (
                 <>

@@ -38,44 +38,6 @@ import { recalculateTeamConsistencyFromPredictionHistory } from '@/lib/team-cons
 import { matchTeamName, type TeamMatchResult } from '@/lib/team-name-match'
 import { fetchUserIsAdmin } from '@/lib/admin-access'
 
-const ADMIN_TOOL_CARDS = [
-  {
-    href: '/predictor',
-    title: 'Predictor',
-    description: 'Head-to-head margin prediction between two teams.',
-  },
-  {
-    href: '/rankings',
-    title: 'Rankings tool',
-    description: 'Internal pool rankings and season connectivity.',
-  },
-  {
-    href: '/consistency',
-    title: 'Consistency',
-    description: 'Team consistency metrics and adjusted scores.',
-  },
-  {
-    href: '/network',
-    title: 'Graph',
-    description: 'Visual network of teams, links, and margins.',
-  },
-  {
-    href: '/results',
-    title: 'Scores / Results',
-    description: 'Browse and search match results by season.',
-  },
-  {
-    href: '/admin/game-matches',
-    title: 'Game matches',
-    description: 'Bulk fixtures and Predict a Score match admin.',
-  },
-  {
-    href: '/tools',
-    title: 'Tools hub',
-    description: 'Shortcuts to all internal analysis tools.',
-  },
-] as const
-
 function formatTeamMatchLabel(m: TeamMatchResult): string {
   const pct = m.matchConfidence != null ? ` ${Math.round(m.matchConfidence * 100)}%` : ''
   const review = m.needsReview ? ' · review' : ''
@@ -1865,32 +1827,61 @@ export default function AdminPage() {
           </button>
         </div>
 
-        <p className="mt-4 text-gray-600">
-          Add schools, add results, bulk Excel or URL import, upload team logos, view results,
-          delete incorrect scores, recalculate team consistency, and monitor usage.
-        </p>
+        <p className="mt-4 text-gray-600">Admin management and tools are now grouped into two sections only.</p>
 
-        <section className="mt-10" aria-labelledby="admin-tools-heading">
-          <h2 id="admin-tools-heading" className="text-lg font-semibold text-gray-900">
-            Internal tools
+        <section className="mt-10" aria-labelledby="admin-sections-heading">
+          <h2 id="admin-sections-heading" className="text-lg font-semibold text-gray-900">
+            Admin sections
           </h2>
-          <p className="mt-1 text-sm text-gray-600">
-            Analysis and data tools (admin accounts only). Use the bar above to switch quickly.
-          </p>
-          <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {ADMIN_TOOL_CARDS.map((card) => (
-              <Link
-                key={card.href}
-                href={card.href}
-                className="group flex flex-col rounded-2xl border border-gray-200 bg-gray-50/80 p-5 shadow-sm transition hover:border-gray-300 hover:bg-white hover:shadow-md"
-              >
-                <span className="text-base font-semibold text-gray-900 group-hover:text-red-800">
-                  {card.title}
-                </span>
-                <span className="mt-2 flex-1 text-sm text-gray-600">{card.description}</span>
-                <span className="mt-4 text-xs font-semibold text-red-700">Open →</span>
-              </Link>
-            ))}
+          <p className="mt-1 text-sm text-gray-600">Use Admin for operations and Tools Hub for analytics tools.</p>
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            <div className="rounded-2xl border border-gray-200 bg-gray-50/80 p-6 shadow-sm">
+              <h3 className="text-xl font-semibold text-gray-900">Admin</h3>
+              <p className="mt-2 text-sm text-gray-600">
+                Upload/manage fixtures, pool admin workflows, score/result controls, cancellation handling, featured
+                and prestige setup, and fixture group fields.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Link
+                  href="/admin/game-matches"
+                  className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-100"
+                >
+                  Fixture management
+                </Link>
+                <Link
+                  href="/admin/global-pools"
+                  className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-100"
+                >
+                  Global pools management
+                </Link>
+                <Link
+                  href="/admin/fixture-groups"
+                  className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-100"
+                >
+                  Fixture groups / leagues
+                </Link>
+                <Link
+                  href="/pools/manage"
+                  className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-100"
+                >
+                  Pools admin
+                </Link>
+              </div>
+            </div>
+            <div className="rounded-2xl border border-gray-200 bg-gray-50/80 p-6 shadow-sm">
+              <h3 className="text-xl font-semibold text-gray-900">Tools Hub</h3>
+              <p className="mt-2 text-sm text-gray-600">
+                Ranking, consistency, graph, predictor, results, and helper diagnostics tools.
+              </p>
+              <div className="mt-4">
+                <Link
+                  href="/tools"
+                  className="inline-flex rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-100"
+                >
+                  Open Tools Hub
+                </Link>
+              </div>
+            </div>
           </div>
         </section>
 

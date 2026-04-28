@@ -15,13 +15,13 @@ const RAW_COL_CANDIDATES = [
 ] as const
 
 const CANONICAL_TEXT_COL_CANDIDATES = [
-  'canonical_name',
   'official_name',
   'mapped_name',
   'full_name',
   'resolved_name',
   'canonical_team_name',
   'team_name',
+  'canonical_name',
 ] as const
 
 const TEAM_ID_COL_CANDIDATES = ['team_id', 'canonical_team_id', 'matched_team_id'] as const
@@ -123,12 +123,6 @@ function existingNormalizedRawKeys(rows: TeamAliasDbRow[], schema: InferredSchem
   return s
 }
 
-const DEFAULT_INSERT_SCHEMA: InferredSchema = {
-  kind: 'raw_to_canonical_text',
-  rawCol: 'raw_name',
-  canonicalCol: 'canonical_name',
-}
-
 function findTeamIdByName(teams: TeamRow[], name: string): number | null {
   const t = teams.find((x) => normalizeTeamKey(x.name) === normalizeTeamKey(name))
   return t?.id ?? null
@@ -143,7 +137,7 @@ export async function insertNewTeamAliasesOnly(
   supabase: SupabaseClient,
   teams: TeamRow[],
   pairs: NewAliasPair[]
-): Promise<{ inserted: number; error?: string }> {
+): Promise<{ inserted: number; error?: string; warning?: string }> {
   const { data: existingRows, error: loadErr } = await supabase.from('team_aliases').select('*')
   if (loadErr) {
     return { inserted: 0, error: loadErr.message }
@@ -157,7 +151,14 @@ export async function insertNewTeamAliasesOnly(
         'Could not interpret public.team_aliases columns (need a raw-name field plus canonical text or team_id).',
     }
   }
-  const schema = inferred ?? DEFAULT_INSERT_SCHEMA
+  if (!inferred) {
+    return {
+      inserted: 0,
+      warning:
+        'Skipped team alias sync: could not infer public.team_aliases schema from current data. Fixture import still completed.',
+    }
+  }
+  const schema = inferred
 
   const taken = existingNormalizedRawKeys(existing, schema)
   const payloads: TeamAliasDbRow[] = []

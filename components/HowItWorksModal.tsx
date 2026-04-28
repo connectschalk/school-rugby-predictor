@@ -61,31 +61,31 @@ export default function HowItWorksModal({ open, onClose, title = 'How it works' 
           <ul className="list-disc space-y-2.5 pl-5 marker:text-gray-900">
             <li>You can predict one match or many. You do not have to predict every fixture.</li>
             <li>Select the team you think will win.</li>
-            <li>Enter the winning margin.</li>
+            <li>Enter the winning margin as a positive number.</li>
             <li>
               Submit one row with the row button, or use <strong>Submit all</strong> to send every
               row that already has both a winner and a margin filled (incomplete rows are skipped).
             </li>
-            <li>Correct winner = 2 points.</li>
             <li>
-              Margin points:
+              Scoring:
               <ul className="mt-2 list-disc space-y-1 pl-5 text-gray-700">
-                <li>Exact margin = 5</li>
-                <li>1 point out = 4</li>
-                <li>2 points out = 3</li>
-                <li>3 points out = 2</li>
-                <li>4 points out = 1</li>
-                <li>5+ out = 0</li>
+                <li>Correct winner: 1 point</li>
+                <li>Exact margin: 1.0 point</li>
+                <li>1 point away: 0.8</li>
+                <li>2 points away: 0.6</li>
+                <li>3 points away: 0.4</li>
+                <li>4 points away: 0.2</li>
+                <li>5+ away: 0</li>
+                <li>Closest margin bonus: +0.5</li>
               </ul>
             </li>
-            <li>Maximum score per match = 7 points.</li>
-            <li>Points ranking is based on total points.</li>
+            <li>Maximum per game: 2.5 points.</li>
+            <li>Margin accuracy is based on signed margin.</li>
             <li>
-              Margin Total ranks users by margin points only, excluding winner points.
+              Example: Paarl Boys by 4 and Northwood by 3 are 7 points apart.
             </li>
-            <li>Margin Average is margin points divided by predictions made.</li>
-            <li>All ranking shows everyone.</li>
-            <li>Top 20 category rankings require 10 or more predictions.</li>
+            <li>You can earn margin points even if you picked the wrong winner.</li>
+            <li>Average Margin Error is the default ranking. Lower is better.</li>
           </ul>
         </div>
       </div>

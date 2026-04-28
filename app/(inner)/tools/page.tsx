@@ -29,15 +29,20 @@ const tools = [
     description: 'See match results and compare outcomes.',
     href: '/results',
   },
+  {
+    title: 'Admin diagnostics',
+    description: 'Open admin dashboards and helper diagnostics.',
+    href: '/admin',
+  },
 ] as const
 
 function ToolsHubContent() {
   return (
     <main className="mx-auto max-w-6xl px-6 py-12">
       <div className="mx-auto max-w-2xl text-center">
-        <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Tools and Data</h1>
+        <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Tools Hub</h1>
         <p className="mt-3 text-base text-gray-600 md:text-lg">
-          Predictor, rankings, and analysis tools powered by connected school rugby results.
+          Predictor, rankings, consistency, graph, and helper tools powered by connected school rugby results.
         </p>
       </div>
 

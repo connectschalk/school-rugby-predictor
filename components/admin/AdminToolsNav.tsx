@@ -4,14 +4,8 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
 const LINKS = [
-  { href: '/admin', label: 'Dashboard' },
-  { href: '/predictor', label: 'Predictor' },
-  { href: '/rankings', label: 'Rankings tool' },
-  { href: '/consistency', label: 'Consistency' },
-  { href: '/network', label: 'Graph' },
-  { href: '/results', label: 'Scores / Results' },
-  { href: '/admin/game-matches', label: 'Game matches' },
-  { href: '/tools', label: 'Tools hub' },
+  { href: '/admin', label: 'Admin' },
+  { href: '/tools', label: 'Tools Hub' },
 ] as const
 
 export default function AdminToolsNav() {
