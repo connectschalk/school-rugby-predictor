@@ -2,6 +2,10 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 
+import type { GameMatch } from '@/lib/public-prediction-game'
+
+export type GameMatchForPoolPicks = GameMatch & { prediction_cutoff_time?: string | null }
+
 export type PoolRow = {
   id: string
   name: string
@@ -47,6 +51,26 @@ export type PoolLeaderboardRow = {
   total_points: number
   total_margin_difference: number
   average_margin_difference: number | null
+  games_predicted: number
+  correct_winners: number
+  margin_points_total: number
+}
+
+export type PoolMatchPredictionViewerRpcRow = {
+  user_id: string
+  display_name: string
+  avatar_url: string | null
+  avatar_letter: string | null
+  avatar_colour: string | null
+  is_viewer: boolean
+  reveal_allowed: boolean
+  predicted_winner: string | null
+  predicted_margin: number | null
+  is_locked: boolean | null
+  locked_at: string | null
+  submitted_at: string | null
+  score_total_points: number | null
+  score_margin_difference: number | null
 }
 
 export type PoolGroupsPreview = {
@@ -473,8 +497,73 @@ export async function fetchPoolLeaderboard(client: SupabaseClient, poolId: strin
     total_margin_difference: num(r.total_margin_difference),
     average_margin_difference:
       r.average_margin_difference == null ? null : num(r.average_margin_difference),
+    games_predicted: num(r.games_predicted),
+    correct_winners: num(r.correct_winners),
+    margin_points_total: num(r.margin_points_total),
   }))
   return { rows, error }
+}
+
+export async function fetchPoolMatchPredictionsForViewer(
+  client: SupabaseClient,
+  poolId: string,
+  matchId: string
+) {
+  const { data, error } = await client.rpc('pool_match_predictions_for_viewer', {
+    p_pool_id: poolId,
+    p_match_id: matchId,
+  })
+  if (error) {
+    return { rows: [] as PoolMatchPredictionViewerRpcRow[], error }
+  }
+  const rows = ((data as Record<string, unknown>[] | null) ?? []).map((r) => ({
+    user_id: String(r.user_id ?? ''),
+    display_name: String(r.display_name ?? 'Player'),
+    avatar_url: r.avatar_url == null ? null : String(r.avatar_url),
+    avatar_letter: r.avatar_letter == null ? null : String(r.avatar_letter),
+    avatar_colour: r.avatar_colour == null ? null : String(r.avatar_colour),
+    is_viewer: Boolean(r.is_viewer),
+    reveal_allowed: Boolean(r.reveal_allowed),
+    predicted_winner: r.predicted_winner == null ? null : String(r.predicted_winner),
+    predicted_margin:
+      r.predicted_margin == null || r.predicted_margin === ''
+        ? null
+        : Math.trunc(Number(r.predicted_margin)),
+    is_locked: r.is_locked == null ? null : Boolean(r.is_locked),
+    locked_at: r.locked_at == null ? null : String(r.locked_at),
+    submitted_at: r.submitted_at == null ? null : String(r.submitted_at),
+    score_total_points:
+      r.score_total_points == null || r.score_total_points === '' ? null : num(r.score_total_points),
+    score_margin_difference:
+      r.score_margin_difference == null || r.score_margin_difference === ''
+        ? null
+        : Math.trunc(Number(r.score_margin_difference)),
+  }))
+  return { rows, error: null }
+}
+
+/** Load fixtures for pool picks (includes prediction_cutoff_time for reveal rules). */
+export async function fetchGameMatchesByIdsForPool(
+  client: SupabaseClient,
+  matchIds: string[]
+) {
+  if (matchIds.length === 0) {
+    return { data: [] as GameMatchForPoolPicks[], error: null }
+  }
+  const { data, error } = await client
+    .from('game_matches')
+    .select(
+      'id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at, prediction_cutoff_time'
+    )
+    .in('id', matchIds)
+    .in('status', ['upcoming', 'locked', 'completed'])
+
+  return {
+    data: ((data as GameMatchForPoolPicks[] | null) ?? []).sort(
+      (a, b) => new Date(a.kickoff_time).getTime() - new Date(b.kickoff_time).getTime()
+    ),
+    error,
+  }
 }
 
 export async function fetchEffectivePoolMatches(client: SupabaseClient, poolId: string) {

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import type { User } from '@supabase/supabase-js'
 import LetterAvatar from '@/components/LetterAvatar'
+import PoolPicksSection from '@/components/pools/PoolPicksSection'
 import {
   fetchEffectivePoolMatches,
   fetchPoolGroups,
@@ -17,14 +18,15 @@ import {
   searchPublicPools,
   upsertPoolMatches,
   type PoolJoinRequestRow,
+  type PoolLeaderboardRow,
   type PoolMemberRow,
   type PoolRow,
 } from '@/lib/pools'
 import { fetchGameMatchesForCommunityHub, type GameMatch } from '@/lib/public-prediction-game'
 import { supabase } from '@/lib/supabase'
 
-type LeaderMetric = 'total' | 'margin_total' | 'margin_avg'
 type UserProfileMini = { id: string; display_name: string | null }
+type PoolDetailTab = 'leaderboard' | 'picks'
 
 function teamVs(m: GameMatch) {
   return `${m.home_team} vs ${m.away_team}`
@@ -69,21 +71,9 @@ function PoolsPageContent() {
   const [inviteCopied, setInviteCopied] = useState(false)
   const [initialSessionLoaded, setInitialSessionLoaded] = useState(false)
 
-  const [leaderRows, setLeaderRows] = useState<
-    {
-      user_id: string
-      display_name: string
-      avatar_url: string | null
-      avatar_letter: string | null
-      avatar_colour: string | null
-      joined_at: string
-      total_points: number
-      total_margin_difference: number
-      average_margin_difference: number | null
-    }[]
-  >([])
+  const [leaderRows, setLeaderRows] = useState<PoolLeaderboardRow[]>([])
   const [leaderLoading, setLeaderLoading] = useState(false)
-  const [leaderMetric, setLeaderMetric] = useState<LeaderMetric>('total')
+  const [poolDetailTab, setPoolDetailTab] = useState<PoolDetailTab>('leaderboard')
   const showManagement = false
   const inviteFromUrl = (searchParams.get('invite') ?? '').trim()
 
@@ -102,40 +92,23 @@ function PoolsPageContent() {
     [myPools, selectedPoolId]
   )
   const isAdmin = Boolean(user && selectedPool && selectedPool.admin_user_id === user.id)
+  const isPoolMember = Boolean(selectedPoolId && membershipByPool.has(selectedPoolId))
   const effectiveMatches = useMemo(() => {
     const byId = new Map(allMatches.map((m) => [m.id, m]))
     return effectiveMatchIds.map((id) => byId.get(id)).filter(Boolean) as GameMatch[]
   }, [allMatches, effectiveMatchIds])
 
-  const currentWeekMatches = useMemo(() => {
-    const now = new Date()
-    const day = now.getUTCDay()
-    const mondayOffset = day === 0 ? -6 : 1 - day
-    const monday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
-    monday.setUTCDate(monday.getUTCDate() + mondayOffset)
-    const saturday = new Date(monday)
-    saturday.setUTCDate(saturday.getUTCDate() + 5)
-    return allMatches.filter((m) => {
-      const d = new Date(m.kickoff_time)
-      return d >= monday && d <= saturday
-    })
-  }, [allMatches])
-
   const sortedLeaderRows = useMemo(() => {
     const rows = [...leaderRows]
-    if (leaderMetric === 'total') {
-      rows.sort((a, b) => b.total_points - a.total_points || a.total_margin_difference - b.total_margin_difference)
-    } else if (leaderMetric === 'margin_total') {
-      rows.sort((a, b) => a.total_margin_difference - b.total_margin_difference || b.total_points - a.total_points)
-    } else {
-      rows.sort((a, b) => {
-        const av = a.average_margin_difference ?? Number.POSITIVE_INFINITY
-        const bv = b.average_margin_difference ?? Number.POSITIVE_INFINITY
-        return av - bv || b.total_points - a.total_points
-      })
-    }
+    rows.sort(
+      (a, b) =>
+        b.total_points - a.total_points ||
+        a.total_margin_difference - b.total_margin_difference ||
+        b.games_predicted - a.games_predicted ||
+        a.display_name.localeCompare(b.display_name)
+    )
     return rows
-  }, [leaderRows, leaderMetric])
+  }, [leaderRows])
 
   const loadPools = useCallback(async (explicitUserId?: string) => {
     const { data: sessionData } = await supabase.auth.getSession()
@@ -320,6 +293,10 @@ function PoolsPageContent() {
   useEffect(() => {
     void loadPoolDetails()
   }, [loadPoolDetails])
+
+  useEffect(() => {
+    setPoolDetailTab('leaderboard')
+  }, [selectedPoolId])
 
   async function copyInviteLink() {
     if (!selectedPool || typeof window === 'undefined') return
@@ -611,6 +588,37 @@ function PoolsPageContent() {
                 <p className="text-xs font-semibold text-gray-600">{isAdmin ? 'You are admin' : 'Member view'}</p>
               </div>
 
+              <div className="mt-5 flex flex-wrap gap-2 border-b border-gray-200 pb-1">
+                <button
+                  type="button"
+                  onClick={() => setPoolDetailTab('leaderboard')}
+                  className={`rounded-t-lg px-4 py-2 text-sm font-bold transition ${
+                    poolDetailTab === 'leaderboard'
+                      ? 'bg-gray-900 text-white'
+                      : 'text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  Leaderboard
+                </button>
+                {isPoolMember ? (
+                  <button
+                    type="button"
+                    onClick={() => setPoolDetailTab('picks')}
+                    className={`rounded-t-lg px-4 py-2 text-sm font-bold transition ${
+                      poolDetailTab === 'picks'
+                        ? 'bg-gray-900 text-white'
+                        : 'text-gray-700 hover:bg-gray-100'
+                    }`}
+                  >
+                    Pool Picks
+                  </button>
+                ) : (
+                  <span className="rounded-t-lg px-4 py-2 text-sm font-semibold text-gray-400" title="Join this pool to see pool picks">
+                    Pool Picks (members only)
+                  </span>
+                )}
+              </div>
+
               <div className="mt-6">
                 <h3 className="text-sm font-black uppercase tracking-wide text-gray-700">Included groups</h3>
                 {selectedPoolGroups.length === 0 ? (
@@ -626,79 +634,111 @@ function PoolsPageContent() {
                 )}
               </div>
 
-              <div className="mt-6">
-                <h3 className="text-sm font-black uppercase tracking-wide text-gray-700">Leaderboard</h3>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {[
-                    ['total', 'Total points'],
-                    ['margin_total', 'Margin error'],
-                    ['margin_avg', 'Average margin error'],
-                  ].map(([id, label]) => (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => setLeaderMetric(id as LeaderMetric)}
-                      className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
-                        leaderMetric === id ? 'bg-gray-900 text-white' : 'border border-gray-300 text-gray-800'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-
-                {leaderLoading ? (
-                  <p className="mt-3 text-sm text-gray-500">Loading leaderboard…</p>
-                ) : (
-                  <div className="mt-3 space-y-2">
-                    {sortedLeaderRows.map((r, i) => {
-                      const joinedAt = membershipByPool.get(selectedPool.id)?.joined_at
-                      const afterJoin = joinedAt ? new Date(r.joined_at) >= new Date(joinedAt) : true
-                      const metricValue =
-                        leaderMetric === 'total'
-                          ? `${r.total_points.toFixed(1)} pts`
-                          : leaderMetric === 'margin_total'
-                            ? `${r.total_margin_difference} err`
-                            : `${r.average_margin_difference == null ? '—' : r.average_margin_difference.toFixed(2)} avg err`
-                      return (
-                        <div key={r.user_id} className="flex items-center justify-between rounded-xl border border-gray-200 px-3 py-2">
-                          <div className="flex min-w-0 items-center gap-2">
-                            <span className="w-8 text-xs font-bold text-gray-500">#{i + 1}</span>
-                            <LetterAvatar
-                              letter={r.avatar_letter}
-                              colour={r.avatar_colour}
-                              avatarUrl={r.avatar_url}
-                              displayName={r.display_name}
-                              name={r.display_name}
-                              size={28}
-                              className="ring-1 ring-gray-200"
-                            />
-                            <p className="truncate text-sm font-semibold text-gray-900">{r.display_name}</p>
-                            {!afterJoin ? <span className="text-[10px] text-gray-500">Late joiner</span> : null}
-                          </div>
-                          <p className="text-xs font-semibold text-gray-800">{metricValue}</p>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-6">
-                <h3 className="text-sm font-black uppercase tracking-wide text-gray-700">Weekly matches</h3>
-                <p className="mt-1 text-xs text-gray-500">Current week pool matches (featured fallback applies when none selected).</p>
-                {effectiveMatches.length === 0 ? (
-                  <p className="mt-3 text-sm text-gray-500">No pool matches selected yet.</p>
-                ) : (
-                  <div className="mt-3 space-y-2">
-                    {effectiveMatches.map((m) => (
-                      <div key={m.id} className="rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-800">
-                        {teamVs(m)}
+              {poolDetailTab === 'leaderboard' ? (
+                <>
+                  <div className="mt-6">
+                    <h3 className="text-sm font-black uppercase tracking-wide text-gray-700">Leaderboard</h3>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Pool members only, scored on games linked to this pool’s fixture groups.
+                    </p>
+                    {leaderLoading ? (
+                      <p className="mt-3 text-sm text-gray-500">Loading leaderboard…</p>
+                    ) : (
+                      <div className="mt-3 overflow-x-auto rounded-xl border border-gray-200">
+                        <table className="min-w-[640px] w-full text-left text-sm">
+                          <thead>
+                            <tr className="border-b border-gray-100 bg-gray-50 text-xs font-bold uppercase tracking-wide text-gray-600">
+                              <th className="whitespace-nowrap px-3 py-2">Rank</th>
+                              <th className="whitespace-nowrap px-3 py-2">Player</th>
+                              <th className="whitespace-nowrap px-3 py-2">Total pts</th>
+                              <th className="whitespace-nowrap px-3 py-2">Correct winners</th>
+                              <th className="whitespace-nowrap px-3 py-2">Margin pts</th>
+                              <th className="whitespace-nowrap px-3 py-2">Games</th>
+                              <th className="whitespace-nowrap px-3 py-2">Avg margin diff</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sortedLeaderRows.map((r, i) => {
+                              const joinedAt = membershipByPool.get(selectedPool.id)?.joined_at
+                              const afterJoin = joinedAt ? new Date(r.joined_at) >= new Date(joinedAt) : true
+                              const avgMd =
+                                r.average_margin_difference == null
+                                  ? '—'
+                                  : r.average_margin_difference.toFixed(2)
+                              return (
+                                <tr key={r.user_id} className="border-b border-gray-50">
+                                  <td className="whitespace-nowrap px-3 py-2 text-xs font-bold text-gray-500">
+                                    #{i + 1}
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    <div className="flex min-w-0 items-center gap-2">
+                                      <LetterAvatar
+                                        letter={r.avatar_letter}
+                                        colour={r.avatar_colour}
+                                        avatarUrl={r.avatar_url}
+                                        displayName={r.display_name}
+                                        name={r.display_name}
+                                        size={28}
+                                        className="ring-1 ring-gray-200"
+                                      />
+                                      <span className="truncate font-semibold text-gray-900">{r.display_name}</span>
+                                      {!afterJoin ? (
+                                        <span className="text-[10px] text-gray-500">Late joiner</span>
+                                      ) : null}
+                                    </div>
+                                  </td>
+                                  <td className="whitespace-nowrap px-3 py-2 tabular-nums text-gray-900">
+                                    {r.total_points.toFixed(1)}
+                                  </td>
+                                  <td className="whitespace-nowrap px-3 py-2 tabular-nums text-gray-800">
+                                    {r.correct_winners}
+                                  </td>
+                                  <td className="whitespace-nowrap px-3 py-2 tabular-nums text-gray-800">
+                                    {r.margin_points_total.toFixed(1)}
+                                  </td>
+                                  <td className="whitespace-nowrap px-3 py-2 tabular-nums text-gray-800">
+                                    {r.games_predicted}
+                                  </td>
+                                  <td className="whitespace-nowrap px-3 py-2 tabular-nums text-gray-800">{avgMd}</td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
                       </div>
-                    ))}
+                    )}
                   </div>
-                )}
-              </div>
+
+                  <div className="mt-6">
+                    <h3 className="text-sm font-black uppercase tracking-wide text-gray-700">Weekly matches</h3>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Pool fixture scope (prestige fallback when no groups selected).
+                    </p>
+                    {effectiveMatches.length === 0 ? (
+                      <p className="mt-3 text-sm text-gray-500">No pool matches in scope yet.</p>
+                    ) : (
+                      <div className="mt-3 space-y-2">
+                        {effectiveMatches.map((m) => (
+                          <div key={m.id} className="rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-800">
+                            {teamVs(m)}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : isPoolMember && user ? (
+                <PoolPicksSection
+                  supabase={supabase}
+                  poolId={selectedPool.id}
+                  userId={user.id}
+                  isMember={isPoolMember}
+                />
+              ) : (
+                <p className="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  Pool picks are only visible to pool members.
+                </p>
+              )}
 
               {showManagement && isAdmin ? (
                 <div className="mt-6">

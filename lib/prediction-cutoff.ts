@@ -1,5 +1,6 @@
 export type WithKickoffForPredictions = {
   kickoff_time: string
+  prediction_cutoff_time?: string | null
 }
 
 export type MatchPredictionEditGate = WithKickoffForPredictions & {
@@ -16,6 +17,21 @@ export function predictionCutoffPassed(match: WithKickoffForPredictions, at: Dat
   const t = new Date(k).getTime()
   if (Number.isNaN(t)) return false
   return t <= at.getTime()
+}
+
+/** Pool picks / reveal: cutoff passed, or kickoff if no cutoff, or match locked/completed. */
+export function poolMatchPicksGatePassed(
+  match: WithKickoffForPredictions & { status?: string },
+  at: Date = new Date()
+): boolean {
+  const st = match.status
+  if (st === 'locked' || st === 'completed') return true
+  const co = match.prediction_cutoff_time
+  if (co) {
+    const ct = new Date(co).getTime()
+    if (!Number.isNaN(ct) && ct <= at.getTime()) return true
+  }
+  return predictionCutoffPassed(match, at)
 }
 
 /** Closed for predictions: not upcoming, or kickoff has passed (treat as locked for UX). */

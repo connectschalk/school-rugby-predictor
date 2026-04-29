@@ -9,7 +9,13 @@ import {
   fetchSeasonLeaderboard,
   type SeasonLeaderboardRow,
 } from '@/lib/public-prediction-game'
-import { fetchEffectivePoolMatches, fetchMyPools, fetchPoolLeaderboard, type PoolRow } from '@/lib/pools'
+import {
+  fetchEffectivePoolMatches,
+  fetchMyPools,
+  fetchPoolLeaderboard,
+  type PoolLeaderboardRow,
+  type PoolRow,
+} from '@/lib/pools'
 import HowItWorksModal from '@/components/HowItWorksModal'
 import InfoTooltip from '@/components/InfoTooltip'
 import LetterAvatar from '@/components/LetterAvatar'
@@ -153,18 +159,7 @@ export default function UserRankingsPage() {
   const [section, setSection] = useState<RankingSection>('global')
   const [myPools, setMyPools] = useState<PoolRow[]>([])
   const [selectedPoolId, setSelectedPoolId] = useState<string | null>(null)
-  const [poolRows, setPoolRows] = useState<
-    {
-      user_id: string
-      display_name: string
-      avatar_url: string | null
-      avatar_letter: string | null
-      avatar_colour: string | null
-      total_points: number
-      total_margin_difference: number
-      average_margin_difference: number | null
-    }[]
-  >([])
+  const [poolRows, setPoolRows] = useState<PoolLeaderboardRow[]>([])
   const [poolLoading, setPoolLoading] = useState(false)
   const [poolMetric, setPoolMetric] = useState<'total' | 'margin_total' | 'margin_avg'>('margin_avg')
   const [qualification, setQualification] = useState<QualificationFilter>('qualified')

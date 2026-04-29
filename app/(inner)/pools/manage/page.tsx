@@ -13,6 +13,7 @@ import {
   fetchPoolGroups,
   fetchPoolJoinRequests,
   fetchPoolLeaderboard,
+  type PoolLeaderboardRow,
   previewPoolGroups,
   removePoolMember,
   requestJoinPool,
@@ -63,9 +64,7 @@ export default function ManagePoolsPage() {
   const [fixtureGroups, setFixtureGroups] = useState<FixtureGroupRow[]>([])
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([])
   const [createSelectedGroupIds, setCreateSelectedGroupIds] = useState<string[]>([])
-  const [leaderRows, setLeaderRows] = useState<
-    { user_id: string; display_name: string; avatar_url: string | null; avatar_letter: string | null; avatar_colour: string | null }[]
-  >([])
+  const [leaderRows, setLeaderRows] = useState<PoolLeaderboardRow[]>([])
 
   const [createName, setCreateName] = useState('')
   const [createPublic, setCreatePublic] = useState(false)
