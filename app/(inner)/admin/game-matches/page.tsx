@@ -17,7 +17,13 @@ import {
 } from '@/lib/game-matches-featured'
 import { buildTeamAliasResolverMap, insertNewTeamAliasesOnly } from '@/lib/team-aliases-db'
 import { matchPredictionsClosed, matchStartsSoon } from '@/lib/prediction-cutoff'
-import { matchTeamName, type TeamMatchResult, type TeamRow } from '@/lib/team-name-match'
+import {
+  matchTeamName,
+  normalizeTeamKey,
+  normalizeTeamKeyLoose,
+  type TeamMatchResult,
+  type TeamRow,
+} from '@/lib/team-name-match'
 
 function isoToDatetimeLocalInput(iso: string): string {
   const d = new Date(iso)
@@ -66,8 +72,9 @@ type FixturePreviewRow = {
   leagueGroupIsNew: boolean
   prestige: boolean
   status: GameMatchStatus
-  previewAction?: 'create' | 'update' | 'error'
+  previewAction?: 'create' | 'update' | 'possible duplicate' | 'error'
   previewError?: string | null
+  duplicateWarning?: string | null
 }
 
 type GroupCsvParsedRow = {
@@ -431,6 +438,55 @@ export default function AdminGameMatchesPage() {
     return m
   }, [teams])
 
+  const canonicalTeamByStrictKey = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const t of teams) {
+      const k = normalizeTeamKey(t.name)
+      if (k && !m.has(k)) m.set(k, t.name)
+    }
+    return m
+  }, [teams])
+
+  const canonicalTeamByLooseKey = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const t of teams) {
+      const k = normalizeTeamKeyLoose(t.name)
+      if (k && !m.has(k)) m.set(k, t.name)
+    }
+    return m
+  }, [teams])
+
+  const resolveCanonicalTeamForFixture = useCallback(
+    (rawName: string): string => {
+      const raw = rawName.trim()
+      if (!raw) return ''
+      const strict = normalizeTeamKey(raw)
+      const loose = normalizeTeamKeyLoose(raw)
+      const dbAliasHit = teamAliasMap.get(strict) ?? teamAliasMap.get(loose)
+      if (dbAliasHit) return dbAliasHit
+      const strictHit = canonicalTeamByStrictKey.get(strict)
+      if (strictHit) return strictHit
+      const looseHit = canonicalTeamByLooseKey.get(loose)
+      if (looseHit) return looseHit
+      const matched = matchTeamName(raw, teams, teamAliasMap)
+      return matched.matchedTeamName ?? matched.suggestedTeamName ?? raw
+    },
+    [canonicalTeamByLooseKey, canonicalTeamByStrictKey, teamAliasMap, teams]
+  )
+
+  const normaliseTeamForKey = useCallback(
+    (name: string) => resolveCanonicalTeamForFixture(name).trim().toLowerCase(),
+    [resolveCanonicalTeamForFixture]
+  )
+
+  const fixturePairKey = useCallback(
+    (home: string, away: string, kickoffIso: string) => {
+      const teamsPair = [normaliseTeamForKey(home), normaliseTeamForKey(away)].sort()
+      return `${kickoffIso}|${teamsPair[0]}|${teamsPair[1]}`
+    },
+    [normaliseTeamForKey]
+  )
+
   const loadTeamsAndAliases = useCallback(async () => {
     const teamsRes = await supabase.from('teams').select('id, name').order('name', { ascending: true })
     const teamList = (teamsRes.data as TeamRow[]) ?? []
@@ -634,6 +690,34 @@ export default function AdminGameMatchesPage() {
       }
 
       if (useGroupCsv) {
+        const kickoffKeys = [...new Set(rows.map((r) => r.kickoff_time).filter(Boolean))]
+        const existingByKickoff = new Map<string, { id: string; home_team: string; away_team: string }[]>()
+        if (kickoffKeys.length > 0) {
+          const { data: existingAtKickoff, error: existingAtKickoffErr } = await supabase
+            .from('game_matches')
+            .select('id, home_team, away_team, kickoff_time, home_score, away_score')
+            .in('kickoff_time', kickoffKeys)
+          if (existingAtKickoffErr) {
+            setMessage(`Preview duplicate check failed: ${existingAtKickoffErr.message}`)
+            return
+          }
+          for (const m of
+            ((existingAtKickoff as
+              | { id: string; home_team: string; away_team: string; kickoff_time: string }[]
+              | {
+                  id: string
+                  home_team: string
+                  away_team: string
+                  kickoff_time: string
+                  home_score: number | null
+                  away_score: number | null
+                }[]
+              | null) ?? [])) {
+            if (!existingByKickoff.has(m.kickoff_time)) existingByKickoff.set(m.kickoff_time, [])
+            existingByKickoff.get(m.kickoff_time)?.push(m)
+          }
+        }
+
         for (let i = 0; i < rows.length; i += 1) {
           const r = rows[i]
           const home = teamById.get(r.homeTeamId ?? -1)?.name
@@ -642,14 +726,59 @@ export default function AdminGameMatchesPage() {
             rows[i] = { ...r, previewAction: 'error', previewError: 'Missing mapped teams or kickoff.' }
             continue
           }
-          const { data: existing } = await supabase
-            .from('game_matches')
-            .select('id')
-            .eq('home_team', home)
-            .eq('away_team', away)
-            .eq('kickoff_time', r.kickoff_time)
-            .maybeSingle()
-          rows[i] = { ...r, previewAction: existing?.id ? 'update' : 'create', previewError: null }
+          const uploadPairKey = fixturePairKey(home, away, r.kickoff_time)
+
+          const existingMatches = existingByKickoff.get(r.kickoff_time) ?? []
+          const duplicateMatches = existingMatches.filter(
+            (m) => fixturePairKey(m.home_team, m.away_team, r.kickoff_time) === uploadPairKey
+          )
+          const duplicate = duplicateMatches[0]
+          const duplicateWarning =
+            duplicate &&
+            duplicate.home_team.trim().toLowerCase() === away.trim().toLowerCase() &&
+            duplicate.away_team.trim().toLowerCase() === home.trim().toLowerCase()
+              ? 'Possible duplicate: same teams and kickoff already exist with reversed home/away.'
+              : null
+          const multipleExistingDuplicateWarning =
+            duplicateMatches.length > 1
+              ? 'Duplicate fixture exists with reversed home/away. Review in admin before import.'
+              : null
+
+          rows[i] = {
+            ...r,
+            previewAction:
+              duplicateMatches.length > 1 ? 'possible duplicate' : duplicate?.id ? 'update' : 'create',
+            previewError: null,
+            duplicateWarning: multipleExistingDuplicateWarning ?? duplicateWarning,
+          }
+        }
+
+        const rowIdsByPairKey = new Map<string, string[]>()
+        for (const r of rows) {
+          const home = teamById.get(r.homeTeamId ?? -1)?.name
+          const away = teamById.get(r.awayTeamId ?? -1)?.name
+          if (!home || !away || !r.kickoff_time) continue
+          const key = fixturePairKey(home, away, r.kickoff_time)
+          if (!rowIdsByPairKey.has(key)) rowIdsByPairKey.set(key, [])
+          rowIdsByPairKey.get(key)?.push(r.id)
+        }
+        const duplicateRowIds = new Set<string>()
+        for (const [, ids] of rowIdsByPairKey) {
+          if (ids.length <= 1) continue
+          for (const id of ids) duplicateRowIds.add(id)
+        }
+        if (duplicateRowIds.size > 0) {
+          for (let i = 0; i < rows.length; i += 1) {
+            if (!duplicateRowIds.has(rows[i].id)) continue
+            rows[i] = {
+              ...rows[i],
+              confirmedForInsert: false,
+              previewAction: rows[i].previewAction === 'error' ? 'error' : 'possible duplicate',
+              duplicateWarning:
+                rows[i].duplicateWarning ??
+                'Possible duplicate: same teams and kickoff already exist with reversed home/away.',
+            }
+          }
         }
       }
       setPreviewRows(rows)
@@ -806,6 +935,21 @@ async function resolveFixtureGroupForPreview(rawInput: string): Promise<GroupRes
   async function insertConfirmed() {
     setMessage('')
     const insertable = previewRows.filter((r) => canInsertRow(r, teamById))
+    if (importMode === 'group_csv') {
+      const pairCounts = new Map<string, number>()
+      for (const r of insertable) {
+        const home = teamById.get(r.homeTeamId ?? -1)?.name
+        const away = teamById.get(r.awayTeamId ?? -1)?.name
+        if (!home || !away || !r.kickoff_time) continue
+        const key = fixturePairKey(home, away, r.kickoff_time)
+        pairCounts.set(key, (pairCounts.get(key) ?? 0) + 1)
+      }
+      const hasRepeatedConfirmedPair = [...pairCounts.values()].some((n) => n > 1)
+      if (hasRepeatedConfirmedPair) {
+        setMessage('Duplicate preview rows detected for the same kickoff/team pair. Confirm only one row per fixture.')
+        return
+      }
+    }
     const skippedOrErrorCount = previewRows.filter((r) => r.parseError || r.removed || !canInsertRow(r, teamById)).length
     if (insertable.length === 0) {
       setMessage('No confirmed rows to insert. Confirm rows with both teams matched, or fix unknowns.')
@@ -816,6 +960,30 @@ async function resolveFixtureGroupForPreview(rawInput: string): Promise<GroupRes
     let insertedCount = 0
     let updatedCount = 0
     const createdGroups = new Set<string>()
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    const importer = session?.user?.email ?? session?.user?.id ?? 'admin'
+    const sourceType = csvFile ? 'csv' : 'manual'
+    const sourceName = importMode === 'group_csv' ? 'Admin Fixture Upload (group_csv)' : 'Admin Fixture Upload (legacy)'
+    const { data: batchRow, error: batchErr } = await supabase
+      .from('fixture_import_batches')
+      .insert({
+        source_name: sourceName,
+        source_url: null,
+        imported_by: importer,
+        import_status: 'processing',
+        total_rows: insertable.length,
+        notes: `Import mode: ${importMode}`,
+      })
+      .select('id')
+      .single()
+    if (batchErr || !batchRow?.id) {
+      setMessage(`Could not create fixture import batch: ${batchErr?.message ?? 'unknown error'}`)
+      setSubmitting(false)
+      return
+    }
+    const importBatchId = String(batchRow.id)
 
     if (importMode === 'legacy') {
       const shapeErr = validatePreviewFeaturedShape(insertable)
@@ -856,6 +1024,13 @@ async function resolveFixtureGroupForPreview(rawInput: string): Promise<GroupRes
         province_group: null as string | null,
         league_group: null as string | null,
         is_prestige: false,
+        source_name: sourceName,
+        source_url: null as string | null,
+        source_type: sourceType,
+        imported_batch_id: importBatchId,
+        verification_status: 'needs_review' as const,
+        verified_by: null as string | null,
+        verified_at: null as string | null,
       }))
 
       const { data: inserted, error } = await supabase.from('game_matches').insert(rows).select('id')
@@ -871,29 +1046,60 @@ async function resolveFixtureGroupForPreview(rawInput: string): Promise<GroupRes
         const home = teamById.get(r.homeTeamId!)!.name
         const away = teamById.get(r.awayTeamId!)!.name
         const status = r.status ?? 'upcoming'
-
-        const { data: existing, error: existingErr } = await supabase
+        const { data: existingAtKickoff, error: existingErr } = await supabase
           .from('game_matches')
-          .select('id')
-          .eq('home_team', home)
-          .eq('away_team', away)
+          .select('id, home_team, away_team, home_score, away_score')
           .eq('kickoff_time', r.kickoff_time)
-          .maybeSingle()
         if (existingErr) {
           setMessage(`Upsert check failed: ${existingErr.message}`)
           setSubmitting(false)
           return
         }
 
+        const uploadPairKey = fixturePairKey(home, away, r.kickoff_time)
+        const matchingAtKickoff = (
+          ((existingAtKickoff as {
+            id: string
+            home_team: string
+            away_team: string
+            home_score: number | null
+            away_score: number | null
+          }[] | null) ?? [])
+        ).filter((m) => fixturePairKey(m.home_team, m.away_team, r.kickoff_time) === uploadPairKey)
+        const existing = matchingAtKickoff[0]
+        if (matchingAtKickoff.length > 1) {
+          setMessage('Duplicate fixture exists with reversed home/away. Review in admin before import.')
+          setSubmitting(false)
+          return
+        }
+
         let matchId: string
         if (existing?.id) {
+          const existingIsReversed =
+            existing.home_team.trim().toLowerCase() === away.trim().toLowerCase() &&
+            existing.away_team.trim().toLowerCase() === home.trim().toLowerCase()
+          const { count: predictionCount } = await supabase
+            .from('user_predictions')
+            .select('id', { count: 'exact', head: true })
+            .eq('match_id', existing.id)
+          const hasScores = existing.home_score != null || existing.away_score != null
+          const canApplyUploadedOrder = existingIsReversed && ((predictionCount ?? 0) > 0 || !hasScores)
           const { error: updateErr } = await supabase
             .from('game_matches')
             .update({
+              home_team: canApplyUploadedOrder ? home : existing.home_team,
+              away_team: canApplyUploadedOrder ? away : existing.away_team,
               status,
               province_group: r.provinceGroup ?? null,
               league_group: r.leagueGroup ?? null,
               is_prestige: !!r.prestige,
+              source_name: sourceName,
+              source_url: null,
+              source_type: sourceType,
+              imported_batch_id: importBatchId,
+              verification_status: 'needs_review',
+              verified_by: null,
+              verified_at: null,
             })
             .eq('id', existing.id)
           if (updateErr) {
@@ -918,6 +1124,13 @@ async function resolveFixtureGroupForPreview(rawInput: string): Promise<GroupRes
               province_group: r.provinceGroup ?? null,
               league_group: r.leagueGroup ?? null,
               is_prestige: !!r.prestige,
+              source_name: sourceName,
+              source_url: null,
+              source_type: sourceType,
+              imported_batch_id: importBatchId,
+              verification_status: 'needs_review',
+              verified_by: null,
+              verified_at: null,
             })
             .select('id')
             .single()
@@ -1015,6 +1228,19 @@ async function resolveFixtureGroupForPreview(rawInput: string): Promise<GroupRes
     }
     if (skippedOrErrorCount > 0) {
       insertSummary += ` Skipped/error rows: ${skippedOrErrorCount}.`
+    }
+
+    const { error: batchFinalizeErr } = await supabase
+      .from('fixture_import_batches')
+      .update({
+        import_status: 'completed',
+        verified_rows: 0,
+        rejected_rows: 0,
+        notes: `Inserted: ${insertedCount}, updated: ${updatedCount}, skipped/error: ${skippedOrErrorCount}`,
+      })
+      .eq('id', importBatchId)
+    if (batchFinalizeErr) {
+      insertSummary += ` Batch finalize warning: ${batchFinalizeErr.message}`
     }
 
     let emailNote = ''
@@ -1339,6 +1565,9 @@ async function resolveFixtureGroupForPreview(rawInput: string): Promise<GroupRes
           <p className="mt-2 text-xs font-medium text-gray-700">
             Re-uploading the same fixture will update it, not duplicate it.
           </p>
+          <p className="mt-1 text-xs text-gray-600">
+            Fixtures are matched by kickoff and team pair, even if home/away are reversed.
+          </p>
           <textarea
             className="mt-4 w-full min-h-[160px] rounded-lg border border-gray-300 p-3 font-mono text-sm"
             value={bulkText}
@@ -1567,10 +1796,25 @@ async function resolveFixtureGroupForPreview(rawInput: string): Promise<GroupRes
                             <span className="ml-1 text-green-700">· ready</span>
                           )}
                           {importMode === 'group_csv' && r.previewAction ? (
-                            <span className="ml-1 text-blue-700">· {r.previewAction}</span>
+                            <span
+                              className={`ml-1 ${
+                                r.previewAction === 'create'
+                                  ? 'text-emerald-700'
+                                  : r.previewAction === 'update'
+                                    ? 'text-blue-700'
+                                    : r.previewAction === 'possible duplicate'
+                                      ? 'text-amber-700'
+                                      : 'text-red-700'
+                              }`}
+                            >
+                              · {r.previewAction}
+                            </span>
                           ) : null}
                           {importMode === 'group_csv' && r.previewError ? (
                             <span className="ml-1 text-red-700">· {r.previewError}</span>
+                          ) : null}
+                          {importMode === 'group_csv' && r.duplicateWarning ? (
+                            <span className="ml-1 text-amber-700">· {r.duplicateWarning}</span>
                           ) : null}
                         </td>
                         <td className="py-2">

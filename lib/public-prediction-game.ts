@@ -17,6 +17,7 @@ export type GameMatch = {
   province_group?: string | null
   league_group?: string | null
   is_prestige?: boolean
+  verification_status?: 'draft' | 'needs_review' | 'verified' | 'rejected' | null
 }
 
 export type UserPredictionRow = {
@@ -105,9 +106,10 @@ export async function fetchPlayableGameMatches(client: SupabaseClient) {
   const { data, error } = await client
     .from('game_matches')
     .select(
-      'id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at, is_featured, featured_order'
+      'id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at, is_featured, featured_order, verification_status'
     )
-    .in('status', ['upcoming', 'locked'])
+    .eq('status', 'upcoming')
+    .eq('verification_status', 'verified')
 
   const raw = (data as GameMatch[] | null) ?? []
   return { data: sortPlayableMatchesForPredictScore(raw), error }

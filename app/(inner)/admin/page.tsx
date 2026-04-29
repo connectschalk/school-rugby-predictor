@@ -114,6 +114,19 @@ type UsageEvent = {
 
 type SocialFormat = 'square' | 'portrait'
 type StudioTab = 'match' | 'rankings' | 'pva'
+type SyncRunRow = {
+  id: string
+  created_at: string
+  mode: string
+  replace_upcoming: boolean
+  incoming_rows: number
+  inserted_upcoming: number
+  updated_upcoming: number
+  inserted_completed: number
+  updated_completed: number
+  skipped_duplicates: number
+  validation_errors: unknown
+}
 
 export default function AdminPage() {
   const router = useRouter()
@@ -174,6 +187,11 @@ export default function AdminPage() {
   const [activeStudioTab, setActiveStudioTab] = useState<StudioTab>('match')
   const [teamToDeleteId, setTeamToDeleteId] = useState('')
   const [teamDeleteMessage, setTeamDeleteMessage] = useState('')
+  const [syncMasterBusy, setSyncMasterBusy] = useState(false)
+  const [syncMasterMessage, setSyncMasterMessage] = useState('')
+  const [syncMasterReplaceUpcoming, setSyncMasterReplaceUpcoming] = useState(false)
+  const [syncRuns, setSyncRuns] = useState<SyncRunRow[]>([])
+  const [lastSyncAt, setLastSyncAt] = useState<string | null>(null)
 
   const [matchImageForm, setMatchImageForm] = useState({
     homeTeam: '',
@@ -276,6 +294,11 @@ export default function AdminPage() {
   useEffect(() => {
     if (!authChecked) return
     trackEvent('page_view', 'admin')
+  }, [authChecked])
+
+  useEffect(() => {
+    if (!authChecked) return
+    void loadSyncRuns()
   }, [authChecked])
 
   async function loadTeams() {
@@ -452,6 +475,75 @@ export default function AdminPage() {
   async function handleLogout() {
     await supabase.auth.signOut()
     router.push('/login')
+  }
+
+  async function loadSyncRuns() {
+    const { data } = await supabase
+      .from('sync_runs')
+      .select(
+        'id, created_at, mode, replace_upcoming, incoming_rows, inserted_upcoming, updated_upcoming, inserted_completed, updated_completed, skipped_duplicates, validation_errors'
+      )
+      .order('created_at', { ascending: false })
+      .limit(5)
+    const rows = (data as SyncRunRow[] | null) ?? []
+    setSyncRuns(rows)
+    setLastSyncAt(rows[0]?.created_at ?? null)
+  }
+
+  async function runMasterSheetSync(mode: 'preview' | 'run') {
+    setSyncMasterMessage('')
+    setSyncMasterBusy(true)
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    const token = session?.access_token
+    if (!token) {
+      setSyncMasterMessage('Not signed in. Please log in again.')
+      setSyncMasterBusy(false)
+      return
+    }
+
+    const params = new URLSearchParams()
+    if (mode === 'preview') params.set('dry_run', '1')
+    if (syncMasterReplaceUpcoming) params.set('replace_upcoming', '1')
+    const query = params.toString()
+    const res = await fetch(`/api/admin/sync-master-sheet${query ? `?${query}` : ''}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const json = (await res.json()) as {
+      ok?: boolean
+      error?: string
+      mode?: string
+      incoming_rows?: number
+      would_insert_upcoming?: number
+      would_update_upcoming?: number
+      would_insert_completed?: number
+      would_update_completed?: number
+      inserted_upcoming?: number
+      updated_upcoming?: number
+      inserted_completed?: number
+      updated_completed?: number
+      skipped_duplicates?: number
+      validation_errors?: string[]
+    }
+    if (!res.ok || !json.ok) {
+      setSyncMasterMessage(`Sync failed: ${json.error ?? res.statusText}`)
+      setSyncMasterBusy(false)
+      return
+    }
+    const warnings = json.validation_errors?.length ?? 0
+    if (json.mode === 'dry_run' || mode === 'preview') {
+      setSyncMasterMessage(
+        `Preview: incoming ${json.incoming_rows ?? 0}, upcoming insert/update ${json.would_insert_upcoming ?? 0}/${json.would_update_upcoming ?? 0}, completed insert/update ${json.would_insert_completed ?? 0}/${json.would_update_completed ?? 0}, duplicates skipped ${json.skipped_duplicates ?? 0}, validation warnings ${warnings}.`
+      )
+    } else {
+      setSyncMasterMessage(
+        `Sync complete: incoming ${json.incoming_rows ?? 0}, upcoming inserted/updated ${json.inserted_upcoming ?? 0}/${json.updated_upcoming ?? 0}, completed inserted/updated ${json.inserted_completed ?? 0}/${json.updated_completed ?? 0}, duplicates skipped ${json.skipped_duplicates ?? 0}, validation warnings ${warnings}.`
+      )
+    }
+    await loadSyncRuns()
+    setSyncMasterBusy(false)
   }
 
   async function handleAddSchool(e: React.FormEvent) {
@@ -1849,6 +1941,34 @@ export default function AdminPage() {
                   Fixture management
                 </Link>
                 <Link
+                  href="/admin/fixture-review"
+                  className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-100"
+                >
+                  Fixture review
+                </Link>
+                <Link
+                  href="/admin/fixture-master"
+                  className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-100"
+                >
+                  Fixture Master Sheet
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => void runMasterSheetSync('preview')}
+                  disabled={syncMasterBusy}
+                  className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-100 disabled:opacity-50"
+                >
+                  {syncMasterBusy ? 'Running...' : 'Preview Master Sheet Sync'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void runMasterSheetSync('run')}
+                  disabled={syncMasterBusy}
+                  className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-100 disabled:opacity-50"
+                >
+                  {syncMasterBusy ? 'Running...' : 'Run Master Sheet Sync'}
+                </button>
+                <Link
                   href="/admin/global-pools"
                   className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-100"
                 >
@@ -1867,6 +1987,56 @@ export default function AdminPage() {
                   Pools admin
                 </Link>
               </div>
+              <label className="mt-3 inline-flex items-center gap-2 text-xs text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={syncMasterReplaceUpcoming}
+                  onChange={(e) => setSyncMasterReplaceUpcoming(e.target.checked)}
+                />
+                Replace existing upcoming fixtures (reject previous upcoming rows)
+              </label>
+              {syncMasterMessage ? (
+                <p className="mt-3 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs text-gray-700">
+                  {syncMasterMessage}
+                </p>
+              ) : null}
+              <p className="mt-2 text-xs text-gray-600">
+                Last sync: {lastSyncAt ? new Date(lastSyncAt).toLocaleString() : '—'}
+              </p>
+              {syncRuns.length > 0 ? (
+                <div className="mt-3 overflow-x-auto rounded-lg border border-gray-200 bg-white">
+                  <table className="w-full min-w-[740px] border-collapse text-left text-[11px]">
+                    <thead className="bg-gray-50 text-gray-600">
+                      <tr>
+                        <th className="px-2 py-1.5">When</th>
+                        <th className="px-2 py-1.5">Mode</th>
+                        <th className="px-2 py-1.5">Replace</th>
+                        <th className="px-2 py-1.5">Incoming</th>
+                        <th className="px-2 py-1.5">Up (ins/upd)</th>
+                        <th className="px-2 py-1.5">Comp (ins/upd)</th>
+                        <th className="px-2 py-1.5">Dupes</th>
+                        <th className="px-2 py-1.5">Warnings</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {syncRuns.map((run) => (
+                        <tr key={run.id} className="border-t border-gray-100">
+                          <td className="px-2 py-1.5 text-gray-700">{new Date(run.created_at).toLocaleString()}</td>
+                          <td className="px-2 py-1.5 text-gray-700">{run.mode}</td>
+                          <td className="px-2 py-1.5 text-gray-700">{run.replace_upcoming ? 'yes' : 'no'}</td>
+                          <td className="px-2 py-1.5 text-gray-700">{run.incoming_rows}</td>
+                          <td className="px-2 py-1.5 text-gray-700">{run.inserted_upcoming}/{run.updated_upcoming}</td>
+                          <td className="px-2 py-1.5 text-gray-700">{run.inserted_completed}/{run.updated_completed}</td>
+                          <td className="px-2 py-1.5 text-gray-700">{run.skipped_duplicates}</td>
+                          <td className="px-2 py-1.5 text-gray-700">
+                            {Array.isArray(run.validation_errors) ? run.validation_errors.length : 0}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
             </div>
             <div className="rounded-2xl border border-gray-200 bg-gray-50/80 p-6 shadow-sm">
               <h3 className="text-xl font-semibold text-gray-900">Tools Hub</h3>
