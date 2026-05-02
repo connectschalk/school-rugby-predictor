@@ -34,6 +34,10 @@ type SyncSummary = {
   would_reject_old_upcoming: number
   would_insert_completed: number
   would_update_completed: number
+  /** Same as would_insert_completed — completed sheet rows → new game_matches */
+  would_insert_completed_game_matches: number
+  /** Same as would_update_completed — completed sheet rows → update existing game_matches */
+  would_update_completed_game_matches: number
   inserted_upcoming: number
   updated_upcoming: number
   reactivated_upcoming: number
@@ -294,6 +298,8 @@ export async function POST(request: Request) {
       would_reject_old_upcoming: 0,
       would_insert_completed: 0,
       would_update_completed: 0,
+      would_insert_completed_game_matches: 0,
+      would_update_completed_game_matches: 0,
       inserted_upcoming: 0,
       updated_upcoming: 0,
       reactivated_upcoming: 0,
@@ -405,6 +411,12 @@ export async function POST(request: Request) {
     if (count > 1) errors.push(`Warning: same team appears multiple times on same date (${teamDate})`)
   }
 
+  const sheetCompletedPairKeys = new Set(
+    normalized
+      .filter((r) => r.status === 'completed')
+      .map((r) => `${r.match_date}|${orderedPairKey(r.home_team, r.away_team)}`)
+  )
+
   const { data: teamsData, error: teamsErr } = await supabase.from('teams').select('id, name')
   const { data: aliasData } = await supabase.from('team_aliases').select('*')
   if (teamsErr) {
@@ -429,19 +441,26 @@ export async function POST(request: Request) {
     aliasToGroupId.set(row.alias.trim().toLowerCase(), row.group_id)
   }
 
+  /** All statuses (incl. rejected/locked/cancelled/draft) — unique pair + SAST calendar day identifies one row */
   const { data: existingGameMatchesData, error: existingGameMatchesErr } = await supabase
     .from('game_matches')
     .select('id, kickoff_time, home_team, away_team, status, verification_status, admin_notes')
-    .in('status', ['upcoming', 'completed', 'rejected', 'locked', 'cancelled'])
   if (existingGameMatchesErr) {
     return NextResponse.json({ ok: false, error: `Could not load existing game matches: ${existingGameMatchesErr.message}` }, { status: 500 })
   }
 
-  const existingUpcomingByDatePair = new Map<
-    string,
-    { id: string; home_team: string; away_team: string; status: string; verification_status: string | null; admin_notes: string | null }
-  >()
-  const existingCompletedByDatePair = new Map<string, { id: string; home_team: string; away_team: string }>()
+  type ExistingGm = {
+    id: string
+    kickoff_time: string
+    home_team: string
+    away_team: string
+    status: string
+    verification_status: string | null
+    admin_notes: string | null
+  }
+
+  /** Key: SAST date (YYYY-MM-DD) | unordered normalized home/away pair */
+  const existingGameMatchByPairOnDate = new Map<string, ExistingGm>()
   const existingCurrentUpcomingIdsByKey = new Map<string, string>()
   for (const row of
     ((existingGameMatchesData as
@@ -456,28 +475,22 @@ export async function POST(request: Request) {
         }[]
       | null) ?? [])) {
     const key = `${dateInSastFromIso(row.kickoff_time)}|${orderedPairKey(row.home_team, row.away_team)}`
+    existingGameMatchByPairOnDate.set(key, {
+      id: row.id,
+      kickoff_time: row.kickoff_time,
+      home_team: row.home_team,
+      away_team: row.away_team,
+      status: row.status,
+      verification_status: row.verification_status,
+      admin_notes: row.admin_notes,
+    })
     if (row.status === 'upcoming') {
       existingCurrentUpcomingIdsByKey.set(key, row.id)
     }
-    if (row.status !== 'completed') {
-      if (!existingUpcomingByDatePair.has(key) || row.status === 'upcoming') {
-        existingUpcomingByDatePair.set(key, {
-          id: row.id,
-          home_team: row.home_team,
-          away_team: row.away_team,
-          status: row.status,
-          verification_status: row.verification_status,
-          admin_notes: row.admin_notes,
-        })
-      }
-    } else if (row.status === 'completed') {
-      existingCompletedByDatePair.set(key, {
-        id: row.id,
-        home_team: row.home_team,
-        away_team: row.away_team,
-      })
-    }
   }
+
+  /** Replace-mode baseline: upcoming rows present before this sync (do not mutate during run). */
+  const snapshotUpcomingKeyToId = new Map(existingCurrentUpcomingIdsByKey)
 
   const completedDates = [...new Set(normalized.filter((r) => r.status === 'completed').map((r) => r.match_date))]
   const existingMatchesByDate = new Map<string, Array<{ id: number; team_a_id: number; team_b_id: number }>>()
@@ -513,9 +526,9 @@ export async function POST(request: Request) {
         group_link_warnings += 1
         errors.push(`Warning: no fixture group found for "${resolved.sourceValue}" (${row.home_team} vs ${row.away_team})`)
       }
-      const existing = existingUpcomingByDatePair.get(pairOnDate)
-      if (existing) {
-        if (existing.status === 'rejected' || existing.verification_status === 'rejected') {
+      const existingGm = existingGameMatchByPairOnDate.get(pairOnDate)
+      if (existingGm) {
+        if (existingGm.status === 'rejected' || existingGm.verification_status === 'rejected') {
           would_reactivate_upcoming += 1
         } else {
           would_update_upcoming += 1
@@ -540,22 +553,16 @@ export async function POST(request: Request) {
       errors.push(`Completed row missing score (${row.home_team} vs ${row.away_team})`)
       continue
     }
-    const existingForDate = existingMatchesByDate.get(row.match_date) ?? []
-    const hasMatchRow = existingForDate.some((m) => {
-      const a = m.team_a_id
-      const b = m.team_b_id
-      return (
-        (a === homeMatch.matchedTeamId && b === awayMatch.matchedTeamId) ||
-        (a === awayMatch.matchedTeamId && b === homeMatch.matchedTeamId)
-      )
-    })
-    if (hasMatchRow) would_update_completed += 1
+    const existingGmForCompleted = existingGameMatchByPairOnDate.get(pairOnDate)
+    if (existingGmForCompleted) would_update_completed += 1
     else would_insert_completed += 1
   }
 
   if (replaceUpcoming) {
-    for (const key of existingCurrentUpcomingIdsByKey.keys()) {
-      if (!sheetUpcomingKeys.has(key)) would_reject_old_upcoming += 1
+    for (const key of snapshotUpcomingKeyToId.keys()) {
+      if (sheetUpcomingKeys.has(key)) continue
+      if (sheetCompletedPairKeys.has(key)) continue
+      would_reject_old_upcoming += 1
     }
   }
 
@@ -571,9 +578,9 @@ export async function POST(request: Request) {
         nameToGroupId,
         slugToGroupId
       )
-      const existingUpcoming = existingUpcomingByDatePair.get(pairOnDate)
+      const existingGmUp = existingGameMatchByPairOnDate.get(pairOnDate)
       let touchedMatchId: string | null = null
-      if (existingUpcoming?.id) {
+      if (existingGmUp?.id) {
         const { error } = await supabase
           .from('game_matches')
           .update({
@@ -590,16 +597,25 @@ export async function POST(request: Request) {
             source_type: 'google_sheet_master',
             rejected_reason: null,
           })
-          .eq('id', existingUpcoming.id)
+          .eq('id', existingGmUp.id)
         if (error) {
           upcomingUpsertFailed = true
-          errors.push(`Upcoming update failed (${row.home_team} vs ${row.away_team}): ${error.message}`)
-        } else if (existingUpcoming.status === 'rejected' || existingUpcoming.verification_status === 'rejected') {
-          reactivated_upcoming += 1
-          touchedMatchId = existingUpcoming.id
+          errors.push(`Upcoming game_matches update failed (${row.home_team} vs ${row.away_team}): ${error.message}`)
         } else {
-          updated_upcoming += 1
-          touchedMatchId = existingUpcoming.id
+          existingGameMatchByPairOnDate.set(pairOnDate, {
+            ...existingGmUp,
+            kickoff_time: row.kickoff_time,
+            home_team: row.home_team,
+            away_team: row.away_team,
+            status: 'upcoming',
+            verification_status: 'verified',
+          })
+          if (existingGmUp.status === 'rejected' || existingGmUp.verification_status === 'rejected') {
+            reactivated_upcoming += 1
+          } else {
+            updated_upcoming += 1
+          }
+          touchedMatchId = existingGmUp.id
         }
       } else {
         const { data: insertedRow, error } = await supabase.from('game_matches').insert({
@@ -617,10 +633,23 @@ export async function POST(request: Request) {
         }).select('id').single()
         if (error) {
           upcomingUpsertFailed = true
-          errors.push(`Upcoming insert failed (${row.home_team} vs ${row.away_team}): ${error.message}`)
+          errors.push(`Upcoming game_matches insert failed (${row.home_team} vs ${row.away_team}): ${error.message}`)
         } else {
           inserted_upcoming += 1
-          touchedMatchId = String(insertedRow?.id ?? '')
+          const newId = String(insertedRow?.id ?? '')
+          touchedMatchId = newId
+          if (newId) {
+            existingGameMatchByPairOnDate.set(pairOnDate, {
+              id: newId,
+              kickoff_time: row.kickoff_time,
+              home_team: row.home_team,
+              away_team: row.away_team,
+              status: 'upcoming',
+              verification_status: 'verified',
+              admin_notes: null,
+            })
+            existingCurrentUpcomingIdsByKey.set(pairOnDate, newId)
+          }
         }
       }
 
@@ -715,12 +744,13 @@ export async function POST(request: Request) {
       }
     }
 
-    const existingGameMatch = existingCompletedByDatePair.get(pairOnDate) ?? null
+    const existingGmCompleted = existingGameMatchByPairOnDate.get(pairOnDate) ?? null
 
-    if (existingGameMatch) {
+    if (existingGmCompleted) {
       const { error: gmUpdateErr } = await supabase
         .from('game_matches')
         .update({
+          kickoff_time: row.kickoff_time,
           home_team: row.home_team,
           away_team: row.away_team,
           status: 'completed',
@@ -730,51 +760,76 @@ export async function POST(request: Request) {
           province_group: row.province_group || null,
           league_group: row.league_group || null,
           is_prestige: row.is_prestige,
+          rejected_reason: null,
           source_name: row.source || 'Google Fixture Master',
           source_url: csvUrl,
           source_type: 'google_sheet_master',
         })
-        .eq('id', existingGameMatch.id)
+        .eq('id', existingGmCompleted.id)
       if (gmUpdateErr) {
         errors.push(`Completed game_matches update failed (${row.home_team} vs ${row.away_team}): ${gmUpdateErr.message}`)
       } else {
         updated_completed += 1
+        existingGameMatchByPairOnDate.set(pairOnDate, {
+          ...existingGmCompleted,
+          kickoff_time: row.kickoff_time,
+          home_team: row.home_team,
+          away_team: row.away_team,
+          status: 'completed',
+          verification_status: 'verified',
+        })
+        existingCurrentUpcomingIdsByKey.delete(pairOnDate)
       }
     } else {
-      const { error: gmInsertErr } = await supabase.from('game_matches').insert({
-        home_team: row.home_team,
-        away_team: row.away_team,
-        kickoff_time: row.kickoff_time,
-        status: 'completed',
-        home_score: row.home_score,
-        away_score: row.away_score,
-        verification_status: 'verified',
-        province_group: row.province_group || null,
-        league_group: row.league_group || null,
-        is_prestige: row.is_prestige,
-        source_name: row.source || 'Google Fixture Master',
-        source_url: csvUrl,
-        source_type: 'google_sheet_master',
-      })
+      const { data: insertedGm, error: gmInsertErr } = await supabase
+        .from('game_matches')
+        .insert({
+          home_team: row.home_team,
+          away_team: row.away_team,
+          kickoff_time: row.kickoff_time,
+          status: 'completed',
+          home_score: row.home_score,
+          away_score: row.away_score,
+          verification_status: 'verified',
+          province_group: row.province_group || null,
+          league_group: row.league_group || null,
+          is_prestige: row.is_prestige,
+          rejected_reason: null,
+          source_name: row.source || 'Google Fixture Master',
+          source_url: csvUrl,
+          source_type: 'google_sheet_master',
+        })
+        .select('id')
+        .single()
       if (gmInsertErr) {
         errors.push(`Completed game_matches insert failed (${row.home_team} vs ${row.away_team}): ${gmInsertErr.message}`)
       } else {
         inserted_completed += 1
-        existingCompletedByDatePair.set(pairOnDate, {
-          id: '',
-          home_team: row.home_team,
-          away_team: row.away_team,
-        })
+        const newGmId = String(insertedGm?.id ?? '')
+        if (newGmId) {
+          existingGameMatchByPairOnDate.set(pairOnDate, {
+            id: newGmId,
+            kickoff_time: row.kickoff_time,
+            home_team: row.home_team,
+            away_team: row.away_team,
+            status: 'completed',
+            verification_status: 'verified',
+            admin_notes: null,
+          })
+        }
+        existingCurrentUpcomingIdsByKey.delete(pairOnDate)
       }
     }
   }
 
   if (replaceUpcoming && !upcomingUpsertFailed) {
     const note = 'Replaced by Google Sheet master sync'
-    for (const [key, id] of existingCurrentUpcomingIdsByKey.entries()) {
+    for (const [key] of snapshotUpcomingKeyToId.entries()) {
       if (sheetUpcomingKeys.has(key)) continue
-      const existing = existingUpcomingByDatePair.get(key)
-      const combinedNotes = [existing?.admin_notes?.trim(), note].filter(Boolean).join(' | ')
+      if (sheetCompletedPairKeys.has(key)) continue
+      const current = existingGameMatchByPairOnDate.get(key)
+      if (!current || current.status !== 'upcoming') continue
+      const combinedNotes = [current.admin_notes?.trim(), note].filter(Boolean).join(' | ')
       const { error: rejectErr } = await supabase
         .from('game_matches')
         .update({
@@ -782,9 +837,9 @@ export async function POST(request: Request) {
           rejected_reason: note,
           admin_notes: combinedNotes || null,
         })
-        .eq('id', id)
+        .eq('id', current.id)
       if (rejectErr) {
-        errors.push(`Could not reject existing upcoming fixture ${id}: ${rejectErr.message}`)
+        errors.push(`Could not reject existing upcoming fixture ${current.id}: ${rejectErr.message}`)
       } else {
         rejected_old_upcoming += 1
       }
@@ -804,6 +859,8 @@ export async function POST(request: Request) {
     would_reject_old_upcoming,
     would_insert_completed,
     would_update_completed,
+    would_insert_completed_game_matches: would_insert_completed,
+    would_update_completed_game_matches: would_update_completed,
     inserted_upcoming,
     updated_upcoming,
     reactivated_upcoming,
