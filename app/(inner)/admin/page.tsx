@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -206,6 +206,8 @@ export default function AdminPage() {
   const [latestMasterSyncWarnings, setLatestMasterSyncWarnings] = useState<SyncWarningItem[]>([])
   const [masterSyncPanelEpoch, setMasterSyncPanelEpoch] = useState(0)
   const [syncRunDetailId, setSyncRunDetailId] = useState<string | null>(null)
+  const [upcomingFixtureCount, setUpcomingFixtureCount] = useState<number | null>(null)
+  const masterSyncWarningsRef = useRef<HTMLDivElement | null>(null)
 
   const [matchImageForm, setMatchImageForm] = useState({
     homeTeam: '',
@@ -504,6 +506,20 @@ export default function AdminPage() {
     setLastSyncAt(rows[0]?.created_at ?? null)
   }
 
+  const refreshUpcomingFixtureCount = useCallback(async () => {
+    const { count, error } = await supabase
+      .from('game_matches')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'upcoming')
+    if (!error && count != null) setUpcomingFixtureCount(count)
+    else setUpcomingFixtureCount(null)
+  }, [])
+
+  useEffect(() => {
+    if (!authChecked) return
+    void refreshUpcomingFixtureCount()
+  }, [authChecked, refreshUpcomingFixtureCount])
+
   async function runMasterSheetSync(mode: 'preview' | 'run') {
     setSyncMasterMessage('')
     setSyncMasterBusy(true)
@@ -559,6 +575,7 @@ export default function AdminPage() {
           : `Master sheet sync finished with ${items.length} message${items.length === 1 ? '' : 's'} (see panel below).`
       )
       await loadSyncRuns()
+      void refreshUpcomingFixtureCount()
       setSyncMasterBusy(false)
       return
     }
@@ -574,6 +591,7 @@ export default function AdminPage() {
       )
     }
     await loadSyncRuns()
+    void refreshUpcomingFixtureCount()
     setSyncMasterBusy(false)
   }
 
@@ -1917,6 +1935,28 @@ export default function AdminPage() {
     }
   }, [usageEvents])
 
+  const effectiveSyncWarnings = useMemo(() => {
+    if (latestMasterSyncWarnings.length > 0) return latestMasterSyncWarnings
+    return masterSyncWarningsFromRun(syncRuns[0])
+  }, [latestMasterSyncWarnings, syncRuns])
+
+  const dashboardWarningCount = useMemo(
+    () => effectiveSyncWarnings.filter((w) => w.severity === 'warning').length,
+    [effectiveSyncWarnings]
+  )
+  const dashboardErrorCount = useMemo(
+    () => effectiveSyncWarnings.filter((w) => w.severity === 'error').length,
+    [effectiveSyncWarnings]
+  )
+
+  const lastSyncRun = syncRuns[0]
+  const lastSyncSummaryLine = lastSyncRun
+    ? `${new Date(lastSyncRun.created_at).toLocaleString()} · ${lastSyncRun.mode === 'dry_run' ? 'Preview' : 'Run'}`
+    : 'No sync logged yet'
+
+  const masterSheetOpenUrl =
+    typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_GOOGLE_FIXTURE_MASTER_SHEET_URL ?? null : null
+
   function formatDetails(details: Record<string, any> | null) {
     if (!details || Object.keys(details).length === 0) return '-'
     const text = JSON.stringify(details)
@@ -1935,160 +1975,269 @@ export default function AdminPage() {
 
   return (
     <main className="min-h-screen bg-white text-black">
-      <div className="mx-auto max-w-6xl px-6 py-12">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      <div className="mx-auto max-w-6xl px-4 py-8 md:px-6 md:py-10">
+        <header className="flex flex-col gap-4 border-b border-gray-100 pb-8 md:flex-row md:items-start md:justify-between">
           <div>
-            <h1 className="text-3xl font-bold">Admin</h1>
-            <p className="mt-2 text-gray-600">Logged in as {adminEmail}</p>
+            <h1 className="text-2xl font-bold tracking-tight text-gray-900 md:text-3xl">Admin Dashboard</h1>
+            <p className="mt-1 text-sm text-gray-600 md:text-base">
+              Manage fixtures, sync data, pools and system settings.
+            </p>
+            <p className="mt-2 text-xs text-gray-500">Signed in as {adminEmail}</p>
           </div>
-
           <button
+            type="button"
             onClick={handleLogout}
-            className="rounded-xl border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+            className="shrink-0 self-start rounded-xl border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
           >
             Log out
           </button>
+        </header>
+
+        <div className="mt-6 flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center rounded-full bg-gray-900 px-4 py-2 text-sm font-semibold text-white">
+            Admin
+          </span>
+          <Link
+            href="/tools"
+            className="inline-flex items-center rounded-full border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-900 transition hover:bg-gray-50"
+          >
+            Tools Hub
+          </Link>
         </div>
 
-        <p className="mt-4 text-gray-600">
-          Fixture management, pools, master sheet sync, and related admin operations.
-        </p>
-
-        <section className="mt-10" aria-labelledby="admin-sections-heading">
-          <h2
-            id="admin-sections-heading"
-            className="mx-auto max-w-2xl text-center text-lg font-semibold text-gray-900"
+        <div className="mt-8 grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="rounded-2xl border border-blue-200 bg-blue-50/80 p-4 shadow-sm">
+            <div className="flex items-center gap-2 text-blue-800">
+              <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5a2.25 2.25 0 002.25-2.25m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5a2.25 2.25 0 012.25 2.25m-18 0V12" />
+              </svg>
+              <span className="text-xs font-semibold uppercase tracking-wide">Upcoming</span>
+            </div>
+            <p className="mt-2 text-2xl font-bold tabular-nums text-gray-900">
+              {upcomingFixtureCount == null ? '—' : upcomingFixtureCount}
+            </p>
+            <p className="mt-0.5 text-[11px] text-blue-900/80">Fixtures in sheet / DB</p>
+          </div>
+          <div
+            className={`rounded-2xl border p-4 shadow-sm ${
+              dashboardErrorCount > 0
+                ? 'border-red-200 bg-red-50/70'
+                : dashboardWarningCount > 0
+                  ? 'border-amber-200 bg-amber-50/70'
+                  : lastSyncRun
+                    ? 'border-emerald-200 bg-emerald-50/80'
+                    : 'border-gray-200 bg-gray-50/90'
+            }`}
           >
-            Admin sections
+            <div
+              className={`flex items-center gap-2 ${
+                dashboardErrorCount > 0
+                  ? 'text-red-800'
+                  : dashboardWarningCount > 0
+                    ? 'text-amber-800'
+                    : 'text-emerald-800'
+              }`}
+            >
+              <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="text-xs font-semibold uppercase tracking-wide">Last sync</span>
+            </div>
+            <p className="mt-2 line-clamp-2 text-xs font-medium text-gray-900">{lastSyncSummaryLine}</p>
+            <p className="mt-1 text-[11px] text-gray-600">
+              {dashboardErrorCount > 0
+                ? 'Errors present — review before run'
+                : dashboardWarningCount > 0
+                  ? 'Warnings to review'
+                  : lastSyncRun
+                    ? 'Latest run logged'
+                    : 'Run preview to populate'}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4 shadow-sm">
+            <div className="flex items-center gap-2 text-amber-900">
+              <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+              </svg>
+              <span className="text-xs font-semibold uppercase tracking-wide">Warnings</span>
+            </div>
+            <p className="mt-2 text-2xl font-bold tabular-nums text-gray-900">{dashboardWarningCount}</p>
+            <p className="mt-0.5 text-[11px] text-amber-900/80">From latest preview or run</p>
+          </div>
+          <div className="rounded-2xl border border-red-200 bg-red-50/80 p-4 shadow-sm">
+            <div className="flex items-center gap-2 text-red-800">
+              <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+              </svg>
+              <span className="text-xs font-semibold uppercase tracking-wide">Errors</span>
+            </div>
+            <p className="mt-2 text-2xl font-bold tabular-nums text-gray-900">{dashboardErrorCount}</p>
+            <p className="mt-0.5 text-[11px] text-red-900/80">Blocking or failed steps</p>
+          </div>
+        </div>
+
+        <section className="mt-10" aria-labelledby="fixtures-heading">
+          <h2 id="fixtures-heading" className="text-sm font-bold uppercase tracking-wide text-gray-400">
+            1 · Manage fixtures
           </h2>
-          <div className="mx-auto mt-5 max-w-2xl w-full">
-            <div className="rounded-2xl border border-gray-200 bg-gray-50/80 p-6 shadow-sm">
-              <h3 className="text-xl font-semibold text-gray-900">Admin</h3>
-              <p className="mt-2 text-sm text-gray-600">
-                Upload/manage fixtures, pool admin workflows, score/result controls, cancellation handling, featured
-                and prestige setup, and fixture group fields.
-              </p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Link
-                  href="/admin/game-matches"
-                  className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-100"
+          <div className="mt-3 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm md:p-6">
+            <p className="text-sm text-gray-600">
+              Update the Google Sheet or use in-app tools to align fixtures before syncing.
+            </p>
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+              {masterSheetOpenUrl ? (
+                <a
+                  href={masterSheetOpenUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-900 hover:bg-gray-50"
                 >
-                  Fixture management
-                </Link>
-                <Link
-                  href="/admin/fixture-review"
-                  className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-100"
-                >
-                  Fixture review
-                </Link>
+                  Open Fixture Master Sheet (Google)
+                </a>
+              ) : (
                 <Link
                   href="/admin/fixture-master"
-                  className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-100"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-900 hover:bg-gray-50"
                 >
-                  Fixture Master Sheet
+                  Fixture Master Sheet (app)
                 </Link>
-                <button
-                  type="button"
-                  onClick={() => void runMasterSheetSync('preview')}
-                  disabled={syncMasterBusy}
-                  className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-100 disabled:opacity-50"
-                >
-                  {syncMasterBusy ? 'Running...' : 'Preview Master Sheet Sync'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void runMasterSheetSync('run')}
-                  disabled={syncMasterBusy}
-                  className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-100 disabled:opacity-50"
-                >
-                  {syncMasterBusy ? 'Running...' : 'Run Master Sheet Sync'}
-                </button>
-                <Link
-                  href="/admin/global-pools"
-                  className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-100"
-                >
-                  Global pools management
-                </Link>
-                <Link
-                  href="/admin/fixture-groups"
-                  className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-100"
-                >
-                  Fixture groups / leagues
-                </Link>
-                <Link
-                  href="/pools/manage"
-                  className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-100"
-                >
-                  Pools admin
-                </Link>
-              </div>
-              <label className="mt-3 inline-flex items-center gap-2 text-xs text-gray-700">
-                <input
-                  type="checkbox"
-                  checked={syncMasterReplaceUpcoming}
-                  onChange={(e) => setSyncMasterReplaceUpcoming(e.target.checked)}
-                />
-                Replace existing upcoming fixtures (reject previous upcoming rows)
-              </label>
-              {syncMasterMessage ? (
-                <p className="mt-3 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs text-gray-700">
-                  {syncMasterMessage}
-                </p>
-              ) : null}
+              )}
+              <Link
+                href="/admin/game-matches"
+                className="inline-flex items-center justify-center rounded-xl border border-gray-900 bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-black"
+              >
+                Fixture management
+              </Link>
+              <Link
+                href="/admin/fixture-review"
+                className="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-900 hover:bg-gray-50"
+              >
+                Fixture review
+              </Link>
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-10" aria-labelledby="sync-heading">
+          <h2 id="sync-heading" className="text-sm font-bold uppercase tracking-wide text-gray-400">
+            2–4 · Validate &amp; sync
+          </h2>
+          <div className="mt-3 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm md:p-6">
+            <ol className="list-decimal space-y-1 pl-5 text-sm text-gray-600">
+              <li>Update the master sheet or fixture data.</li>
+              <li>
+                <strong className="text-gray-900">Preview</strong> sync — check counts and messages.
+              </li>
+              <li>
+                Open <strong className="text-gray-900">Errors &amp; warnings</strong> and fix the sheet if needed.
+              </li>
+              <li>
+                <strong className="text-gray-900">Run</strong> sync when ready (optional: replace upcoming).
+              </li>
+            </ol>
+            <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+              <button
+                type="button"
+                onClick={() => void runMasterSheetSync('preview')}
+                disabled={syncMasterBusy}
+                className="inline-flex items-center justify-center rounded-xl bg-gray-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-black disabled:opacity-50"
+              >
+                {syncMasterBusy ? 'Running…' : 'Preview Master Sheet Sync'}
+              </button>
+              <button
+                type="button"
+                onClick={() => masterSyncWarningsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-5 py-2.5 text-sm font-semibold text-amber-950 hover:bg-amber-100"
+              >
+                View errors &amp; warnings
+                {effectiveSyncWarnings.length > 0 ? (
+                  <span className="rounded-full bg-amber-600 px-2 py-0.5 text-xs font-bold text-white">
+                    {effectiveSyncWarnings.length}
+                  </span>
+                ) : null}
+              </button>
+              <button
+                type="button"
+                onClick={() => void runMasterSheetSync('run')}
+                disabled={syncMasterBusy}
+                className="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+              >
+                {syncMasterBusy ? 'Running…' : 'Run Master Sheet Sync'}
+              </button>
+            </div>
+            <label className="mt-4 flex cursor-pointer items-start gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={syncMasterReplaceUpcoming}
+                onChange={(e) => setSyncMasterReplaceUpcoming(e.target.checked)}
+              />
+              <span>Replace existing upcoming fixtures (reject previous upcoming rows)</span>
+            </label>
+            {syncMasterMessage ? (
+              <p className="mt-4 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800">
+                {syncMasterMessage}
+              </p>
+            ) : null}
+            <div ref={masterSyncWarningsRef} id="master-sync-warnings" className="mt-4 scroll-mt-24">
               <MasterSheetSyncWarningsPanel
                 key={`master-sync-${masterSyncPanelEpoch}`}
-                items={latestMasterSyncWarnings}
-                defaultOpen={latestMasterSyncWarnings.length > 0}
+                items={effectiveSyncWarnings}
+                defaultOpen={effectiveSyncWarnings.length > 0}
                 title="Warnings / errors (latest run)"
               />
-              <p className="mt-2 text-xs text-gray-600">
-                Last sync: {lastSyncAt ? new Date(lastSyncAt).toLocaleString() : '—'}
-              </p>
-              {syncRuns.length > 0 ? (
-                <div className="mt-3 overflow-x-auto rounded-lg border border-gray-200 bg-white">
-                  <table className="w-full min-w-[820px] border-collapse text-left text-[11px]">
-                    <thead className="bg-gray-50 text-gray-600">
-                      <tr>
-                        <th className="px-2 py-1.5">When</th>
-                        <th className="px-2 py-1.5">Mode</th>
-                        <th className="px-2 py-1.5">Replace</th>
-                        <th className="px-2 py-1.5">Incoming</th>
-                        <th className="px-2 py-1.5">Up (ins/upd)</th>
-                        <th className="px-2 py-1.5">Comp (ins/upd)</th>
-                        <th className="px-2 py-1.5">Dupes</th>
-                        <th className="px-2 py-1.5">Warnings</th>
-                        <th className="px-2 py-1.5">Details</th>
+            </div>
+            <p className="mt-3 text-xs text-gray-500">
+              Last sync logged: {lastSyncAt ? new Date(lastSyncAt).toLocaleString() : '—'}
+            </p>
+            {syncRuns.length > 0 ? (
+              <div className="mt-4 overflow-x-auto rounded-xl border border-gray-200">
+                <table className="w-full min-w-[820px] border-collapse text-left text-[11px]">
+                  <thead className="bg-gray-50 text-gray-600">
+                    <tr>
+                      <th className="px-2 py-1.5">When</th>
+                      <th className="px-2 py-1.5">Mode</th>
+                      <th className="px-2 py-1.5">Replace</th>
+                      <th className="px-2 py-1.5">Incoming</th>
+                      <th className="px-2 py-1.5">Up (ins/upd)</th>
+                      <th className="px-2 py-1.5">Comp (ins/upd)</th>
+                      <th className="px-2 py-1.5">Dupes</th>
+                      <th className="px-2 py-1.5">Warnings</th>
+                      <th className="px-2 py-1.5">Details</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {syncRuns.map((run) => (
+                      <tr key={run.id} className="border-t border-gray-100">
+                        <td className="px-2 py-1.5 text-gray-700">{new Date(run.created_at).toLocaleString()}</td>
+                        <td className="px-2 py-1.5 text-gray-700">{run.mode}</td>
+                        <td className="px-2 py-1.5 text-gray-700">{run.replace_upcoming ? 'yes' : 'no'}</td>
+                        <td className="px-2 py-1.5 text-gray-700">{run.incoming_rows}</td>
+                        <td className="px-2 py-1.5 text-gray-700">{run.inserted_upcoming}/{run.updated_upcoming}</td>
+                        <td className="px-2 py-1.5 text-gray-700">{run.inserted_completed}/{run.updated_completed}</td>
+                        <td className="px-2 py-1.5 text-gray-700">{run.skipped_duplicates}</td>
+                        <td className="px-2 py-1.5 text-gray-700">
+                          {Array.isArray(run.validation_errors) ? run.validation_errors.length : 0}
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setSyncRunDetailId(run.id)}
+                            className="rounded border border-gray-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-gray-800 hover:bg-gray-50"
+                          >
+                            View details
+                          </button>
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {syncRuns.map((run) => (
-                        <tr key={run.id} className="border-t border-gray-100">
-                          <td className="px-2 py-1.5 text-gray-700">{new Date(run.created_at).toLocaleString()}</td>
-                          <td className="px-2 py-1.5 text-gray-700">{run.mode}</td>
-                          <td className="px-2 py-1.5 text-gray-700">{run.replace_upcoming ? 'yes' : 'no'}</td>
-                          <td className="px-2 py-1.5 text-gray-700">{run.incoming_rows}</td>
-                          <td className="px-2 py-1.5 text-gray-700">{run.inserted_upcoming}/{run.updated_upcoming}</td>
-                          <td className="px-2 py-1.5 text-gray-700">{run.inserted_completed}/{run.updated_completed}</td>
-                          <td className="px-2 py-1.5 text-gray-700">{run.skipped_duplicates}</td>
-                          <td className="px-2 py-1.5 text-gray-700">
-                            {Array.isArray(run.validation_errors) ? run.validation_errors.length : 0}
-                          </td>
-                          <td className="px-2 py-1.5">
-                            <button
-                              type="button"
-                              onClick={() => setSyncRunDetailId(run.id)}
-                              className="rounded border border-gray-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-gray-800 hover:bg-gray-50"
-                            >
-                              View details
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : null}
-              {syncRunDetailId ? (
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+          </div>
+          {syncRunDetailId ? (
                 <div
                   className="fixed inset-0 z-[100] flex items-end justify-center p-4 sm:items-center"
                   role="dialog"
@@ -2129,38 +2278,49 @@ export default function AdminPage() {
                   </div>
                 </div>
               ) : null}
+        </section>
+
+        <section className="mt-10" aria-labelledby="pools-heading">
+          <h2 id="pools-heading" className="text-sm font-bold uppercase tracking-wide text-gray-400">
+            5 · Pools &amp; groups
+          </h2>
+          <div className="mt-3 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm md:p-6">
+            <p className="text-sm text-gray-600">Global pools, league groups, and pool administration.</p>
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+              <Link
+                href="/admin/global-pools"
+                className="inline-flex items-center justify-center rounded-xl border border-gray-900 bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-black"
+              >
+                Pools management
+              </Link>
+              <Link
+                href="/admin/fixture-groups"
+                className="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-900 hover:bg-gray-50"
+              >
+                Fixture groups / leagues
+              </Link>
+              <Link
+                href="/pools/manage"
+                className="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-900 hover:bg-gray-50"
+              >
+                Pools admin
+              </Link>
             </div>
           </div>
         </section>
 
-        <section
-          className="mt-10 rounded-2xl border border-amber-200 bg-amber-50/90 p-5"
-          aria-labelledby="admin-moderation-heading"
-        >
-          <h2 id="admin-moderation-heading" className="text-base font-semibold text-gray-900">
-            Display name moderation
+        <section className="mt-12 border-t border-gray-200 pt-10" aria-labelledby="advanced-heading">
+          <h2 id="advanced-heading" className="text-xs font-bold uppercase tracking-wider text-gray-400">
+            Advanced
           </h2>
-          <p className="mt-2 text-sm text-gray-700">
-            Banned tokens are stored in{' '}
-            <code className="rounded bg-white/80 px-1 py-0.5 text-xs">public.banned_display_words</code>. The app
-            mirrors the starter list in{' '}
-            <code className="rounded bg-white/80 px-1 py-0.5 text-xs">lib/display-name-filter.ts</code>; the
-            database trigger keeps writes honest even if the client is bypassed. The table has RLS enabled with no
-            read policies for API roles—add or deactivate words in the Supabase SQL Editor (service role).
-          </p>
-          <p className="mt-3 font-mono text-[11px] leading-relaxed text-gray-800 sm:text-xs">
-            insert into public.banned_display_words (word, language) values (&apos;example&apos;, &apos;en&apos;)
-            on conflict (word) do nothing;
-          </p>
-          <p className="mt-2 text-xs text-gray-600">
-            Soft-disable:{' '}
-            <code className="rounded bg-white/80 px-1 py-0.5 font-mono text-[11px]">
-              update public.banned_display_words set is_active = false where word = &apos;example&apos;;
-            </code>
-          </p>
-        </section>
 
-        <div className="mt-10 flex flex-wrap gap-3">
+          <details className="group mt-4 overflow-hidden rounded-2xl border border-gray-200 bg-gray-50/50 shadow-sm">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-5 py-4 text-base font-semibold text-gray-900 marker:content-none [&::-webkit-details-marker]:hidden">
+              <span>Legacy tools</span>
+              <span className="text-gray-400 transition group-open:rotate-180">▼</span>
+            </summary>
+            <div className="border-t border-gray-100 bg-white px-4 py-6 sm:px-6">
+        <div className="flex flex-wrap gap-3">
           <button
             onClick={() => setActiveAdminTab('add-delete')}
             className={`rounded-xl px-4 py-3 text-sm font-medium ${
@@ -3836,6 +3996,42 @@ export default function AdminPage() {
             )}
           </section>
         )}
+            </div>
+          </details>
+
+          <details className="group mt-4 overflow-hidden rounded-2xl border border-gray-200 bg-gray-50/50 shadow-sm">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-5 py-4 text-base font-semibold text-gray-900 marker:content-none [&::-webkit-details-marker]:hidden">
+              <span>System &amp; misc</span>
+              <span className="text-gray-400 transition group-open:rotate-180">▼</span>
+            </summary>
+            <div
+              className="border-t border-gray-100 bg-amber-50/50 px-4 py-6 sm:px-6"
+              aria-labelledby="admin-moderation-heading"
+            >
+              <h2 id="admin-moderation-heading" className="text-base font-semibold text-gray-900">
+                Display name moderation
+              </h2>
+              <p className="mt-2 text-sm text-gray-700">
+                Banned tokens are stored in{' '}
+                <code className="rounded bg-white/80 px-1 py-0.5 text-xs">public.banned_display_words</code>. The app
+                mirrors the starter list in{' '}
+                <code className="rounded bg-white/80 px-1 py-0.5 text-xs">lib/display-name-filter.ts</code>; the
+                database trigger keeps writes honest even if the client is bypassed. The table has RLS enabled with no
+                read policies for API roles—add or deactivate words in the Supabase SQL Editor (service role).
+              </p>
+              <p className="mt-3 font-mono text-[11px] leading-relaxed text-gray-800 sm:text-xs">
+                insert into public.banned_display_words (word, language) values (&apos;example&apos;, &apos;en&apos;)
+                on conflict (word) do nothing;
+              </p>
+              <p className="mt-2 text-xs text-gray-600">
+                Soft-disable:{' '}
+                <code className="rounded bg-white/80 px-1 py-0.5 font-mono text-[11px]">
+                  update public.banned_display_words set is_active = false where word = &apos;example&apos;;
+                </code>
+              </p>
+            </div>
+          </details>
+        </section>
       </div>
     </main>
   )

@@ -28,6 +28,7 @@ export default function HomePage() {
   const [authReady, setAuthReady] = useState(false)
   const predictActive = pathname.startsWith('/predict-score')
   const rankingsActive = pathname.startsWith('/user-rankings')
+  const poolsActive = pathname.startsWith('/pools')
   const communityActive = pathname.startsWith('/community-predictor') || pathname.startsWith('/community-picks')
   const activeDot = (
     <span
@@ -80,39 +81,64 @@ export default function HomePage() {
               Pick any school rugby match, predict the winning margin, and compete on accuracy.
             </p>
 
-            <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-              <div className="relative flex w-full flex-col items-center pb-3 sm:w-auto">
-                <Link
-                  href="/predict-score"
-                  onClick={() => trackEvent('navigation_click', 'landing', { destination: '/predict-score' })}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-900 bg-[#111318] px-8 py-3.5 text-base font-semibold text-white transition hover:bg-[#1a1d24] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 sm:w-auto"
-                >
-                  <PredictIconDot />
-                  Predict
-                </Link>
-                {predictActive ? activeDot : null}
+            <div className="mt-8 flex flex-col items-center gap-3">
+              <div className="flex w-full max-w-lg flex-col items-stretch justify-center gap-3 sm:max-w-none sm:flex-row sm:items-start sm:justify-center">
+                <div className="relative flex w-full flex-col items-center pb-3 sm:w-auto">
+                  <Link
+                    href="/predict-score"
+                    onClick={() => trackEvent('navigation_click', 'landing', { destination: '/predict-score' })}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-900 bg-[#111318] px-8 py-3.5 text-base font-semibold text-white transition hover:bg-[#1a1d24] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 sm:w-auto"
+                  >
+                    <PredictIconDot />
+                    Predict
+                  </Link>
+                  {predictActive ? activeDot : null}
+                </div>
+                <div className="relative flex w-full flex-col items-center pb-3 sm:w-auto">
+                  <Link
+                    href="/pools"
+                    onClick={() => trackEvent('navigation_click', 'landing', { destination: '/pools' })}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-300 bg-white px-8 py-3.5 text-base font-semibold text-gray-900 transition hover:border-gray-400 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 sm:w-auto"
+                  >
+                    Join a Pool
+                  </Link>
+                </div>
               </div>
-              <div className="relative flex w-full flex-col items-center pb-3 sm:w-auto">
-                <Link
-                  href="/user-rankings"
-                  onClick={() => trackEvent('navigation_click', 'landing', { destination: '/user-rankings' })}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-300 bg-white px-8 py-3.5 text-base font-semibold text-gray-900 transition hover:border-gray-400 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 sm:w-auto"
-                >
-                  <RankingsListIcon />
-                  Rankings
-                </Link>
-                {rankingsActive ? activeDot : null}
-              </div>
-              <div className="relative flex w-full flex-col items-center pb-3 sm:w-auto">
-                <Link
-                  href="/community-predictor"
-                  onClick={() => trackEvent('navigation_click', 'landing', { destination: '/community-predictor' })}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-300 bg-white px-8 py-3.5 text-base font-semibold text-gray-900 transition hover:border-gray-400 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 sm:w-auto"
-                >
-                  <CommunityPicksIcon />
-                  Community Picks
-                </Link>
-                {communityActive ? activeDot : null}
+
+              <div className="flex w-full flex-col items-center justify-center gap-3 sm:flex-row sm:flex-wrap">
+                <div className="relative flex w-full flex-col items-center pb-3 sm:w-auto">
+                  <Link
+                    href="/user-rankings"
+                    onClick={() => trackEvent('navigation_click', 'landing', { destination: '/user-rankings' })}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-300 bg-white px-8 py-3.5 text-base font-semibold text-gray-900 transition hover:border-gray-400 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 sm:w-auto"
+                  >
+                    <RankingsListIcon />
+                    Rankings
+                  </Link>
+                  {rankingsActive ? activeDot : null}
+                </div>
+                <div className="relative flex w-full flex-col items-center pb-3 sm:w-auto">
+                  <Link
+                    href="/pools"
+                    aria-current={poolsActive ? 'page' : undefined}
+                    onClick={() => trackEvent('navigation_click', 'landing', { destination: '/pools' })}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-300 bg-white px-8 py-3.5 text-base font-semibold text-gray-900 transition hover:border-gray-400 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 sm:w-auto"
+                  >
+                    Pools
+                  </Link>
+                  {poolsActive ? activeDot : null}
+                </div>
+                <div className="relative flex w-full flex-col items-center pb-3 sm:w-auto">
+                  <Link
+                    href="/community-predictor"
+                    onClick={() => trackEvent('navigation_click', 'landing', { destination: '/community-predictor' })}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-300 bg-white px-8 py-3.5 text-base font-semibold text-gray-900 transition hover:border-gray-400 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 sm:w-auto"
+                  >
+                    <CommunityPicksIcon />
+                    Community Picks
+                  </Link>
+                  {communityActive ? activeDot : null}
+                </div>
               </div>
             </div>
 
