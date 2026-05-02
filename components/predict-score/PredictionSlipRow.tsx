@@ -29,6 +29,8 @@ type Props = {
   onLock?: (matchId: string) => void
   lockingMatchId?: string | null
   onRequireAuth?: () => void
+  isAdmin?: boolean
+  onAdminModel?: (match: GameMatch) => void
 }
 
 function formatKickoffShort(iso: string) {
@@ -108,6 +110,8 @@ export default function PredictionSlipRow({
   onLock,
   lockingMatchId = null,
   onRequireAuth,
+  isAdmin = false,
+  onAdminModel,
 }: Props) {
   const at = new Date()
   const cutoffPassed = predictionCutoffPassed(match, at)
@@ -252,6 +256,16 @@ export default function PredictionSlipRow({
           <p className="mt-2 text-center text-xs font-semibold text-red-700">Saved</p>
         ) : null}
         <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+          {isAdmin && onAdminModel ? (
+            <button
+              type="button"
+              title="View model prediction"
+              onClick={() => onAdminModel(match)}
+              className="flex-1 rounded-xl border border-gray-500 bg-white py-3 text-sm font-bold uppercase tracking-wide text-gray-800 shadow-sm hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
+            >
+              Model
+            </button>
+          ) : null}
           <button
             type="button"
             disabled={submitting || (!editable && !guestCanAttempt)}
@@ -384,12 +398,24 @@ export default function PredictionSlipRow({
             <span className="text-center text-[10px] font-semibold text-red-700">Saved</span>
           ) : null}
         </div>
-        <Link
-          href={`/predict-score/${match.id}`}
-          className="rounded-lg border border-gray-300 bg-gray-50 py-2.5 text-center text-xs font-bold uppercase tracking-wide text-gray-800 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
-        >
-          Comments
-        </Link>
+        <div className="flex flex-col gap-1">
+          {isAdmin && onAdminModel ? (
+            <button
+              type="button"
+              title="View model prediction"
+              onClick={() => onAdminModel(match)}
+              className="rounded-lg border border-gray-500 bg-white py-2 text-center text-[10px] font-bold uppercase tracking-wide text-gray-800 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
+            >
+              Model
+            </button>
+          ) : null}
+          <Link
+            href={`/predict-score/${match.id}`}
+            className="rounded-lg border border-gray-300 bg-gray-50 py-2.5 text-center text-xs font-bold uppercase tracking-wide text-gray-800 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
+          >
+            Comments
+          </Link>
+        </div>
       </div>
     </li>
   )

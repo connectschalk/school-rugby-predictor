@@ -13,6 +13,8 @@ import {
   type GameMatch,
   type MatchLeaderboardEntry,
 } from '@/lib/public-prediction-game'
+import { fetchUserIsAdmin } from '@/lib/admin-access'
+import PredictionMarginModal from '@/components/predict-score/PredictionMarginModal'
 import { getSchoolTeamLogoPath } from '@/lib/school-team-logos'
 import { supabase } from '@/lib/supabase'
 import { trackEvent } from '@/lib/trackEvent'
@@ -43,6 +45,8 @@ export default function PredictScoreMatchPage() {
   const [leaderboardRows, setLeaderboardRows] = useState<MatchLeaderboardEntry[]>([])
   const [leaderboardLoading, setLeaderboardLoading] = useState(true)
   const [leaderboardError, setLeaderboardError] = useState('')
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [adminModelOpen, setAdminModelOpen] = useState(false)
 
   const loadMatch = useCallback(async () => {
     if (!matchId) {
@@ -106,6 +110,20 @@ export default function PredictScoreMatchPage() {
     })
     return () => subscription.unsubscribe()
   }, [])
+
+  useEffect(() => {
+    if (!user) {
+      setIsAdmin(false)
+      return
+    }
+    let cancelled = false
+    void fetchUserIsAdmin(supabase, user.id).then(({ isAdmin: next }) => {
+      if (!cancelled) setIsAdmin(next)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [user])
 
   if (loading) {
     return (
@@ -207,7 +225,24 @@ export default function PredictScoreMatchPage() {
             {kickHm ? <p>Kickoff: {kickHm}</p> : null}
           </div>
         )}
+        {isAdmin ? (
+          <div className="mt-5 flex justify-center">
+            <button
+              type="button"
+              title="View model prediction"
+              onClick={() => setAdminModelOpen(true)}
+              className="rounded-lg border border-gray-600 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wide text-gray-900 shadow-sm hover:bg-gray-50"
+            >
+              Model
+            </button>
+          </div>
+        ) : null}
       </div>
+
+      <PredictionMarginModal
+        match={adminModelOpen ? match : null}
+        onClose={() => setAdminModelOpen(false)}
+      />
 
       <div className="mt-10 rounded-2xl border border-gray-200 bg-white p-4 sm:p-6">
         <h2 className="text-base font-black text-gray-900">Leaderboard</h2>

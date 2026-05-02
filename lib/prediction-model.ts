@@ -476,3 +476,94 @@ export function predictFixtureMarginTeamAPerspective(
     confidence,
   }
 }
+
+/**
+ * Full predictor output (direct or indirect with paths), matching the public Predictor page.
+ * `averageMargin` is from the **home** team’s perspective (fixture home vs away): positive = home wins by that margin.
+ */
+export function predictFixtureFullResult(
+  homeTeamId: number,
+  awayTeamId: number,
+  matches: Match[],
+  teams: Team[],
+  teamConsistencyByTeamId: Map<number, TeamConsistencyRow>,
+  strongOpponentBoostParams: StrongOpponentBoostParams = DEFAULT_STRONG_OPPONENT_BOOST_PARAMS
+): { ok: true; result: PredictionResult } | { ok: false; reason: 'no_paths' } {
+  const home = String(homeTeamId)
+  const away = String(awayTeamId)
+
+  const matchesById: Record<number, Match> = {}
+  for (const m of matches) {
+    matchesById[m.id] = m
+  }
+
+  const directMatch = matches.find(
+    (m) =>
+      (String(m.team_a_id) === home && String(m.team_b_id) === away) ||
+      (String(m.team_a_id) === away && String(m.team_b_id) === home)
+  )
+
+  if (directMatch) {
+    const margin =
+      String(directMatch.team_a_id) === home
+        ? directMatch.team_a_score - directMatch.team_b_score
+        : directMatch.team_b_score - directMatch.team_a_score
+
+    const directResult: PredictionResult = {
+      type: 'direct',
+      averageMargin: margin,
+      pathCount: 1,
+      confidence: 'High',
+      paths: [],
+      directMatch,
+      relevantMatches: [directMatch],
+    }
+    return { ok: true, result: directResult }
+  }
+
+  const graph = buildGraph(matches)
+  const volatilityConsistencyMap = calculateTeamConsistency(matches)
+  const strengthMap = computeSeasonStrengthRatings(matches)
+
+  const allPaths = findAllPathsWithWeights(
+    graph,
+    home,
+    away,
+    MAX_LINKS,
+    teams,
+    volatilityConsistencyMap,
+    strengthMap,
+    teamConsistencyByTeamId,
+    strongOpponentBoostParams
+  )
+
+  if (allPaths.length === 0) {
+    return { ok: false, reason: 'no_paths' }
+  }
+
+  const weightedTotal = allPaths.reduce((sum, p) => sum + p.totalMargin * p.weight, 0)
+  const totalWeight = allPaths.reduce((sum, p) => sum + p.weight, 0)
+  const weightedAverage = weightedTotal / totalWeight
+
+  const sortedPaths = [...allPaths].sort((a, b) => b.weight - a.weight)
+  const topPathsToShow = sortedPaths.slice(0, 10)
+
+  const relevantMatchIds = Array.from(
+    new Set(topPathsToShow.flatMap((path) => path.path.map((edge) => edge.matchId)))
+  )
+
+  const relevantMatches = relevantMatchIds.map((id) => matchesById[id]).filter(Boolean)
+
+  const confidence = getConfidence('indirect', allPaths.length, totalWeight)
+
+  const indirectResult: PredictionResult = {
+    type: 'indirect',
+    averageMargin: weightedAverage,
+    pathCount: allPaths.length,
+    confidence,
+    paths: topPathsToShow,
+    relevantMatches,
+  }
+
+  return { ok: true, result: indirectResult }
+}

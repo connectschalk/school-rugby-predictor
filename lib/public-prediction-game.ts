@@ -288,6 +288,82 @@ export async function fetchSeasonLeaderboard(client: SupabaseClient, season: num
   return { data: mapped, error: null }
 }
 
+/**
+ * Per-user average margin error over their most recent `recentCount` scored games in `season`
+ * (by match kickoff). Used for “delta vs recent form” on season leaderboards.
+ */
+export async function fetchSeasonRecentMarginAverages(
+  client: SupabaseClient,
+  season: number,
+  recentCount = 5
+): Promise<{ data: Record<string, number | null>; error: Error | null }> {
+  const { data: matches, error: mErr } = await client
+    .from('game_matches')
+    .select('id, kickoff_time')
+    .eq('status', 'completed')
+
+  if (mErr) {
+    return { data: {}, error: mErr }
+  }
+
+  const raw = (matches as { id: string; kickoff_time: string }[] | null) ?? []
+  const seasonMatchIds = raw
+    .filter((m) => new Date(m.kickoff_time).getFullYear() === season)
+    .map((m) => m.id)
+
+  const seasonIdSet = new Set(seasonMatchIds)
+  const kickByMatch = new Map<string, number>()
+  for (const m of raw) {
+    if (seasonIdSet.has(m.id)) {
+      kickByMatch.set(m.id, new Date(m.kickoff_time).getTime())
+    }
+  }
+
+  if (seasonMatchIds.length === 0) {
+    return { data: {}, error: null }
+  }
+
+  const CHUNK = 150
+  type ScoreRow = { user_id: string; margin_difference: number | null; match_id: string }
+  const allScores: ScoreRow[] = []
+  for (let i = 0; i < seasonMatchIds.length; i += CHUNK) {
+    const chunk = seasonMatchIds.slice(i, i + CHUNK)
+    const { data: scores, error: sErr } = await client
+      .from('user_prediction_scores')
+      .select('user_id, margin_difference, match_id')
+      .in('match_id', chunk)
+      .not('margin_difference', 'is', null)
+
+    if (sErr) {
+      return { data: {}, error: sErr }
+    }
+    allScores.push(...((scores as ScoreRow[] | null) ?? []))
+  }
+
+  const byUser = new Map<string, { md: number; t: number }[]>()
+  for (const s of allScores) {
+    const t = kickByMatch.get(s.match_id)
+    if (t === undefined || s.margin_difference == null) continue
+    const arr = byUser.get(s.user_id) ?? []
+    arr.push({ md: num(s.margin_difference), t })
+    byUser.set(s.user_id, arr)
+  }
+
+  const out: Record<string, number | null> = {}
+  for (const [uid, arr] of byUser) {
+    arr.sort((a, b) => b.t - a.t)
+    const slice = arr.slice(0, recentCount)
+    if (slice.length === 0) {
+      out[uid] = null
+      continue
+    }
+    const avg = slice.reduce((sum, x) => sum + x.md, 0) / slice.length
+    out[uid] = avg
+  }
+
+  return { data: out, error: null }
+}
+
 export async function fetchLeaderboardSeasons(client: SupabaseClient) {
   const { data, error } = await client.from('predict_score_season_leaderboard').select('season')
 

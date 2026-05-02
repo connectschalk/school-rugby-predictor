@@ -32,6 +32,8 @@ type Props = {
   lockingMatchId?: string | null
   /** Logged-out users: open auth prompt instead of changing slips or saving. */
   onRequireAuth?: () => void
+  isAdmin?: boolean
+  onAdminModel?: (match: GameMatch) => void
 }
 
 export default function PredictScoreSlipListSection({
@@ -55,6 +57,8 @@ export default function PredictScoreSlipListSection({
   onLock,
   lockingMatchId = null,
   onRequireAuth,
+  isAdmin = false,
+  onAdminModel,
 }: Props) {
   if (matches.length === 0) return null
 
@@ -90,6 +94,8 @@ export default function PredictScoreSlipListSection({
                 onLock={onLock}
                 lockingMatchId={lockingMatchId}
                 onRequireAuth={onRequireAuth}
+                isAdmin={isAdmin}
+                onAdminModel={onAdminModel}
               />
             )
           })}

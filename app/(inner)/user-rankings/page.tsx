@@ -7,6 +7,7 @@ import {
   fetchGameMatchesForCommunityHub,
   fetchLeaderboardSeasons,
   fetchSeasonLeaderboard,
+  fetchSeasonRecentMarginAverages,
   type SeasonLeaderboardRow,
 } from '@/lib/public-prediction-game'
 import {
@@ -27,11 +28,11 @@ const DEFAULT_SEASON = new Date().getFullYear()
 const TOOLTIP_POINTS =
   'Total points = correct winner (1) + margin accuracy (up to 1.0) + closest margin bonus (0.5). Max 2.5 per game.'
 
-const TOOLTIP_MARGIN_TOTAL =
-  'Total margin error across all scored predictions.'
-
 const TOOLTIP_MARGIN_AVG =
   'Lower is better. Your average distance from the actual margin.'
+
+const TOOLTIP_DELTA =
+  'Season average minus your average margin error on your last 5 scored games (this season). Positive means recent games were closer to the actual margin than your season average.'
 
 const GLOBAL_QUALIFIED_MIN = 5
 const POOL_QUALIFIED_MIN = 3
@@ -47,16 +48,50 @@ function rankCell(rank: number): string {
   return `#${rank}`
 }
 
-function medalStyles(rank: number): string {
-  if (rank === 1) return 'border-yellow-300 bg-yellow-50 text-yellow-900'
-  if (rank === 2) return 'border-gray-300 bg-gray-100 text-gray-800'
-  if (rank === 3) return 'border-amber-400 bg-amber-50 text-amber-900'
-  return 'border-gray-200 bg-white text-gray-700'
-}
-
 function marginAvgDisplay(v: number | null): string {
   if (v === null || Number.isNaN(v)) return '—'
   return v.toFixed(2)
+}
+
+function sortHelperLabel(tab: LeaderTab): string {
+  switch (tab) {
+    case 'margin_avg':
+      return 'Ranked by Average Margin Error (lower is better).'
+    case 'points':
+      return 'Ranked by total points.'
+    case 'margin_total':
+      return 'Ranked by cumulative margin error (lower is better).'
+    default:
+      return ''
+  }
+}
+
+type DeltaTone = 'improve' | 'worse' | 'flat' | 'empty'
+
+function marginDeltaDisplay(
+  seasonAvg: number | null,
+  recentAvg: number | null | undefined
+): { text: string; tone: DeltaTone } {
+  if (seasonAvg == null || recentAvg == null || Number.isNaN(recentAvg)) {
+    return { text: '—', tone: 'empty' }
+  }
+  const d = seasonAvg - recentAvg
+  if (Math.abs(d) < 0.01) return { text: '0.0', tone: 'flat' }
+  const formatted = d > 0 ? `+${d.toFixed(1)}` : d.toFixed(1)
+  return { text: formatted, tone: d > 0 ? 'improve' : 'worse' }
+}
+
+function deltaToneClass(tone: DeltaTone): string {
+  switch (tone) {
+    case 'improve':
+      return 'text-emerald-700'
+    case 'worse':
+      return 'text-rose-700'
+    case 'flat':
+      return 'text-gray-500'
+    default:
+      return 'text-gray-400'
+  }
 }
 
 function compareUserId(a: SeasonLeaderboardRow, b: SeasonLeaderboardRow): number {
@@ -119,8 +154,8 @@ function leaderboardForTab(rows: SeasonLeaderboardRow[], tab: LeaderTab): Season
 }
 
 const SORT_OPTIONS: { value: LeaderTab; label: string }[] = [
-  { value: 'points', label: 'Points' },
   { value: 'margin_avg', label: 'Average margin error' },
+  { value: 'points', label: 'Points' },
   { value: 'margin_total', label: 'Cumulative margin error' },
 ]
 
@@ -129,6 +164,22 @@ function primaryMetricLine(r: SeasonLeaderboardRow, tab: LeaderTab): { label: st
   if (tab === 'margin_total')
     return { label: 'Cumulative margin error', value: String(r.cumulative_margin_error) }
   return { label: 'Average margin error', value: marginAvgDisplay(r.average_margin_error) }
+}
+
+/** One-line Top 3 summary for the current sort (e.g. "🥇 Alex (2.1) · 🥈 Sam (2.3)"). */
+function formatTopThreeCompactLine(
+  top: Array<{ row: SeasonLeaderboardRow; rank: number }>,
+  tab: LeaderTab
+): string {
+  return top
+    .slice(0, 3)
+    .map(({ row, rank }) => {
+      const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : '🥉'
+      const name = row.display_name?.trim() || 'Player'
+      const v = primaryMetricLine(row, tab).value
+      return `${medal} ${name} (${v})`
+    })
+    .join(' · ')
 }
 
 export default function UserRankingsPage() {
@@ -143,7 +194,7 @@ export default function UserRankingsPage() {
   const [season, setSeason] = useState(DEFAULT_SEASON)
   const [seasonOptions, setSeasonOptions] = useState<number[]>(() => [DEFAULT_SEASON])
   const [rows, setRows] = useState<SeasonLeaderboardRow[]>([])
-  const [tab, setTab] = useState<LeaderTab>('points')
+  const [tab, setTab] = useState<LeaderTab>('margin_avg')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [howModalOpen, setHowModalOpen] = useState(false)
@@ -152,6 +203,7 @@ export default function UserRankingsPage() {
     { user_id: string; display_name: string; avatar_url: string | null; avatar_letter: string | null; avatar_colour: string | null; average_margin_error: number }[]
   >([])
   const [weeklyLoading, setWeeklyLoading] = useState(false)
+  const [recentAvgByUser, setRecentAvgByUser] = useState<Record<string, number | null>>({})
 
   const baseGlobalRows = useMemo(
     () =>
@@ -262,6 +314,20 @@ export default function UserRankingsPage() {
   }, [season, loadBoard])
 
   useEffect(() => {
+    if (section !== 'global') return
+    let cancelled = false
+    ;(async () => {
+      const { data, error } = await fetchSeasonRecentMarginAverages(supabase, season)
+      if (cancelled) return
+      if (error) setRecentAvgByUser({})
+      else setRecentAvgByUser(data)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [season, section])
+
+  useEffect(() => {
     if (!selectedPoolId) {
       setPoolRows([])
       setPoolPredictionCounts({})
@@ -368,34 +434,29 @@ export default function UserRankingsPage() {
   }, [])
 
   const emptyFiltered = !loading && rows.length > 0 && displayRows.length === 0
-  const topThree = rankedGlobalRows.slice(0, 3)
-  const restRows = rankedGlobalRows.slice(3)
-  /** With 4+ players, podium shows top 3 and the table starts at rank 4; otherwise the full list is in the table only. */
-  const usePodiumLayout = rankedGlobalRows.length > 3
-  const desktopLeaderRows = usePodiumLayout ? rankedGlobalRows.slice(3) : rankedGlobalRows
-  const mobileListRows = usePodiumLayout ? restRows : rankedGlobalRows
-
-  const t1 = topThree[0]
-  const t2 = topThree[1]
-  const t3 = topThree[2]
+  const topThreeCompactLine = useMemo(() => {
+    const slice = rankedGlobalRows.slice(0, 3)
+    if (slice.length === 0) return ''
+    return formatTopThreeCompactLine(slice, tab)
+  }, [rankedGlobalRows, tab])
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-4 md:px-6 md:py-5">
-      <div className="flex flex-col gap-1 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-3">
-        <div>
-          <h1 className="text-2xl font-black tracking-tight text-gray-900 md:text-3xl">User Rankings</h1>
-          <p className="mt-0.5 text-sm text-gray-600">See who&apos;s leading this season.</p>
+    <main className="mx-auto max-w-6xl px-4 py-2 md:px-6 md:py-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-xl font-black tracking-tight text-gray-900 md:text-2xl">User Rankings</h1>
+          <p className="mt-0.5 text-xs text-gray-600 md:text-sm">See who&apos;s leading this season.</p>
         </div>
         <button
           type="button"
           onClick={() => setHowModalOpen(true)}
-          className="shrink-0 self-start text-sm font-semibold text-gray-700 underline decoration-gray-300 underline-offset-2 hover:text-gray-900"
+          className="shrink-0 pt-0.5 text-xs font-medium text-gray-600 underline decoration-gray-300 underline-offset-2 hover:text-gray-900 md:text-sm"
         >
           How it works
         </button>
       </div>
 
-      <div className="mt-3 flex justify-center sm:justify-start">
+      <div className="mt-1.5 flex justify-center sm:justify-start">
         <div className="inline-flex rounded-full border border-gray-200 bg-gray-100 p-0.5">
           <button
             type="button"
@@ -420,7 +481,7 @@ export default function UserRankingsPage() {
 
       {section === 'global' ? (
         <>
-          <div className="sticky top-0 z-30 -mx-4 mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-gray-100 bg-white/95 px-4 py-2 backdrop-blur-sm md:mx-0 md:rounded-lg md:border md:py-2.5 md:shadow-sm">
+          <div className="sticky top-0 z-40 -mx-4 mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-gray-200 bg-white/95 px-4 py-1.5 shadow-sm backdrop-blur-sm md:static md:z-auto md:mx-0 md:rounded-md md:border md:shadow-sm">
             <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 md:text-sm">
               <span className="text-gray-500">Season</span>
               <select
@@ -473,135 +534,126 @@ export default function UserRankingsPage() {
             </label>
           </div>
           {qualification === 'qualified' ? (
-            <p className="mt-1.5 text-center text-[11px] text-gray-500 sm:text-left">
-              Qualified: 5+ scored predictions this season.
-            </p>
+            <p className="mt-0.5 text-[10px] text-gray-500 sm:text-left">Qualified = 5+ picks this season.</p>
           ) : null}
 
           {error ? (
-            <p className="mt-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-center text-sm text-red-800">
+            <p className="mt-1.5 rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-center text-sm text-red-800">
               {error}
             </p>
           ) : null}
 
-      <div className="mt-3">
+      <div className="mt-1.5">
         {loading ? (
-          <p className="text-center text-sm text-gray-500">Loading leaderboard…</p>
+          <p className="py-2 text-center text-sm text-gray-500">Loading leaderboard…</p>
         ) : rows.length === 0 ? (
-          <p className="text-center text-sm text-gray-600">
+          <p className="py-2 text-center text-sm text-gray-600">
             No scored predictions for this season yet. Complete a match, run scoring, then check
             again.
           </p>
         ) : emptyFiltered ? (
-          <p className="text-center text-sm text-gray-600">
+          <p className="py-2 text-center text-sm text-gray-600">
             No one meets the qualified filter for this season. Try &quot;All&quot; or another season.
           </p>
         ) : (
-          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-            {usePodiumLayout && t1 ? (
-              <div className="border-b border-gray-100 bg-gradient-to-b from-gray-50/80 to-white px-4 pb-4 pt-4">
-                <p className="mb-3 text-center text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                  Top 3 · {SORT_OPTIONS.find((o) => o.value === tab)?.label ?? 'Rankings'}
-                </p>
-                <article
-                  className={`mx-auto max-w-md rounded-2xl border-2 p-5 shadow-md ${medalStyles(1)}`}
-                >
-                  <div className="mb-3 flex justify-center">
-                    <span className="inline-flex rounded-full border border-current/30 px-3 py-1 text-xs font-bold uppercase tracking-wide">
-                      {rankCell(1)}
-                    </span>
-                  </div>
-                  <div className="flex flex-col items-center gap-3 text-center">
-                    <LetterAvatar
-                      letter={t1.row.avatar_letter}
-                      colour={t1.row.avatar_colour}
-                      avatarUrl={t1.row.avatar_url}
-                      displayName={t1.row.display_name}
-                      name={t1.row.display_name?.trim() || 'Player'}
-                      size={64}
-                      className="ring-2 ring-black/10"
-                    />
-                    <div className="min-w-0">
-                      <p className="truncate text-lg font-bold text-gray-900">
-                        {t1.row.display_name?.trim() || 'Player'}
-                      </p>
-                      <p className="mt-1 text-2xl font-black tabular-nums text-gray-900">
-                        {primaryMetricLine(t1.row, tab).value}
-                      </p>
-                      <p className="text-xs text-gray-600">{primaryMetricLine(t1.row, tab).label}</p>
-                    </div>
-                  </div>
-                </article>
-                {(t2 || t3) && (
-                  <div className="mt-4 grid grid-cols-2 gap-3">
-                    {t2 ? (
-                      <article
-                        className={`rounded-xl border p-3 shadow-sm ${medalStyles(2)}`}
-                      >
-                        <div className="mb-2 text-[10px] font-bold uppercase tracking-wide text-gray-600">
-                          {rankCell(2)}
-                        </div>
-                        <div className="flex flex-col items-center gap-2 text-center">
-                          <LetterAvatar
-                            letter={t2.row.avatar_letter}
-                            colour={t2.row.avatar_colour}
-                            avatarUrl={t2.row.avatar_url}
-                            displayName={t2.row.display_name}
-                            name={t2.row.display_name?.trim() || 'Player'}
-                            size={44}
-                            className="ring-1 ring-black/10"
-                          />
-                          <p className="truncate text-sm font-semibold text-gray-900">
-                            {t2.row.display_name?.trim() || 'Player'}
-                          </p>
-                          <p className="text-base font-bold tabular-nums text-gray-900">
-                            {primaryMetricLine(t2.row, tab).value}
-                          </p>
-                          <p className="text-[10px] text-gray-600">{primaryMetricLine(t2.row, tab).label}</p>
-                        </div>
-                      </article>
-                    ) : (
-                      <div />
-                    )}
-                    {t3 ? (
-                      <article
-                        className={`rounded-xl border p-3 shadow-sm ${medalStyles(3)}`}
-                      >
-                        <div className="mb-2 text-[10px] font-bold uppercase tracking-wide text-gray-600">
-                          {rankCell(3)}
-                        </div>
-                        <div className="flex flex-col items-center gap-2 text-center">
-                          <LetterAvatar
-                            letter={t3.row.avatar_letter}
-                            colour={t3.row.avatar_colour}
-                            avatarUrl={t3.row.avatar_url}
-                            displayName={t3.row.display_name}
-                            name={t3.row.display_name?.trim() || 'Player'}
-                            size={44}
-                            className="ring-1 ring-black/10"
-                          />
-                          <p className="truncate text-sm font-semibold text-gray-900">
-                            {t3.row.display_name?.trim() || 'Player'}
-                          </p>
-                          <p className="text-base font-bold tabular-nums text-gray-900">
-                            {primaryMetricLine(t3.row, tab).value}
-                          </p>
-                          <p className="text-[10px] text-gray-600">{primaryMetricLine(t3.row, tab).label}</p>
-                        </div>
-                      </article>
-                    ) : (
-                      <div />
-                    )}
-                  </div>
-                )}
-              </div>
-            ) : null}
+          <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+            <p className="border-b border-gray-100 bg-gray-50/80 px-3 py-2 text-[11px] text-gray-600 md:text-xs">
+              {sortHelperLabel(tab)}
+            </p>
 
-            <div className="space-y-2 p-3 md:hidden">
-              {mobileListRows.map(({ row: r, rank }, i) => {
+            <div className="hidden md:block">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[640px] border-collapse text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 bg-gray-100 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                      <th className="py-2 pl-3 pr-2">Rank</th>
+                      <th className="py-2 pr-2">Player</th>
+                      <th className="py-2 pr-2 text-right normal-case">
+                        <div className="inline-flex items-center justify-end gap-1">
+                          <span>Avg margin</span>
+                          <InfoTooltip label="Average margin error" content={TOOLTIP_MARGIN_AVG} />
+                        </div>
+                      </th>
+                      <th className="py-2 pr-2 text-right normal-case">
+                        <div className="inline-flex items-center justify-end gap-1">
+                          <span>Delta</span>
+                          <InfoTooltip label="Delta" content={TOOLTIP_DELTA} />
+                        </div>
+                      </th>
+                      <th className="py-2 pr-2 text-right normal-case">
+                        <div className="inline-flex items-center justify-end gap-1">
+                          <span>Points</span>
+                          <InfoTooltip label="Points" content={TOOLTIP_POINTS} />
+                        </div>
+                      </th>
+                      <th className="py-2 pr-3 text-right">Picks</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rankedGlobalRows.map(({ row: r, rank }, i) => {
+                      const name = r.display_name?.trim() || 'Player'
+                      const isYou = user?.id === r.user_id
+                      const delta = marginDeltaDisplay(r.average_margin_error, recentAvgByUser[r.user_id])
+                      return (
+                        <tr
+                          key={r.user_id}
+                          className={`border-b border-gray-100 transition-colors ${
+                            isYou
+                              ? 'bg-red-50 ring-1 ring-inset ring-red-200/60 hover:bg-red-50/95'
+                              : i % 2 === 0
+                                ? 'bg-white hover:bg-gray-100/85'
+                                : 'bg-gray-50/90 hover:bg-gray-100/85'
+                          }`}
+                        >
+                          <td className="py-2 pl-3 pr-2 font-medium whitespace-nowrap text-gray-900">
+                            {rankCell(rank)}
+                          </td>
+                          <td className="py-2 pr-2">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <LetterAvatar
+                                letter={r.avatar_letter}
+                                colour={r.avatar_colour}
+                                avatarUrl={r.avatar_url}
+                                displayName={r.display_name}
+                                name={name}
+                                size={32}
+                                className="shrink-0 ring-1 ring-gray-200"
+                              />
+                              <span className="min-w-0 truncate font-medium text-gray-900">
+                                {name}
+                                {isYou ? (
+                                  <span className="ml-1.5 text-xs font-semibold text-red-700">You</span>
+                                ) : null}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="py-2 pr-2 text-right text-base font-bold tabular-nums text-gray-900">
+                            {marginAvgDisplay(r.average_margin_error)}
+                          </td>
+                          <td
+                            className={`py-2 pr-2 text-right text-sm font-medium tabular-nums ${deltaToneClass(delta.tone)}`}
+                          >
+                            {delta.text}
+                          </td>
+                          <td className="py-2 pr-2 text-right text-xs tabular-nums text-gray-500">
+                            {r.total_points}
+                          </td>
+                          <td className="py-2 pr-3 text-right text-xs tabular-nums text-gray-500">
+                            {r.predictions_made}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="space-y-3 p-3 md:hidden">
+              {rankedGlobalRows.map(({ row: r, rank }, i) => {
                 const name = r.display_name?.trim() || 'Player'
-                const pm = primaryMetricLine(r, tab)
                 const isYou = user?.id === r.user_id
+                const delta = marginDeltaDisplay(r.average_margin_error, recentAvgByUser[r.user_id])
                 return (
                   <article
                     key={r.user_id}
@@ -610,134 +662,73 @@ export default function UserRankingsPage() {
                         ? 'border-red-200 bg-red-50/90'
                         : i % 2 === 0
                           ? 'border-gray-100 bg-white'
-                          : 'border-gray-100 bg-gray-50/80'
+                          : 'border-gray-100 bg-gray-50/90'
                     }`}
                   >
-                    <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-start justify-between gap-2">
                       <div className="flex min-w-0 items-center gap-2">
+                        <span className="shrink-0 text-sm font-bold text-gray-500">{rankCell(rank)}</span>
                         <LetterAvatar
                           letter={r.avatar_letter}
                           colour={r.avatar_colour}
                           avatarUrl={r.avatar_url}
                           displayName={r.display_name}
                           name={name}
-                          size={36}
-                          className="ring-1 ring-gray-200"
+                          size={40}
+                          className="shrink-0 ring-1 ring-gray-200"
                         />
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-gray-900">{name}</p>
-                          <p className="text-xs text-gray-500">#{rank}</p>
+                          <p className="truncate font-semibold text-gray-900">
+                            {name}
+                            {isYou ? (
+                              <span className="ml-1.5 text-xs font-semibold text-red-700">You</span>
+                            ) : null}
+                          </p>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-sm font-bold tabular-nums text-gray-900">{pm.value}</p>
-                        <p className="text-[10px] text-gray-500">{pm.label}</p>
-                      </div>
                     </div>
-                    <dl className="mt-2 grid grid-cols-2 gap-x-2 gap-y-0.5 text-[11px] text-gray-600">
-                      <div>
-                        Pts: <span className="font-semibold text-gray-900">{r.total_points}</span>
-                      </div>
-                      <div>
-                        Picks: <span className="font-semibold text-gray-900">{r.predictions_made}</span>
-                      </div>
-                    </dl>
+                    <p className="mt-3 text-3xl font-bold tabular-nums tracking-tight text-gray-900">
+                      {marginAvgDisplay(r.average_margin_error)}
+                      <span className="ml-1.5 text-xs font-normal text-gray-500">avg margin</span>
+                    </p>
+                    <p className={`mt-1 text-sm font-medium tabular-nums ${deltaToneClass(delta.tone)}`}>
+                      Δ {delta.text}
+                      <span className="ml-1 text-xs font-normal text-gray-500">vs last 5</span>
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500">
+                      <span>
+                        <span className="text-gray-400">Pts</span> {r.total_points}
+                      </span>
+                      <span>
+                        <span className="text-gray-400">Picks</span> {r.predictions_made}
+                      </span>
+                    </div>
                   </article>
                 )
               })}
             </div>
 
-            <div className="hidden overflow-x-auto md:block">
-              <table className="w-full min-w-[900px] border-collapse text-left text-sm">
-                <thead>
-                  <tr className="border-b border-gray-200 bg-gray-50/90 text-xs font-medium uppercase tracking-wide text-gray-500">
-                    <th className="py-2 pl-3 pr-2">Rank</th>
-                    <th className="py-2 pr-2">Player</th>
-                    <th className="py-2 pr-2 text-right normal-case">
-                      <div className="inline-flex items-center justify-end gap-1">
-                        <span>Total pts</span>
-                        <InfoTooltip label="Points" content={TOOLTIP_POINTS} />
-                      </div>
-                    </th>
-                    <th className="py-2 pr-2 text-right normal-case">
-                      <div className="inline-flex items-center justify-end gap-1">
-                        <span>Cumulative margin error</span>
-                        <InfoTooltip label="Cumulative Margin Error" content={TOOLTIP_MARGIN_TOTAL} />
-                      </div>
-                    </th>
-                    <th className="py-2 pr-2 text-right normal-case">
-                      <div className="inline-flex items-center justify-end gap-1">
-                        <span>Average margin error</span>
-                        <InfoTooltip label="Average Margin Error" content={TOOLTIP_MARGIN_AVG} />
-                      </div>
-                    </th>
-                    <th className="py-2 pr-2 text-right">Picks</th>
-                    <th className="py-2 pr-2 text-right">Right winner</th>
-                    <th className="py-2 pr-3 text-right">Exact margin</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {desktopLeaderRows.map(({ row: r, rank }, i) => {
-                    const name = r.display_name?.trim() || 'Player'
-                    const isYou = user?.id === r.user_id
-                    return (
-                      <tr
-                        key={r.user_id}
-                        className={`border-b border-gray-100 ${
-                          isYou
-                            ? 'bg-red-50/90'
-                            : i % 2 === 0
-                              ? 'bg-white'
-                              : 'bg-gray-50/70'
-                        }`}
-                      >
-                        <td className="py-2.5 pl-3 pr-2 font-medium whitespace-nowrap text-gray-900">
-                          {rankCell(rank)}
-                        </td>
-                        <td className="py-2.5 pr-2">
-                          <div className="flex items-center gap-2">
-                            <LetterAvatar
-                              letter={r.avatar_letter}
-                              colour={r.avatar_colour}
-                              avatarUrl={r.avatar_url}
-                              displayName={r.display_name}
-                              name={name}
-                              size={32}
-                              className="ring-1 ring-gray-200"
-                            />
-                            <span className={`font-medium ${isYou ? 'text-gray-900' : 'text-gray-900'}`}>
-                              {name}
-                              {isYou ? (
-                                <span className="ml-1.5 text-xs font-semibold text-red-700">You</span>
-                              ) : null}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="py-2.5 pr-2 text-right tabular-nums">{r.total_points}</td>
-                        <td className="py-2.5 pr-2 text-right tabular-nums">{r.cumulative_margin_error}</td>
-                        <td className="py-2.5 pr-2 text-right tabular-nums">
-                          {marginAvgDisplay(r.average_margin_error)}
-                        </td>
-                        <td className="py-2.5 pr-2 text-right tabular-nums">{r.predictions_made}</td>
-                        <td className="py-2.5 pr-2 text-right tabular-nums">{r.correct_winner_count}</td>
-                        <td className="py-2.5 pr-3 text-right tabular-nums">{r.exact_margin_count}</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+            {topThreeCompactLine ? (
+              <p
+                className="border-t border-gray-100 bg-gray-50/90 px-3 py-2 text-[11px] leading-snug text-gray-700 md:text-xs"
+                aria-label="Top three for current sort"
+              >
+                <span className="font-semibold text-gray-900">Top 3</span>
+                <span className="text-gray-400"> · </span>
+                {topThreeCompactLine}
+              </p>
+            ) : null}
           </div>
         )}
       </div>
-      <section className="mt-6 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm md:p-4">
-        <h2 className="text-base font-black text-gray-900">Most accurate this week</h2>
+      <section className="mt-2 rounded-lg border border-gray-200 bg-white p-2.5 shadow-sm md:p-3">
+        <h2 className="text-sm font-bold text-gray-900 md:text-base">Most accurate this week</h2>
         {weeklyLoading ? (
-          <p className="mt-2 text-sm text-gray-500">Loading weekly accuracy…</p>
+          <p className="mt-1.5 text-sm text-gray-500">Loading weekly accuracy…</p>
         ) : weeklyRows.length === 0 ? (
-          <p className="mt-2 text-sm text-gray-500">No completed matches this week yet.</p>
+          <p className="mt-1.5 text-sm text-gray-500">No completed matches this week yet.</p>
         ) : (
-          <div className="mt-3 space-y-2">
+          <div className="mt-2 space-y-1.5">
             {weeklyRows.map((r, i) => (
               <div key={r.user_id} className="flex items-center justify-between rounded-xl border border-gray-200 px-3 py-2">
                 <div className="flex min-w-0 items-center gap-2">

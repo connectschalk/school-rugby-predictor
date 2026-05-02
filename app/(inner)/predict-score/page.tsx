@@ -19,6 +19,8 @@ import {
   type GameMatch,
   type UserPredictionRow,
 } from '@/lib/public-prediction-game'
+import { fetchUserIsAdmin } from '@/lib/admin-access'
+import PredictionMarginModal from '@/components/predict-score/PredictionMarginModal'
 import { LOCK_ALL_NO_CANDIDATES, lockAllUnlockedSavedForEditableMatches } from '@/lib/lock-user-predictions'
 import { matchGameAgainstTeamSearch } from '@/lib/team-aliases-db'
 import type { TeamRow } from '@/lib/team-name-match'
@@ -85,6 +87,8 @@ export default function PredictScorePage() {
   const [selectedPoolFilter, setSelectedPoolFilter] = useState<string>('all')
   const [poolFilterMatchIds, setPoolFilterMatchIds] = useState<Set<string>>(() => new Set())
   const [poolFilterLoading, setPoolFilterLoading] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [adminModelMatch, setAdminModelMatch] = useState<GameMatch | null>(null)
 
   const signedIn = !!user
 
@@ -190,6 +194,7 @@ export default function PredictScorePage() {
       setMyPools([])
       setSelectedPoolFilter('all')
       setPoolFilterMatchIds(new Set())
+      setIsAdmin(false)
       return
     }
     let cancelled = false
@@ -198,6 +203,9 @@ export default function PredictScorePage() {
       if (cancelled) return
       setMyPools(pools)
     })()
+    void fetchUserIsAdmin(supabase, user.id).then(({ isAdmin: next }) => {
+      if (!cancelled) setIsAdmin(next)
+    })
     return () => {
       cancelled = true
     }
@@ -525,6 +533,7 @@ export default function PredictScorePage() {
 
       <HowItWorksModal open={howModalOpen} onClose={() => setHowModalOpen(false)} />
       <PredictScoreAuthModal open={authModalOpen} onClose={() => setAuthModalOpen(false)} />
+      <PredictionMarginModal match={adminModelMatch} onClose={() => setAdminModelMatch(null)} />
 
       {!authReady ? (
         <p className="mt-10 text-center text-sm text-gray-500">Loading…</p>
@@ -669,6 +678,8 @@ export default function PredictScorePage() {
                     onLock={handleLockOne}
                     lockingMatchId={lockingMatchId}
                     onRequireAuth={() => setAuthModalOpen(true)}
+                    isAdmin={isAdmin}
+                    onAdminModel={setAdminModelMatch}
                   />
                   <PredictScoreSlipListSection
                     title="All games"
@@ -688,6 +699,8 @@ export default function PredictScorePage() {
                     onLock={handleLockOne}
                     lockingMatchId={lockingMatchId}
                     onRequireAuth={() => setAuthModalOpen(true)}
+                    isAdmin={isAdmin}
+                    onAdminModel={setAdminModelMatch}
                   />
                   <PredictScoreSlipListSection
                     title="Starting soon"
@@ -706,6 +719,8 @@ export default function PredictScorePage() {
                     onLock={handleLockOne}
                     lockingMatchId={lockingMatchId}
                     onRequireAuth={() => setAuthModalOpen(true)}
+                    isAdmin={isAdmin}
+                    onAdminModel={setAdminModelMatch}
                   />
                   <PredictScoreSlipListSection
                     title="Predictions closed"
@@ -726,6 +741,8 @@ export default function PredictScorePage() {
                     onLock={handleLockOne}
                     lockingMatchId={lockingMatchId}
                     onRequireAuth={() => setAuthModalOpen(true)}
+                    isAdmin={isAdmin}
+                    onAdminModel={setAdminModelMatch}
                   />
                   </div>
                 </>
