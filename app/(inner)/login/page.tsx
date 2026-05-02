@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useId, useState, Suspense } from 'react'
 import LetterAvatar from '@/components/LetterAvatar'
+import { safeInternalReturnPath } from '@/lib/auth-return-path'
 import { clearPostConfirmProfilePreview, readPostConfirmProfilePreview, type PostConfirmProfilePreview } from '@/lib/user-profile-metadata'
 import { supabase } from '@/lib/supabase'
 import { isProfileAdminRole } from '@/lib/admin-access'
@@ -149,6 +150,7 @@ function LoginForm() {
   const confirmedTitleId = useId()
   const resetSuccess = searchParams.get('reset') === 'success'
   const confirmed = searchParams.get('confirmed') === '1'
+  const nextAfterLogin = safeInternalReturnPath(searchParams.get('next'))
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -182,6 +184,11 @@ function LoginForm() {
         data: { session },
       } = await supabase.auth.getSession()
       if (!session?.user || cancelled || confirmed) return
+      if (nextAfterLogin) {
+        setSessionRedirecting(true)
+        if (!cancelled) router.replace(nextAfterLogin)
+        return
+      }
       setSessionRedirecting(true)
       const path = await getPostLoginRouteForUser(session.user)
       if (!cancelled) router.replace(path)
@@ -189,7 +196,7 @@ function LoginForm() {
     return () => {
       cancelled = true
     }
-  }, [router, confirmed])
+  }, [router, confirmed, nextAfterLogin])
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -217,7 +224,7 @@ function LoginForm() {
     }
 
     try {
-      const path = await getPostLoginRouteForUser(user)
+      const path = nextAfterLogin ?? (await getPostLoginRouteForUser(user))
       router.push(path)
     } catch {
       setError('Could not verify your profile. Try again.')
@@ -339,7 +346,10 @@ function LoginForm() {
         <div className="mt-6 flex flex-col gap-2 text-center text-sm text-gray-600">
           <p>
             No account yet?{' '}
-            <Link href="/signup" className="font-semibold text-black underline">
+            <Link
+              href={nextAfterLogin ? `/signup?next=${encodeURIComponent(nextAfterLogin)}` : '/signup'}
+              className="font-semibold text-black underline"
+            >
               Sign up
             </Link>
           </p>

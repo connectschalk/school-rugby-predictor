@@ -25,6 +25,7 @@ import {
   type PoolJoinRequestRow,
   type PoolRow,
 } from '@/lib/pools'
+import { buildPoolJoinPath } from '@/lib/pool-invite-path'
 import { fetchGameMatchesForCommunityHub, type GameMatch } from '@/lib/public-prediction-game'
 import { supabase } from '@/lib/supabase'
 import { normalizeTeamKey, normalizeTeamKeyLoose, type TeamRow } from '@/lib/team-name-match'
@@ -357,8 +358,8 @@ export default function ManagePoolsPage() {
   }
 
   async function copyInviteLink() {
-    if (!selectedPool || typeof window === 'undefined') return
-    const url = `${window.location.origin}/pools/join/${selectedPool.invite_token}`
+    if (!selectedPool || typeof window === 'undefined' || !user) return
+    const url = `${window.location.origin}${buildPoolJoinPath(selectedPool.invite_token, user.id)}`
     try {
       await navigator.clipboard.writeText(url)
       setInviteCopied(true)

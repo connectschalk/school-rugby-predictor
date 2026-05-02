@@ -1,8 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { useEffect, useId, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { Suspense, useEffect, useId, useState } from 'react'
 import AvatarColourSwatchGrid from '@/components/AvatarColourSwatchGrid'
 import LetterAvatar from '@/components/LetterAvatar'
 import {
@@ -11,6 +11,7 @@ import {
   normalizeAvatarLetter,
   resolveAvatarLetter,
 } from '@/lib/letter-avatar'
+import { safeInternalReturnPath } from '@/lib/auth-return-path'
 import {
   DISPLAY_NAME_NOT_ALLOWED_MESSAGE,
   isDisplayNamePolicyDbError,
@@ -123,8 +124,10 @@ function EmailConfirmReminderCard({ titleId }: { titleId: string }) {
   )
 }
 
-export default function SignupPage() {
+function SignupPageContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const nextAfterSignup = safeInternalReturnPath(searchParams.get('next'))
   const emailConfirmTitleId = useId()
   const [firstName, setFirstName] = useState('')
   const [surname, setSurname] = useState('')
@@ -141,9 +144,11 @@ export default function SignupPage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) router.replace('/profile')
+      if (session?.user) {
+        router.replace(nextAfterSignup ?? '/profile')
+      }
     })
-  }, [router])
+  }, [router, nextAfterSignup])
 
   async function handleSignup(e: React.FormEvent) {
     e.preventDefault()
@@ -242,7 +247,7 @@ export default function SignupPage() {
         return
       }
       setLoading(false)
-      router.push('/profile')
+      router.push(nextAfterSignup ?? '/profile')
       return
     }
 
@@ -434,10 +439,27 @@ export default function SignupPage() {
 
       <p className="mt-8 text-center text-sm text-gray-600">
         Already have an account?{' '}
-        <Link href="/login" className="font-semibold text-black underline">
+        <Link
+          href={nextAfterSignup ? `/login?next=${encodeURIComponent(nextAfterSignup)}` : '/login'}
+          className="font-semibold text-black underline"
+        >
           Log in
         </Link>
       </p>
     </main>
+  )
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="mx-auto max-w-lg px-6 py-16 text-center text-sm text-gray-500">
+          Loading…
+        </main>
+      }
+    >
+      <SignupPageContent />
+    </Suspense>
   )
 }

@@ -22,6 +22,7 @@ import {
   type PoolMemberRow,
   type PoolRow,
 } from '@/lib/pools'
+import { buildPoolJoinPath } from '@/lib/pool-invite-path'
 import { fetchGameMatchesForCommunityHub, type GameMatch } from '@/lib/public-prediction-game'
 import { supabase } from '@/lib/supabase'
 
@@ -299,8 +300,8 @@ function PoolsPageContent() {
   }, [selectedPoolId])
 
   async function copyInviteLink() {
-    if (!selectedPool || typeof window === 'undefined') return
-    const url = `${window.location.origin}/pools/join/${selectedPool.invite_token}`
+    if (!selectedPool || typeof window === 'undefined' || !user) return
+    const url = `${window.location.origin}${buildPoolJoinPath(selectedPool.invite_token, user.id)}`
     try {
       await navigator.clipboard.writeText(url)
       setInviteCopied(true)
@@ -557,35 +558,33 @@ function PoolsPageContent() {
           ) : (
             <>
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-lg font-black text-gray-900">{selectedPool.name}</h2>
-                    {selectedPool.admin_user_id === user.id ? (
-                      <span className="rounded-full border border-gray-300 px-2 py-0.5 text-[10px] font-semibold text-gray-700">
-                        Admin
-                      </span>
-                    ) : null}
-                  </div>
-                  {isAdmin ? (
-                    <div className="mt-3 flex flex-wrap items-center gap-3">
-                      {showManagement ? (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => void copyInviteLink()}
-                            className="rounded-xl border border-gray-900 bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
-                          >
-                            Copy invite link
-                          </button>
-                          {inviteCopied ? (
-                            <span className="text-sm font-medium text-emerald-800">Invite link copied.</span>
-                          ) : null}
-                        </>
-                      ) : null}
-                    </div>
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  <h2 className="text-lg font-black text-gray-900">{selectedPool.name}</h2>
+                  {selectedPool.admin_user_id === user.id ? (
+                    <span className="shrink-0 rounded-full border border-gray-300 px-2 py-0.5 text-[10px] font-semibold text-gray-700">
+                      Admin
+                    </span>
                   ) : null}
                 </div>
-                <p className="text-xs font-semibold text-gray-600">{isAdmin ? 'You are admin' : 'Member view'}</p>
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                  {isAdmin ? (
+                    <>
+                      <span className="text-xs font-semibold text-gray-600">You are admin</span>
+                      <button
+                        type="button"
+                        onClick={() => void copyInviteLink()}
+                        className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 shadow-sm transition hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
+                      >
+                        Share pool
+                      </button>
+                      {inviteCopied ? (
+                        <span className="text-xs font-medium text-emerald-700">Link copied</span>
+                      ) : null}
+                    </>
+                  ) : (
+                    <p className="text-xs font-semibold text-gray-600">Member view</p>
+                  )}
+                </div>
               </div>
 
               <div className="mt-5 flex flex-wrap gap-2 border-b border-gray-200 pb-1">

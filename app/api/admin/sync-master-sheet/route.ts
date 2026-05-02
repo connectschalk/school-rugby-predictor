@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { fetchUserIsAdmin } from '@/lib/admin-access'
+import { buildStructuredWarningsFromStrings, type SyncWarningItem } from '@/lib/sync-master-warnings'
 import { splitCsvLine } from '@/lib/parse-game-matches-bulk'
 import { buildTeamAliasResolverMap } from '@/lib/team-aliases-db'
 import { matchTeamName, type TeamRow } from '@/lib/team-name-match'
@@ -45,6 +46,7 @@ type SyncSummary = {
   linked_groups: number
   group_link_warnings: number
   validation_errors: string[]
+  warnings: SyncWarningItem[]
 }
 
 function normalizeHeader(v: string): string {
@@ -281,6 +283,7 @@ export async function POST(request: Request) {
   const parsed = parseCsvRows(csvText)
   errors.push(...parsed.errors)
   if (!parsed.rows.length) {
+    const validation_errors = errors.length ? errors : ['No rows found in CSV']
     const emptySummary: SyncSummary = {
       mode: dryRun ? 'dry_run' : 'run',
       replace_upcoming: replaceUpcoming,
@@ -302,7 +305,8 @@ export async function POST(request: Request) {
       would_link_groups: 0,
       linked_groups: 0,
       group_link_warnings: 0,
-      validation_errors: errors.length ? errors : ['No rows found in CSV'],
+      validation_errors,
+      warnings: buildStructuredWarningsFromStrings(validation_errors),
     }
     await supabase.from('sync_runs').insert({
       mode: dryRun ? 'dry_run' : 'run',
@@ -812,6 +816,7 @@ export async function POST(request: Request) {
     linked_groups,
     group_link_warnings,
     validation_errors: errors,
+    warnings: buildStructuredWarningsFromStrings(errors),
   }
 
   const { error: logErr } = await supabase.from('sync_runs').insert({
@@ -833,11 +838,18 @@ export async function POST(request: Request) {
     summary,
   })
   if (logErr) {
-    summary.validation_errors.push(`Sync log insert failed: ${logErr.message}`)
+    errors.push(`Sync log insert failed: ${logErr.message}`)
+  }
+
+  const warnings = buildStructuredWarningsFromStrings(errors)
+  const responseSummary: SyncSummary = {
+    ...summary,
+    validation_errors: errors,
+    warnings,
   }
 
   return NextResponse.json({
     ok: true,
-    ...summary,
+    ...responseSummary,
   })
 }

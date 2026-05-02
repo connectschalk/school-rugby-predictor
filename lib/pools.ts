@@ -2,6 +2,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 
+import { isUuid } from '@/lib/pool-invite-path'
 import type { GameMatch } from '@/lib/public-prediction-game'
 
 export type GameMatchForPoolPicks = GameMatch & { prediction_cutoff_time?: string | null }
@@ -142,28 +143,83 @@ export async function fetchMyPools(client: SupabaseClient, userId: string) {
   return { pools, memberships, error: null }
 }
 
-/** Minimal pool info for invite link landing (RPC; no emails). */
+/** Invite-safe pool preview (RPC; no private pool data beyond name + inviter display). */
 export type PoolInvitePreview = {
   id: string
   name: string
   is_public: boolean
+  /** sharer = valid ?from= uuid; admin = pool admin profile; anonymous = no display names */
+  inviter_kind: 'sharer' | 'admin' | 'anonymous'
+  inviter_display_name: string | null
+  inviter_avatar_url: string | null
+  inviter_avatar_letter: string | null
+  inviter_avatar_colour: string | null
 }
 
-export async function fetchPoolByInviteToken(client: SupabaseClient, token: string) {
+export type PoolInviteViewerState = {
+  pool_id: string
+  is_member: boolean
+  has_pending_request: boolean
+}
+
+export async function fetchPoolByInviteToken(
+  client: SupabaseClient,
+  token: string,
+  invitedByUserId?: string | null
+) {
   const trimmed = token.trim()
   if (!trimmed) {
     return { pool: null as PoolInvitePreview | null, error: null }
   }
 
+  const invited = invitedByUserId && isUuid(invitedByUserId) ? invitedByUserId.trim() : null
+
   const { data, error } = await client.rpc('get_pool_by_invite_token', {
     p_invite_token: trimmed,
+    p_invited_by: invited,
   })
 
   if (error) return { pool: null as PoolInvitePreview | null, error }
 
-  const rows = (data as PoolInvitePreview[] | null) ?? []
-  const pool = rows[0] ?? null
+  const rows = (data as Record<string, unknown>[] | null) ?? []
+  const raw = rows[0]
+  if (!raw) return { pool: null, error: null }
+  const kindRaw = String(raw.inviter_kind ?? 'anonymous')
+  const inviter_kind =
+    kindRaw === 'sharer' || kindRaw === 'admin' ? kindRaw : 'anonymous'
+  const pool: PoolInvitePreview = {
+    id: String(raw.id ?? ''),
+    name: String(raw.name ?? ''),
+    is_public: Boolean(raw.is_public),
+    inviter_kind,
+    inviter_display_name: raw.inviter_display_name == null ? null : String(raw.inviter_display_name),
+    inviter_avatar_url: raw.inviter_avatar_url == null ? null : String(raw.inviter_avatar_url),
+    inviter_avatar_letter: raw.inviter_avatar_letter == null ? null : String(raw.inviter_avatar_letter),
+    inviter_avatar_colour: raw.inviter_avatar_colour == null ? null : String(raw.inviter_avatar_colour),
+  }
   return { pool, error: null }
+}
+
+export async function fetchPoolInviteViewerState(client: SupabaseClient, token: string) {
+  const trimmed = token.trim()
+  if (!trimmed) {
+    return { state: null as PoolInviteViewerState | null, error: null }
+  }
+  const { data, error } = await client.rpc('pool_invite_viewer_state', {
+    p_invite_token: trimmed,
+  })
+  if (error) return { state: null as PoolInviteViewerState | null, error }
+  const rows = (data as Record<string, unknown>[] | null) ?? []
+  const raw = rows[0]
+  if (!raw) return { state: null, error: null }
+  return {
+    state: {
+      pool_id: String(raw.pool_id ?? ''),
+      is_member: Boolean(raw.is_member),
+      has_pending_request: Boolean(raw.has_pending_request),
+    },
+    error: null,
+  }
 }
 
 export async function searchPublicPools(client: SupabaseClient, query: string) {

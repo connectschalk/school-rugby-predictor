@@ -9,8 +9,10 @@ import * as XLSX from 'xlsx'
 import { downloadPngFromElement } from '@/lib/exportAsPng'
 import ExportPredictionCard from '@/components/export/ExportPredictionCard'
 import TeamLogoUploader from '@/components/TeamLogoUploader'
+import MasterSheetSyncWarningsPanel from '@/components/admin/MasterSheetSyncWarningsPanel'
 import PredictionCard from '@/components/admin/PredictionCard'
 import PredictedVsActualCard from '@/components/admin/PredictedVsActualCard'
+import { normalizeSyncWarningsInput, type SyncWarningItem } from '@/lib/sync-master-warnings'
 import { recordMatchResultWithPrediction } from '@/lib/admin-match'
 import {
   backfillPredictionHistoryForSeason,
@@ -126,6 +128,15 @@ type SyncRunRow = {
   updated_completed: number
   skipped_duplicates: number
   validation_errors: unknown
+  summary?: unknown
+}
+
+function masterSyncWarningsFromRun(run: SyncRunRow | undefined): SyncWarningItem[] {
+  if (!run) return []
+  const sum = run.summary as { warnings?: unknown; validation_errors?: unknown } | null | undefined
+  if (sum?.warnings != null) return normalizeSyncWarningsInput(sum.warnings)
+  if (sum?.validation_errors != null) return normalizeSyncWarningsInput(sum.validation_errors)
+  return normalizeSyncWarningsInput(run.validation_errors)
 }
 
 export default function AdminPage() {
@@ -192,6 +203,9 @@ export default function AdminPage() {
   const [syncMasterReplaceUpcoming, setSyncMasterReplaceUpcoming] = useState(false)
   const [syncRuns, setSyncRuns] = useState<SyncRunRow[]>([])
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null)
+  const [latestMasterSyncWarnings, setLatestMasterSyncWarnings] = useState<SyncWarningItem[]>([])
+  const [masterSyncPanelEpoch, setMasterSyncPanelEpoch] = useState(0)
+  const [syncRunDetailId, setSyncRunDetailId] = useState<string | null>(null)
 
   const [matchImageForm, setMatchImageForm] = useState({
     homeTeam: '',
@@ -481,7 +495,7 @@ export default function AdminPage() {
     const { data } = await supabase
       .from('sync_runs')
       .select(
-        'id, created_at, mode, replace_upcoming, incoming_rows, inserted_upcoming, updated_upcoming, inserted_completed, updated_completed, skipped_duplicates, validation_errors'
+        'id, created_at, mode, replace_upcoming, incoming_rows, inserted_upcoming, updated_upcoming, inserted_completed, updated_completed, skipped_duplicates, validation_errors, summary'
       )
       .order('created_at', { ascending: false })
       .limit(5)
@@ -526,20 +540,37 @@ export default function AdminPage() {
       updated_completed?: number
       skipped_duplicates?: number
       validation_errors?: string[]
+      warnings?: unknown
     }
-    if (!res.ok || !json.ok) {
+
+    const items = normalizeSyncWarningsInput(json.warnings ?? json.validation_errors)
+    setLatestMasterSyncWarnings(items)
+    setMasterSyncPanelEpoch((e) => e + 1)
+
+    if (!res.ok) {
       setSyncMasterMessage(`Sync failed: ${json.error ?? res.statusText}`)
       setSyncMasterBusy(false)
       return
     }
-    const warnings = json.validation_errors?.length ?? 0
+    if (!json.ok) {
+      setSyncMasterMessage(
+        json.error
+          ? `Master sheet sync: ${json.error}`
+          : `Master sheet sync finished with ${items.length} message${items.length === 1 ? '' : 's'} (see panel below).`
+      )
+      await loadSyncRuns()
+      setSyncMasterBusy(false)
+      return
+    }
+
+    const warningCount = items.length
     if (json.mode === 'dry_run' || mode === 'preview') {
       setSyncMasterMessage(
-        `Preview: incoming ${json.incoming_rows ?? 0}, upcoming insert/update ${json.would_insert_upcoming ?? 0}/${json.would_update_upcoming ?? 0}, completed insert/update ${json.would_insert_completed ?? 0}/${json.would_update_completed ?? 0}, duplicates skipped ${json.skipped_duplicates ?? 0}, validation warnings ${warnings}.`
+        `Preview: incoming ${json.incoming_rows ?? 0}, upcoming insert/update ${json.would_insert_upcoming ?? 0}/${json.would_update_upcoming ?? 0}, completed insert/update ${json.would_insert_completed ?? 0}/${json.would_update_completed ?? 0}, duplicates skipped ${json.skipped_duplicates ?? 0}, validation messages ${warningCount}.`
       )
     } else {
       setSyncMasterMessage(
-        `Sync complete: incoming ${json.incoming_rows ?? 0}, upcoming inserted/updated ${json.inserted_upcoming ?? 0}/${json.updated_upcoming ?? 0}, completed inserted/updated ${json.inserted_completed ?? 0}/${json.updated_completed ?? 0}, duplicates skipped ${json.skipped_duplicates ?? 0}, validation warnings ${warnings}.`
+        `Sync complete: incoming ${json.incoming_rows ?? 0}, upcoming inserted/updated ${json.inserted_upcoming ?? 0}/${json.updated_upcoming ?? 0}, completed inserted/updated ${json.inserted_completed ?? 0}/${json.updated_completed ?? 0}, duplicates skipped ${json.skipped_duplicates ?? 0}, validation messages ${warningCount}.`
       )
     }
     await loadSyncRuns()
@@ -1919,14 +1950,18 @@ export default function AdminPage() {
           </button>
         </div>
 
-        <p className="mt-4 text-gray-600">Admin management and tools are now grouped into two sections only.</p>
+        <p className="mt-4 text-gray-600">
+          Fixture management, pools, master sheet sync, and related admin operations.
+        </p>
 
         <section className="mt-10" aria-labelledby="admin-sections-heading">
-          <h2 id="admin-sections-heading" className="text-lg font-semibold text-gray-900">
+          <h2
+            id="admin-sections-heading"
+            className="mx-auto max-w-2xl text-center text-lg font-semibold text-gray-900"
+          >
             Admin sections
           </h2>
-          <p className="mt-1 text-sm text-gray-600">Use Admin for operations and Tools Hub for analytics tools.</p>
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <div className="mx-auto mt-5 max-w-2xl w-full">
             <div className="rounded-2xl border border-gray-200 bg-gray-50/80 p-6 shadow-sm">
               <h3 className="text-xl font-semibold text-gray-900">Admin</h3>
               <p className="mt-2 text-sm text-gray-600">
@@ -2000,12 +2035,18 @@ export default function AdminPage() {
                   {syncMasterMessage}
                 </p>
               ) : null}
+              <MasterSheetSyncWarningsPanel
+                key={`master-sync-${masterSyncPanelEpoch}`}
+                items={latestMasterSyncWarnings}
+                defaultOpen={latestMasterSyncWarnings.length > 0}
+                title="Warnings / errors (latest run)"
+              />
               <p className="mt-2 text-xs text-gray-600">
                 Last sync: {lastSyncAt ? new Date(lastSyncAt).toLocaleString() : '—'}
               </p>
               {syncRuns.length > 0 ? (
                 <div className="mt-3 overflow-x-auto rounded-lg border border-gray-200 bg-white">
-                  <table className="w-full min-w-[740px] border-collapse text-left text-[11px]">
+                  <table className="w-full min-w-[820px] border-collapse text-left text-[11px]">
                     <thead className="bg-gray-50 text-gray-600">
                       <tr>
                         <th className="px-2 py-1.5">When</th>
@@ -2016,6 +2057,7 @@ export default function AdminPage() {
                         <th className="px-2 py-1.5">Comp (ins/upd)</th>
                         <th className="px-2 py-1.5">Dupes</th>
                         <th className="px-2 py-1.5">Warnings</th>
+                        <th className="px-2 py-1.5">Details</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2031,26 +2073,62 @@ export default function AdminPage() {
                           <td className="px-2 py-1.5 text-gray-700">
                             {Array.isArray(run.validation_errors) ? run.validation_errors.length : 0}
                           </td>
+                          <td className="px-2 py-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setSyncRunDetailId(run.id)}
+                              className="rounded border border-gray-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-gray-800 hover:bg-gray-50"
+                            >
+                              View details
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
               ) : null}
-            </div>
-            <div className="rounded-2xl border border-gray-200 bg-gray-50/80 p-6 shadow-sm">
-              <h3 className="text-xl font-semibold text-gray-900">Tools Hub</h3>
-              <p className="mt-2 text-sm text-gray-600">
-                Ranking, consistency, graph, predictor, results, and helper diagnostics tools.
-              </p>
-              <div className="mt-4">
-                <Link
-                  href="/tools"
-                  className="inline-flex rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-gray-100"
+              {syncRunDetailId ? (
+                <div
+                  className="fixed inset-0 z-[100] flex items-end justify-center p-4 sm:items-center"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="sync-run-detail-title"
                 >
-                  Open Tools Hub
-                </Link>
-              </div>
+                  <button
+                    type="button"
+                    className="absolute inset-0 bg-black/40"
+                    onClick={() => setSyncRunDetailId(null)}
+                    aria-label="Close details"
+                  />
+                  <div className="relative z-[1] flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl">
+                    <div className="flex shrink-0 items-center justify-between gap-2 border-b border-gray-100 px-4 py-3">
+                      <h4 id="sync-run-detail-title" className="text-sm font-semibold text-gray-900">
+                        Sync run{' '}
+                        {(() => {
+                          const r = syncRuns.find((x) => x.id === syncRunDetailId)
+                          return r ? new Date(r.created_at).toLocaleString() : ''
+                        })()}
+                      </h4>
+                      <button
+                        type="button"
+                        onClick={() => setSyncRunDetailId(null)}
+                        className="rounded-lg border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-800 hover:bg-gray-50"
+                      >
+                        Close
+                      </button>
+                    </div>
+                    <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-4 pt-2 md:px-4">
+                      <MasterSheetSyncWarningsPanel
+                        key={syncRunDetailId}
+                        items={masterSyncWarningsFromRun(syncRuns.find((x) => x.id === syncRunDetailId))}
+                        defaultOpen
+                        title="Warnings / errors (this run)"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </div>
           </div>
         </section>
