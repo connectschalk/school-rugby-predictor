@@ -217,8 +217,8 @@ export default function AdminPage() {
     unscored_games_count: number
   } | null>(null)
   const [scoringSummaryLoading, setScoringSummaryLoading] = useState(false)
-  const [bulkScoreBusy, setBulkScoreBusy] = useState(false)
-  const [bulkScoreMessage, setBulkScoreMessage] = useState('')
+  const [repairGroupLinksBusy, setRepairGroupLinksBusy] = useState(false)
+  const [repairGroupLinksMessage, setRepairGroupLinksMessage] = useState('')
 
   const [matchImageForm, setMatchImageForm] = useState({
     homeTeam: '',
@@ -509,9 +509,49 @@ export default function AdminPage() {
     router.push('/login')
   }
 
+  async function runRepairFixtureGroupLinks() {
+    setRepairGroupLinksBusy(true)
+    setRepairGroupLinksMessage('')
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    const token = session?.access_token
+    if (!token) {
+      setRepairGroupLinksMessage('Not signed in.')
+      setRepairGroupLinksBusy(false)
+      return
+    }
+    const res = await fetch('/api/admin/repair-fixture-group-links', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const json = (await res.json()) as {
+      ok?: boolean
+      error?: string
+      processed?: number
+      linked?: number
+      skippedNoGroupFields?: number
+      unresolvedWithFields?: number
+      warnings?: string[]
+    }
+    if (!res.ok || !json.ok) {
+      setRepairGroupLinksMessage(json.error ?? 'Repair failed.')
+      setRepairGroupLinksBusy(false)
+      return
+    }
+    const warnList = Array.isArray(json.warnings) ? json.warnings : []
+    const wn = warnList.length
+    let detail = `Completed matches processed: ${json.processed ?? 0}; group row inserted for ${json.linked ?? 0}. Skipped ${json.skippedNoGroupFields ?? 0} with no league/province fields; ${json.unresolvedWithFields ?? 0} had fields but no matching fixture group.`
+    if (wn > 0) {
+      detail += ` ${wn} warning(s): ${warnList.slice(0, 5).join(' · ')}${wn > 5 ? '…' : ''}`
+    }
+    setRepairGroupLinksMessage(detail)
+    void loadScoringSummary()
+    setRepairGroupLinksBusy(false)
+  }
+
   async function loadScoringSummary() {
     setScoringSummaryLoading(true)
-    setBulkScoreMessage('')
     const {
       data: { session },
     } = await supabase.auth.getSession()
@@ -546,45 +586,6 @@ export default function AdminPage() {
       setScoringSummary(null)
     }
     setScoringSummaryLoading(false)
-  }
-
-  async function runBulkScoreCompleted() {
-    setBulkScoreBusy(true)
-    setBulkScoreMessage('')
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
-    const token = session?.access_token
-    if (!token) {
-      setBulkScoreMessage('Not signed in.')
-      setBulkScoreBusy(false)
-      return
-    }
-    const res = await fetch('/api/admin/bulk-score-completed', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    const json = (await res.json()) as {
-      ok?: boolean
-      error?: string
-      matches_scored_ok?: number
-      match_ids_attempted?: number
-      scoring_errors?: string[]
-    }
-    if (!res.ok || !json.ok) {
-      setBulkScoreMessage(json.error ?? 'Bulk scoring failed.')
-      setBulkScoreBusy(false)
-      await loadScoringSummary()
-      return
-    }
-    const errN = Array.isArray(json.scoring_errors) ? json.scoring_errors.length : 0
-    setBulkScoreMessage(
-      `Processed ${json.match_ids_attempted ?? 0} match(es); ${json.matches_scored_ok ?? 0} scored OK${
-        errN ? `; ${errN} error(s)` : ''
-      }.`
-    )
-    await loadScoringSummary()
-    setBulkScoreBusy(false)
   }
 
   async function loadSyncRuns() {
@@ -652,6 +653,10 @@ export default function AdminPage() {
       validation_errors?: string[]
       warnings?: unknown
       completed_matches_scored?: number
+      post_sync_sweep_scored?: number
+      post_sync_sweep_attempted?: number
+      group_link_repair_examined?: number
+      group_link_repair_linked?: number
     }
 
     const items = normalizeSyncWarningsInput(json.warnings ?? json.validation_errors)
@@ -682,22 +687,16 @@ export default function AdminPage() {
       )
     } else {
       const nScored = json.completed_matches_scored ?? 0
+      const sweepOk = json.post_sync_sweep_scored ?? 0
+      const sweepAttempted = json.post_sync_sweep_attempted ?? 0
+      const grpExam = json.group_link_repair_examined ?? 0
+      const grpLinked = json.group_link_repair_linked ?? 0
       let msg = `Sync complete: incoming ${json.incoming_rows ?? 0}, upcoming inserted/updated ${json.inserted_upcoming ?? 0}/${json.updated_upcoming ?? 0}, completed inserted/updated ${json.inserted_completed ?? 0}/${json.updated_completed ?? 0}, duplicates skipped ${json.skipped_duplicates ?? 0}, validation messages ${warningCount}.`
       if (nScored > 0) {
         msg += ` Completed sheet rows auto-scored: ${nScored}.`
       }
-      const sweepRes = await fetch('/api/admin/bulk-score-completed', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      const sweepJson = (await sweepRes.json()) as {
-        ok?: boolean
-        matches_scored_ok?: number
-        match_ids_attempted?: number
-      }
-      if (sweepRes.ok && sweepJson.ok && (sweepJson.matches_scored_ok ?? 0) > 0) {
-        msg += ` Sweep: scored ${sweepJson.matches_scored_ok} additional completed match(es) with predictions.`
-      }
+      msg += ` Post-sync scoring sweep (completed + predictions + no scores yet): attempted ${sweepAttempted}, OK ${sweepOk}.`
+      msg += ` Completed → fixture groups (full relink pass): processed ${grpExam}, linked ${grpLinked}.`
       setSyncMasterMessage(msg)
     }
     await loadSyncRuns()
@@ -2295,9 +2294,10 @@ export default function AdminPage() {
             <div className="mt-5 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-800">
               <p className="font-semibold text-gray-900">Prediction scoring &amp; pools</p>
               <p className="mt-1 text-xs text-gray-600">
-                Pool leaderboards use <code className="rounded bg-gray-200 px-1">user_prediction_scores</code> from the
-                same <code className="rounded bg-gray-200 px-1">score_predictions_for_match</code> RPC as &quot;Run
-                scoring&quot; on completed fixtures.
+                After each <strong className="font-medium text-gray-800">Run Master Sheet Sync</strong>, the server
+                automatically scores every completed match that has predictions and results but no{' '}
+                <code className="rounded bg-gray-200 px-1">user_prediction_scores</code> yet (same RPC as fixture
+                &quot;Run scoring&quot;). Refresh the summary below after a sync to confirm counts.
               </p>
               {scoringSummaryLoading ? (
                 <p className="mt-2 text-xs text-gray-500">Loading scoring summary…</p>
@@ -2305,7 +2305,8 @@ export default function AdminPage() {
                 <ul className="mt-2 list-inside list-disc space-y-0.5 text-xs text-gray-700">
                   <li>
                     <strong>{scoringSummary.unscored_with_predictions}</strong> completed game(s) with predictions but no{' '}
-                    <code className="rounded bg-gray-100 px-1">user_prediction_scores</code> rows yet (needs scoring).
+                    <code className="rounded bg-gray-100 px-1">user_prediction_scores</code> rows yet (should go to zero
+                    after sync; otherwise check warnings or run scoring on the fixture).
                   </li>
                   <li>
                     <strong>{scoringSummary.scored_with_predictions}</strong> completed game(s) with predictions and
@@ -2332,18 +2333,31 @@ export default function AdminPage() {
                 >
                   Refresh summary
                 </button>
-                <button
-                  type="button"
-                  onClick={() => void runBulkScoreCompleted()}
-                  disabled={bulkScoreBusy}
-                  className="rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-black disabled:opacity-50"
-                >
-                  {bulkScoreBusy ? 'Scoring…' : 'Score all completed unscored games'}
-                </button>
               </div>
-              {bulkScoreMessage ? (
-                <p className="mt-2 text-xs text-gray-700">{bulkScoreMessage}</p>
-              ) : null}
+              <div className="mt-4 border-t border-gray-200 pt-4">
+                <p className="font-semibold text-gray-900">Fixture group links</p>
+                <p className="mt-1 text-xs text-gray-600">
+                  Every <strong className="font-medium text-gray-800">completed</strong> match is relinked from{' '}
+                  <code className="rounded bg-gray-200 px-1">league_group</code> (first) and{' '}
+                  <code className="rounded bg-gray-200 px-1">province_group</code> to{' '}
+                  <code className="rounded bg-gray-200 px-1">game_match_groups</code> (old links removed, then correct row
+                  inserted). Same matching as master sheet sync. Runs automatically after each sync; use the button to
+                  repair pool visibility without re-running the full sheet.
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void runRepairFixtureGroupLinks()}
+                    disabled={repairGroupLinksBusy}
+                    className="rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-black disabled:opacity-50"
+                  >
+                    {repairGroupLinksBusy ? 'Working…' : 'Fix missing group links for completed matches'}
+                  </button>
+                </div>
+                {repairGroupLinksMessage ? (
+                  <p className="mt-2 text-xs text-gray-700">{repairGroupLinksMessage}</p>
+                ) : null}
+              </div>
             </div>
             <div ref={masterSyncWarningsRef} id="master-sync-warnings" className="mt-4 scroll-mt-24">
               <MasterSheetSyncWarningsPanel

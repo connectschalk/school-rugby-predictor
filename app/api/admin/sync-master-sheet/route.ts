@@ -1,9 +1,15 @@
 import { createClient } from '@supabase/supabase-js'
-import type { SupabaseClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { fetchUserIsAdmin } from '@/lib/admin-access'
 import { buildStructuredWarningsFromStrings, type SyncWarningItem } from '@/lib/sync-master-warnings'
 import { splitCsvLine } from '@/lib/parse-game-matches-bulk'
+import {
+  linkMatchToFixtureGroup,
+  loadFixtureGroupMaps,
+  resolveGroupIdForRow,
+} from '@/lib/fixture-group-resolve'
+import { relinkAllCompletedMatchesToFixtureGroups } from '@/lib/repair-missing-fixture-group-links'
+import { scoreCompletedPredictionMatches } from '@/lib/score-completed-unscored-matches'
 import { rpcScorePredictionsForMatch } from '@/lib/score-predictions-for-match'
 import { buildTeamAliasResolverMap } from '@/lib/team-aliases-db'
 import { matchTeamName, type TeamRow } from '@/lib/team-name-match'
@@ -51,8 +57,15 @@ type SyncSummary = {
   would_link_groups: number
   linked_groups: number
   group_link_warnings: number
-  /** Completed game_matches rows for which scoring RPC ran successfully after sync */
+  /** Completed game_matches rows for which scoring RPC ran successfully during sheet row processing */
   completed_matches_scored?: number
+  /** Post-sync sweep: completed + predictions + no scores — RPC successes (see `scoreCompletedPredictionMatches`) */
+  post_sync_sweep_scored?: number
+  post_sync_sweep_attempted?: number
+  /** Completed matches processed in post-sync relink pass (`relinkAllCompletedMatchesToFixtureGroups`) */
+  group_link_repair_examined?: number
+  /** Completed matches where a `game_match_groups` row was inserted after clear+resolve */
+  group_link_repair_linked?: number
   validation_errors: string[]
   warnings: SyncWarningItem[]
 }
@@ -114,14 +127,6 @@ function orderedPairKey(a: string, b: string): string {
   return [a.trim().toLowerCase(), b.trim().toLowerCase()].sort().join('|')
 }
 
-function slugifyGroupName(name: string): string {
-  return name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-}
-
 const PROVINCE_ALIAS_TO_CANONICAL: Record<string, string> = {
   wp: 'Western Province',
   ep: 'Eastern Province',
@@ -144,63 +149,6 @@ function canonicalProvinceGroup(raw: string): { value: string | null; warning?: 
   const canonicalValues = new Set(Object.values(PROVINCE_ALIAS_TO_CANONICAL).map((v) => v.toLowerCase()))
   if (canonicalValues.has(key)) return { value: t }
   return { value: null, warning: `Unknown province_group "${t}" mapped to null` }
-}
-
-type ResolvedFixtureGroup = { groupId: string | null; sourceValue: string | null }
-
-async function linkMatchToFixtureGroup(
-  supabase: SupabaseClient,
-  matchId: string,
-  resolvedGroup: ResolvedFixtureGroup,
-  rowLabel: string,
-  errors: string[]
-): Promise<{ linked_groups: number; group_link_warnings: number }> {
-  let linked_groups = 0
-  let group_link_warnings = 0
-  const { error: clearLinksErr } = await supabase.from('game_match_groups').delete().eq('match_id', matchId)
-  if (clearLinksErr) {
-    group_link_warnings += 1
-    errors.push(`Warning: could not clear old group links for match ${matchId}: ${clearLinksErr.message}`)
-    return { linked_groups, group_link_warnings }
-  }
-  if (resolvedGroup.groupId) {
-    const { error: linkErr } = await supabase
-      .from('game_match_groups')
-      .upsert(
-        { match_id: matchId, group_id: resolvedGroup.groupId },
-        { onConflict: 'match_id,group_id', ignoreDuplicates: true }
-      )
-    if (linkErr) {
-      group_link_warnings += 1
-      errors.push(`Warning: could not link fixture group for match ${matchId}: ${linkErr.message}`)
-    } else {
-      linked_groups += 1
-    }
-  } else if (resolvedGroup.sourceValue) {
-    group_link_warnings += 1
-    errors.push(`Warning: no fixture group found for "${resolvedGroup.sourceValue}" (${rowLabel})`)
-  }
-  return { linked_groups, group_link_warnings }
-}
-
-function resolveGroupIdForRow(
-  leagueGroup: string,
-  provinceGroup: string,
-  aliasToGroupId: Map<string, string>,
-  nameToGroupId: Map<string, string>,
-  slugToGroupId: Map<string, string>
-): ResolvedFixtureGroup {
-  const candidates = [leagueGroup.trim(), provinceGroup.trim()].filter(Boolean)
-  for (const raw of candidates) {
-    const key = raw.toLowerCase()
-    const aliasHit = aliasToGroupId.get(key)
-    if (aliasHit) return { groupId: aliasHit, sourceValue: raw }
-    const nameHit = nameToGroupId.get(key)
-    if (nameHit) return { groupId: nameHit, sourceValue: raw }
-    const slugHit = slugToGroupId.get(slugifyGroupName(raw))
-    if (slugHit) return { groupId: slugHit, sourceValue: raw }
-  }
-  return { groupId: null, sourceValue: candidates[0] ?? null }
 }
 
 function dateInSastFromIso(iso: string): string {
@@ -320,6 +268,10 @@ export async function POST(request: Request) {
   let linked_groups = 0
   let group_link_warnings = 0
   let completed_matches_scored = 0
+  let post_sync_sweep_scored = 0
+  let post_sync_sweep_attempted = 0
+  let group_link_repair_examined = 0
+  let group_link_repair_linked = 0
 
   const csvRes = await fetch(csvUrl)
   if (!csvRes.ok) {
@@ -354,6 +306,10 @@ export async function POST(request: Request) {
       linked_groups: 0,
       group_link_warnings: 0,
       completed_matches_scored: 0,
+      post_sync_sweep_scored: 0,
+      post_sync_sweep_attempted: 0,
+      group_link_repair_examined: 0,
+      group_link_repair_linked: 0,
       validation_errors,
       warnings: buildStructuredWarningsFromStrings(validation_errors),
     }
@@ -468,21 +424,7 @@ export async function POST(request: Request) {
   const teams = (teamsData as TeamRow[] | null) ?? []
   const aliasMap = buildTeamAliasResolverMap((aliasData as Record<string, unknown>[] | null) ?? [], teams)
 
-  const { data: fixtureGroupsData } = await supabase.from('fixture_groups').select('id, name, slug')
-  const { data: fixtureGroupAliasesData } = await supabase
-    .from('fixture_group_aliases')
-    .select('alias, group_id')
-  const aliasToGroupId = new Map<string, string>()
-  const nameToGroupId = new Map<string, string>()
-  const slugToGroupId = new Map<string, string>()
-  for (const row of ((fixtureGroupsData as { id: string; name: string; slug: string }[] | null) ?? [])) {
-    nameToGroupId.set((row.name ?? '').trim().toLowerCase(), row.id)
-    if (row.slug) slugToGroupId.set(String(row.slug).trim().toLowerCase(), row.id)
-  }
-  for (const row of ((fixtureGroupAliasesData as { alias: string; group_id: string }[] | null) ?? [])) {
-    if (!row.alias || !row.group_id) continue
-    aliasToGroupId.set(row.alias.trim().toLowerCase(), row.group_id)
-  }
+  const { aliasToGroupId, nameToGroupId, slugToGroupId } = await loadFixtureGroupMaps(supabase)
 
   /** All statuses (incl. rejected/locked/cancelled/draft) — unique pair + SAST calendar day identifies one row */
   const { data: existingGameMatchesData, error: existingGameMatchesErr } = await supabase
@@ -611,6 +553,7 @@ export async function POST(request: Request) {
 
   if (!dryRun) {
   let upcomingUpsertFailed = false
+  /** Each successful upcoming or completed `game_matches` insert/update is followed by `linkMatchToFixtureGroup`. */
   for (const row of normalized) {
     const pairOnDate = `${row.match_date}|${orderedPairKey(row.home_team, row.away_team)}`
     if (row.status === 'upcoming') {
@@ -908,6 +851,34 @@ export async function POST(request: Request) {
   }
   }
 
+  if (!dryRun) {
+    try {
+      const rep = await relinkAllCompletedMatchesToFixtureGroups(supabase)
+      group_link_repair_examined = rep.processed
+      group_link_repair_linked = rep.linked
+      for (const w of rep.warnings) errors.push(w)
+    } catch (e) {
+      errors.push(
+        `Warning: completed fixture group relink failed: ${e instanceof Error ? e.message : String(e)}`
+      )
+    }
+  }
+
+  if (!dryRun) {
+    try {
+      const sweep = await scoreCompletedPredictionMatches(supabase, { onlyWithoutScores: true })
+      post_sync_sweep_scored = sweep.matchesScoredOk
+      post_sync_sweep_attempted = sweep.matchIdsAttempted
+      for (const err of sweep.scoringErrors) {
+        errors.push(`Warning: post-sync scoring sweep: ${err}`)
+      }
+    } catch (e) {
+      errors.push(
+        `Warning: post-sync scoring sweep failed: ${e instanceof Error ? e.message : String(e)}`
+      )
+    }
+  }
+
   const summary: SyncSummary = {
     mode: dryRun ? 'dry_run' : 'run',
     replace_upcoming: replaceUpcoming,
@@ -932,6 +903,10 @@ export async function POST(request: Request) {
     linked_groups,
     group_link_warnings,
     completed_matches_scored,
+    post_sync_sweep_scored,
+    post_sync_sweep_attempted,
+    group_link_repair_examined,
+    group_link_repair_linked,
     validation_errors: errors,
     warnings: buildStructuredWarningsFromStrings(errors),
   }

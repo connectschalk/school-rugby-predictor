@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { fetchUserIsAdmin } from '@/lib/admin-access'
-import { scoreCompletedPredictionMatches } from '@/lib/score-completed-unscored-matches'
+import { relinkAllCompletedMatchesToFixtureGroups } from '@/lib/repair-missing-fixture-group-links'
 
 export const runtime = 'nodejs'
 
@@ -11,9 +11,6 @@ export async function POST(request: Request) {
   if (!token) {
     return NextResponse.json({ ok: false, error: 'Missing Authorization bearer token' }, { status: 401 })
   }
-
-  const reqUrl = new URL(request.url)
-  const onlyUnscored = reqUrl.searchParams.get('only_unscored') !== '0'
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -41,16 +38,10 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await scoreCompletedPredictionMatches(supabase, {
-      onlyWithoutScores: onlyUnscored,
-    })
-
+    const result = await relinkAllCompletedMatchesToFixtureGroups(supabase)
     return NextResponse.json({
       ok: true,
-      only_unscored: onlyUnscored,
-      match_ids_attempted: result.matchIdsAttempted,
-      matches_scored_ok: result.matchesScoredOk,
-      scoring_errors: result.scoringErrors,
+      ...result,
     })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Unknown error'
