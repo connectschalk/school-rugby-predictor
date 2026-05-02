@@ -7,6 +7,7 @@ import { Calendar } from 'lucide-react'
 import CommunityDistributionPanel from '@/components/community-predictor/CommunityDistributionPanel'
 import {
   fetchCommunityPredictionStats,
+  formatCommunityMatchScheduleLine,
   type CommunityStatsOk,
   type CommunityStatsResponse,
 } from '@/lib/community-predictor'
@@ -637,28 +638,35 @@ export default function CommunityPicksPage() {
         </p>
       ) : (
         <section className="mt-10">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <button
-              type="button"
-              onClick={goPrev}
-              disabled={index <= 0}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-gray-300 bg-white text-lg font-bold text-gray-900 shadow-sm hover:bg-gray-50 disabled:opacity-30"
-              aria-label="Previous match"
-            >
-              ←
-            </button>
-            <p className="min-w-0 flex-1 text-center text-xs font-semibold text-gray-600 sm:text-sm">
-              Match {index + 1} of {orderedList.length}
-            </p>
-            <button
-              type="button"
-              onClick={goNext}
-              disabled={index >= orderedList.length - 1}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-gray-300 bg-white text-lg font-bold text-gray-900 shadow-sm hover:bg-gray-50 disabled:opacity-30"
-              aria-label="Next match"
-            >
-              →
-            </button>
+          <div className="mb-4">
+            <div className="flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={goPrev}
+                disabled={index <= 0}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-gray-300 bg-white text-lg font-bold text-gray-900 shadow-sm hover:bg-gray-50 disabled:opacity-30"
+                aria-label="Previous match"
+              >
+                ←
+              </button>
+              <p className="min-w-0 flex-1 text-center text-xs font-semibold text-gray-600 sm:text-sm">
+                Match {index + 1} of {orderedList.length}
+              </p>
+              <button
+                type="button"
+                onClick={goNext}
+                disabled={index >= orderedList.length - 1}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-gray-300 bg-white text-lg font-bold text-gray-900 shadow-sm hover:bg-gray-50 disabled:opacity-30"
+                aria-label="Next match"
+              >
+                →
+              </button>
+            </div>
+            {orderedList[index] ? (
+              <p className="mt-2 text-center text-[11px] font-semibold leading-snug text-gray-600 sm:text-xs">
+                {formatCommunityMatchScheduleLine(orderedList[index].kickoff_time, orderedList[index].status)}
+              </p>
+            ) : null}
           </div>
 
           <div onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>

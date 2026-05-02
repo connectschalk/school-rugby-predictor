@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { rpcScorePredictionsForMatch } from '@/lib/score-predictions-for-match'
 import { supabase } from '@/lib/supabase'
 import { fetchUserIsAdmin } from '@/lib/admin-access'
 import { parseGameMatchesBulk, parseGameMatchesCsv, splitCsvLine } from '@/lib/parse-game-matches-bulk'
@@ -1381,7 +1382,7 @@ async function resolveFixtureGroupForPreview(rawInput: string): Promise<GroupRes
 
     const shouldAutoScore = d.status === 'completed' && homeScore != null && awayScore != null
     if (shouldAutoScore) {
-      const { error: scoreErr } = await supabase.rpc('score_predictions_for_match', { p_match_id: matchId })
+      const { error: scoreErr } = await rpcScorePredictionsForMatch(supabase, matchId)
       if (scoreErr) {
         setMessage('Result saved, but scoring failed. Please try Run scoring.')
       } else {
@@ -1396,9 +1397,9 @@ async function resolveFixtureGroupForPreview(rawInput: string): Promise<GroupRes
 
   async function runScoring(id: string) {
     setRowBusyId(id)
-    const { data, error } = await supabase.rpc('score_predictions_for_match', { p_match_id: id })
+    const { scoredCount, error } = await rpcScorePredictionsForMatch(supabase, id)
     if (error) setMessage(`Scoring failed: ${error.message}`)
-    else setMessage(`Scoring wrote ${data ?? 0} row(s) for this match.`)
+    else setMessage(`Scoring wrote ${scoredCount} row(s) for this match.`)
     await loadFixtures()
     setRowBusyId(null)
   }
@@ -1855,7 +1856,7 @@ async function resolveFixtureGroupForPreview(rawInput: string): Promise<GroupRes
               <h2 className="text-lg font-semibold">Current fixtures</h2>
               <p className="mt-2 max-w-3xl text-sm text-gray-600">
                 Edit kickoff (predictions close at kickoff), status, and scores, then <strong>Save row</strong>. Featured
-                toggles save immediately. Completed results auto-run scoring; use <strong>Re-run scoring</strong> if
+                toggles save immediately. Completed results auto-run scoring; use <strong>Run scoring</strong> if
                 you need to retry.
               </p>
             </div>
@@ -2054,7 +2055,7 @@ async function resolveFixtureGroupForPreview(rawInput: string): Promise<GroupRes
                               className="w-fit rounded border border-gray-400 px-2 py-1 text-xs text-gray-800 hover:bg-gray-50 disabled:opacity-50"
                               onClick={() => void runScoring(m.id)}
                             >
-                              Re-run scoring
+                              Run scoring
                             </button>
                             <button
                               type="button"

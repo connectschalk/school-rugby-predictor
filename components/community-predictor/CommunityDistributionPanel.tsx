@@ -2,7 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import LetterAvatar from '@/components/LetterAvatar'
-import type { CommunityBucketRow, CommunityMarginBucket, CommunityStatsOk } from '@/lib/community-predictor'
+import {
+  formatCommunityMatchScheduleLine,
+  type CommunityBucketRow,
+  type CommunityMarginBucket,
+  type CommunityStatsOk,
+} from '@/lib/community-predictor'
 import { getSchoolTeamLogoPath } from '@/lib/school-team-logos'
 
 const HOME_BUCKETS: CommunityMarginBucket[] = ['20+', '15', '10', '5']
@@ -97,17 +102,6 @@ function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n))
 }
 
-function formatMatchDate(value: string | null | undefined): string {
-  if (!value) return ''
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  return new Intl.DateTimeFormat('en-ZA', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  }).format(date)
-}
-
 type ViewerAvatar = {
   displayName: string
   avatarUrl: string | null
@@ -136,10 +130,7 @@ export default function CommunityDistributionPanel({
       ? `Community average: ${stats.community_average_label}`
       : 'Community average: —'
 
-  const isPast =
-    stats.status === 'completed' || new Date(stats.kickoff_time).getTime() < Date.now()
-  const formattedDate = formatMatchDate(stats.kickoff_time)
-  const pastDateLabel = isPast ? formattedDate || 'Date TBC' : ''
+  const scheduleLine = formatCommunityMatchScheduleLine(stats.kickoff_time, stats.status)
   const scoresExist = stats.home_score != null && stats.away_score != null
   const scoreLine = scoresExist ? `${stats.home_score} - ${stats.away_score}` : null
   const actualBucket = stats.actual_margin != null ? marginToBucket(stats.actual_margin) : null
@@ -251,14 +242,18 @@ export default function CommunityDistributionPanel({
             <div className="text-sm tracking-wide text-gray-500">HOME</div>
           </div>
 
-          {/* CENTER (VS + DATE) */}
-          <div className="flex flex-col items-center justify-center text-center">
+          {/* CENTER (DATE + VS / SCORE) */}
+          <div className="flex min-h-[4.5rem] flex-col items-center justify-center gap-1 text-center sm:min-h-[5rem]">
+            {scheduleLine ? (
+              <div className="max-w-[15rem] px-1 text-[11px] font-semibold leading-tight text-gray-600 sm:text-xs">
+                {scheduleLine}
+              </div>
+            ) : null}
             {scoreLine ? (
               <div className="text-2xl font-black tracking-tight text-gray-900 sm:text-3xl">{scoreLine}</div>
             ) : (
               <div className="text-xs tracking-widest text-gray-400">VS</div>
             )}
-            {isPast ? <div className="mt-1 text-sm text-gray-500">{pastDateLabel}</div> : null}
           </div>
 
           {/* RIGHT TEAM (AWAY) */}

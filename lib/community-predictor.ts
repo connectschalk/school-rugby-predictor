@@ -56,6 +56,36 @@ export type CommunityStatsOk = {
 
 export type CommunityStatsResponse = CommunityStatsDenied | CommunityStatsOk
 
+/** Kickoff display for Community Picks (SAST). */
+export const COMMUNITY_PICKS_TIMEZONE = 'Africa/Johannesburg'
+
+/**
+ * e.g. completed → "Sat 18 Apr 2026 · Final"
+ * e.g. upcoming/locked → "Sat 2 May 2026 · 11:00" (24h local SAST)
+ */
+export function formatCommunityMatchScheduleLine(kickoffIso: string, status: string): string {
+  const d = new Date(kickoffIso)
+  if (Number.isNaN(d.getTime())) return ''
+  const datePart = new Intl.DateTimeFormat('en-GB', {
+    timeZone: COMMUNITY_PICKS_TIMEZONE,
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  }).format(d)
+  const st = status.trim().toLowerCase()
+  if (st === 'completed') {
+    return `${datePart} · Final`
+  }
+  const timePart = new Intl.DateTimeFormat('en-GB', {
+    timeZone: COMMUNITY_PICKS_TIMEZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(d)
+  return `${datePart} · ${timePart}`
+}
+
 function num(v: unknown, fallback = 0): number {
   if (typeof v === 'number' && Number.isFinite(v)) return v
   if (typeof v === 'string' && v.trim() !== '') {

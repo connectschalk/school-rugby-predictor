@@ -5,6 +5,7 @@ import type { GameMatch, MatchLeaderboardEntry } from '@/lib/public-prediction-g
 import { fetchMatchLeaderboardWithProfiles } from '@/lib/public-prediction-game'
 import Link from 'next/link'
 import LetterAvatar from '@/components/LetterAvatar'
+import { rpcScorePredictionsForMatch } from '@/lib/score-predictions-for-match'
 import { supabase } from '@/lib/supabase'
 
 type Props = {
@@ -53,15 +54,13 @@ export default function CompletedMatchLeaderboard({ match, signedIn }: Props) {
     setScoring(true)
     setScoreMsg('')
     setError('')
-    const { data, error: rpcError } = await supabase.rpc('score_predictions_for_match', {
-      p_match_id: match.id,
-    })
+    const { scoredCount, error: rpcError } = await rpcScorePredictionsForMatch(supabase, match.id)
     if (rpcError) {
       setError(rpcError.message)
       setScoring(false)
       return
     }
-    setScoreMsg(`Scored ${typeof data === 'number' ? data : 0} prediction(s).`)
+    setScoreMsg(`Scored ${scoredCount} prediction(s).`)
     await load()
     setScoring(false)
   }

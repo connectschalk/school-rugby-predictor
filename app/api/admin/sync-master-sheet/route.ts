@@ -1,8 +1,10 @@
 import { createClient } from '@supabase/supabase-js'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { fetchUserIsAdmin } from '@/lib/admin-access'
 import { buildStructuredWarningsFromStrings, type SyncWarningItem } from '@/lib/sync-master-warnings'
 import { splitCsvLine } from '@/lib/parse-game-matches-bulk'
+import { rpcScorePredictionsForMatch } from '@/lib/score-predictions-for-match'
 import { buildTeamAliasResolverMap } from '@/lib/team-aliases-db'
 import { matchTeamName, type TeamRow } from '@/lib/team-name-match'
 
@@ -49,6 +51,8 @@ type SyncSummary = {
   would_link_groups: number
   linked_groups: number
   group_link_warnings: number
+  /** Completed game_matches rows for which scoring RPC ran successfully after sync */
+  completed_matches_scored?: number
   validation_errors: string[]
   warnings: SyncWarningItem[]
 }
@@ -142,13 +146,50 @@ function canonicalProvinceGroup(raw: string): { value: string | null; warning?: 
   return { value: null, warning: `Unknown province_group "${t}" mapped to null` }
 }
 
+type ResolvedFixtureGroup = { groupId: string | null; sourceValue: string | null }
+
+async function linkMatchToFixtureGroup(
+  supabase: SupabaseClient,
+  matchId: string,
+  resolvedGroup: ResolvedFixtureGroup,
+  rowLabel: string,
+  errors: string[]
+): Promise<{ linked_groups: number; group_link_warnings: number }> {
+  let linked_groups = 0
+  let group_link_warnings = 0
+  const { error: clearLinksErr } = await supabase.from('game_match_groups').delete().eq('match_id', matchId)
+  if (clearLinksErr) {
+    group_link_warnings += 1
+    errors.push(`Warning: could not clear old group links for match ${matchId}: ${clearLinksErr.message}`)
+    return { linked_groups, group_link_warnings }
+  }
+  if (resolvedGroup.groupId) {
+    const { error: linkErr } = await supabase
+      .from('game_match_groups')
+      .upsert(
+        { match_id: matchId, group_id: resolvedGroup.groupId },
+        { onConflict: 'match_id,group_id', ignoreDuplicates: true }
+      )
+    if (linkErr) {
+      group_link_warnings += 1
+      errors.push(`Warning: could not link fixture group for match ${matchId}: ${linkErr.message}`)
+    } else {
+      linked_groups += 1
+    }
+  } else if (resolvedGroup.sourceValue) {
+    group_link_warnings += 1
+    errors.push(`Warning: no fixture group found for "${resolvedGroup.sourceValue}" (${rowLabel})`)
+  }
+  return { linked_groups, group_link_warnings }
+}
+
 function resolveGroupIdForRow(
   leagueGroup: string,
   provinceGroup: string,
   aliasToGroupId: Map<string, string>,
   nameToGroupId: Map<string, string>,
   slugToGroupId: Map<string, string>
-): { groupId: string | null; sourceValue: string | null } {
+): ResolvedFixtureGroup {
   const candidates = [leagueGroup.trim(), provinceGroup.trim()].filter(Boolean)
   for (const raw of candidates) {
     const key = raw.toLowerCase()
@@ -278,6 +319,7 @@ export async function POST(request: Request) {
   let would_link_groups = 0
   let linked_groups = 0
   let group_link_warnings = 0
+  let completed_matches_scored = 0
 
   const csvRes = await fetch(csvUrl)
   if (!csvRes.ok) {
@@ -311,6 +353,7 @@ export async function POST(request: Request) {
       would_link_groups: 0,
       linked_groups: 0,
       group_link_warnings: 0,
+      completed_matches_scored: 0,
       validation_errors,
       warnings: buildStructuredWarningsFromStrings(validation_errors),
     }
@@ -654,35 +697,27 @@ export async function POST(request: Request) {
       }
 
       if (touchedMatchId) {
-        const { error: clearLinksErr } = await supabase
-          .from('game_match_groups')
-          .delete()
-          .eq('match_id', touchedMatchId)
-        if (clearLinksErr) {
-          group_link_warnings += 1
-          errors.push(`Warning: could not clear old group links for match ${touchedMatchId}: ${clearLinksErr.message}`)
-        } else if (resolvedGroup.groupId) {
-          const { error: linkErr } = await supabase
-            .from('game_match_groups')
-            .upsert(
-              { match_id: touchedMatchId, group_id: resolvedGroup.groupId },
-              { onConflict: 'match_id,group_id', ignoreDuplicates: true }
-            )
-          if (linkErr) {
-            group_link_warnings += 1
-            errors.push(`Warning: could not link fixture group for match ${touchedMatchId}: ${linkErr.message}`)
-          } else {
-            linked_groups += 1
-          }
-        } else if (resolvedGroup.sourceValue) {
-          group_link_warnings += 1
-          errors.push(`Warning: no fixture group found for "${resolvedGroup.sourceValue}" (${row.home_team} vs ${row.away_team})`)
-        }
+        const gl = await linkMatchToFixtureGroup(
+          supabase,
+          touchedMatchId,
+          resolvedGroup,
+          `${row.home_team} vs ${row.away_team}`,
+          errors
+        )
+        linked_groups += gl.linked_groups
+        group_link_warnings += gl.group_link_warnings
       }
       continue
     }
 
     // completed
+    const resolvedGroupCompleted = resolveGroupIdForRow(
+      row.league_group,
+      row.province_group,
+      aliasToGroupId,
+      nameToGroupId,
+      slugToGroupId
+    )
     const homeMatch = matchTeamName(row.home_team, teams, aliasMap)
     const awayMatch = matchTeamName(row.away_team, teams, aliasMap)
     if (!homeMatch.matchedTeamId || !awayMatch.matchedTeamId) {
@@ -746,6 +781,8 @@ export async function POST(request: Request) {
 
     const existingGmCompleted = existingGameMatchByPairOnDate.get(pairOnDate) ?? null
 
+    let completedGmTouchedId: string | null = null
+
     if (existingGmCompleted) {
       const { error: gmUpdateErr } = await supabase
         .from('game_matches')
@@ -779,6 +816,7 @@ export async function POST(request: Request) {
           verification_status: 'verified',
         })
         existingCurrentUpcomingIdsByKey.delete(pairOnDate)
+        completedGmTouchedId = existingGmCompleted.id
       }
     } else {
       const { data: insertedGm, error: gmInsertErr } = await supabase
@@ -816,8 +854,29 @@ export async function POST(request: Request) {
             verification_status: 'verified',
             admin_notes: null,
           })
+          completedGmTouchedId = newGmId
         }
         existingCurrentUpcomingIdsByKey.delete(pairOnDate)
+      }
+    }
+
+    if (completedGmTouchedId) {
+      const gl = await linkMatchToFixtureGroup(
+        supabase,
+        completedGmTouchedId,
+        resolvedGroupCompleted,
+        `${row.home_team} vs ${row.away_team}`,
+        errors
+      )
+      linked_groups += gl.linked_groups
+      group_link_warnings += gl.group_link_warnings
+      const sc = await rpcScorePredictionsForMatch(supabase, completedGmTouchedId)
+      if (sc.error) {
+        errors.push(
+          `Warning: scoring failed for completed match ${completedGmTouchedId}: ${sc.error.message}`
+        )
+      } else {
+        completed_matches_scored += 1
       }
     }
   }
@@ -872,6 +931,7 @@ export async function POST(request: Request) {
     would_link_groups,
     linked_groups,
     group_link_warnings,
+    completed_matches_scored,
     validation_errors: errors,
     warnings: buildStructuredWarningsFromStrings(errors),
   }

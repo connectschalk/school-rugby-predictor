@@ -208,6 +208,17 @@ export default function AdminPage() {
   const [syncRunDetailId, setSyncRunDetailId] = useState<string | null>(null)
   const [upcomingFixtureCount, setUpcomingFixtureCount] = useState<number | null>(null)
   const masterSyncWarningsRef = useRef<HTMLDivElement | null>(null)
+  const [scoringSummary, setScoringSummary] = useState<{
+    completed_with_results: number
+    completed_with_predictions: number
+    unscored_with_predictions: number
+    scored_with_predictions: number
+    scored_games_count: number
+    unscored_games_count: number
+  } | null>(null)
+  const [scoringSummaryLoading, setScoringSummaryLoading] = useState(false)
+  const [bulkScoreBusy, setBulkScoreBusy] = useState(false)
+  const [bulkScoreMessage, setBulkScoreMessage] = useState('')
 
   const [matchImageForm, setMatchImageForm] = useState({
     homeTeam: '',
@@ -315,6 +326,11 @@ export default function AdminPage() {
   useEffect(() => {
     if (!authChecked) return
     void loadSyncRuns()
+  }, [authChecked])
+
+  useEffect(() => {
+    if (!authChecked) return
+    void loadScoringSummary()
   }, [authChecked])
 
   async function loadTeams() {
@@ -493,6 +509,84 @@ export default function AdminPage() {
     router.push('/login')
   }
 
+  async function loadScoringSummary() {
+    setScoringSummaryLoading(true)
+    setBulkScoreMessage('')
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    const token = session?.access_token
+    if (!token) {
+      setScoringSummary(null)
+      setScoringSummaryLoading(false)
+      return
+    }
+    const res = await fetch('/api/admin/scoring-summary', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const json = (await res.json()) as {
+      ok?: boolean
+      completed_with_results?: number
+      completed_with_predictions?: number
+      unscored_with_predictions?: number
+      scored_with_predictions?: number
+      scored_games_count?: number
+      unscored_games_count?: number
+    }
+    if (res.ok && json.ok) {
+      setScoringSummary({
+        completed_with_results: json.completed_with_results ?? 0,
+        completed_with_predictions: json.completed_with_predictions ?? 0,
+        unscored_with_predictions: json.unscored_with_predictions ?? 0,
+        scored_with_predictions: json.scored_with_predictions ?? 0,
+        scored_games_count: json.scored_games_count ?? 0,
+        unscored_games_count: json.unscored_games_count ?? 0,
+      })
+    } else {
+      setScoringSummary(null)
+    }
+    setScoringSummaryLoading(false)
+  }
+
+  async function runBulkScoreCompleted() {
+    setBulkScoreBusy(true)
+    setBulkScoreMessage('')
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    const token = session?.access_token
+    if (!token) {
+      setBulkScoreMessage('Not signed in.')
+      setBulkScoreBusy(false)
+      return
+    }
+    const res = await fetch('/api/admin/bulk-score-completed', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const json = (await res.json()) as {
+      ok?: boolean
+      error?: string
+      matches_scored_ok?: number
+      match_ids_attempted?: number
+      scoring_errors?: string[]
+    }
+    if (!res.ok || !json.ok) {
+      setBulkScoreMessage(json.error ?? 'Bulk scoring failed.')
+      setBulkScoreBusy(false)
+      await loadScoringSummary()
+      return
+    }
+    const errN = Array.isArray(json.scoring_errors) ? json.scoring_errors.length : 0
+    setBulkScoreMessage(
+      `Processed ${json.match_ids_attempted ?? 0} match(es); ${json.matches_scored_ok ?? 0} scored OK${
+        errN ? `; ${errN} error(s)` : ''
+      }.`
+    )
+    await loadScoringSummary()
+    setBulkScoreBusy(false)
+  }
+
   async function loadSyncRuns() {
     const { data } = await supabase
       .from('sync_runs')
@@ -557,6 +651,7 @@ export default function AdminPage() {
       skipped_duplicates?: number
       validation_errors?: string[]
       warnings?: unknown
+      completed_matches_scored?: number
     }
 
     const items = normalizeSyncWarningsInput(json.warnings ?? json.validation_errors)
@@ -586,12 +681,28 @@ export default function AdminPage() {
         `Preview: incoming ${json.incoming_rows ?? 0}, upcoming insert/update ${json.would_insert_upcoming ?? 0}/${json.would_update_upcoming ?? 0}, completed insert/update ${json.would_insert_completed ?? 0}/${json.would_update_completed ?? 0}, duplicates skipped ${json.skipped_duplicates ?? 0}, validation messages ${warningCount}.`
       )
     } else {
-      setSyncMasterMessage(
-        `Sync complete: incoming ${json.incoming_rows ?? 0}, upcoming inserted/updated ${json.inserted_upcoming ?? 0}/${json.updated_upcoming ?? 0}, completed inserted/updated ${json.inserted_completed ?? 0}/${json.updated_completed ?? 0}, duplicates skipped ${json.skipped_duplicates ?? 0}, validation messages ${warningCount}.`
-      )
+      const nScored = json.completed_matches_scored ?? 0
+      let msg = `Sync complete: incoming ${json.incoming_rows ?? 0}, upcoming inserted/updated ${json.inserted_upcoming ?? 0}/${json.updated_upcoming ?? 0}, completed inserted/updated ${json.inserted_completed ?? 0}/${json.updated_completed ?? 0}, duplicates skipped ${json.skipped_duplicates ?? 0}, validation messages ${warningCount}.`
+      if (nScored > 0) {
+        msg += ` Completed sheet rows auto-scored: ${nScored}.`
+      }
+      const sweepRes = await fetch('/api/admin/bulk-score-completed', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const sweepJson = (await sweepRes.json()) as {
+        ok?: boolean
+        matches_scored_ok?: number
+        match_ids_attempted?: number
+      }
+      if (sweepRes.ok && sweepJson.ok && (sweepJson.matches_scored_ok ?? 0) > 0) {
+        msg += ` Sweep: scored ${sweepJson.matches_scored_ok} additional completed match(es) with predictions.`
+      }
+      setSyncMasterMessage(msg)
     }
     await loadSyncRuns()
     void refreshUpcomingFixtureCount()
+    void loadScoringSummary()
     setSyncMasterBusy(false)
   }
 
@@ -2181,6 +2292,59 @@ export default function AdminPage() {
                 {syncMasterMessage}
               </p>
             ) : null}
+            <div className="mt-5 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-800">
+              <p className="font-semibold text-gray-900">Prediction scoring &amp; pools</p>
+              <p className="mt-1 text-xs text-gray-600">
+                Pool leaderboards use <code className="rounded bg-gray-200 px-1">user_prediction_scores</code> from the
+                same <code className="rounded bg-gray-200 px-1">score_predictions_for_match</code> RPC as &quot;Run
+                scoring&quot; on completed fixtures.
+              </p>
+              {scoringSummaryLoading ? (
+                <p className="mt-2 text-xs text-gray-500">Loading scoring summary…</p>
+              ) : scoringSummary ? (
+                <ul className="mt-2 list-inside list-disc space-y-0.5 text-xs text-gray-700">
+                  <li>
+                    <strong>{scoringSummary.unscored_with_predictions}</strong> completed game(s) with predictions but no{' '}
+                    <code className="rounded bg-gray-100 px-1">user_prediction_scores</code> rows yet (needs scoring).
+                  </li>
+                  <li>
+                    <strong>{scoringSummary.scored_with_predictions}</strong> completed game(s) with predictions and
+                    scores recorded.
+                  </li>
+                  <li>
+                    <strong>{scoringSummary.scored_games_count}</strong> distinct completed game(s) appear in{' '}
+                    <code className="rounded bg-gray-100 px-1">user_prediction_scores</code> (any predictions).
+                  </li>
+                  <li>
+                    Completed fixtures with results: <strong>{scoringSummary.completed_with_results}</strong> · With at
+                    least one prediction: <strong>{scoringSummary.completed_with_predictions}</strong>
+                  </li>
+                </ul>
+              ) : (
+                <p className="mt-2 text-xs text-amber-800">Could not load scoring summary.</p>
+              )}
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void loadScoringSummary()}
+                  disabled={scoringSummaryLoading}
+                  className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Refresh summary
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void runBulkScoreCompleted()}
+                  disabled={bulkScoreBusy}
+                  className="rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-black disabled:opacity-50"
+                >
+                  {bulkScoreBusy ? 'Scoring…' : 'Score all completed unscored games'}
+                </button>
+              </div>
+              {bulkScoreMessage ? (
+                <p className="mt-2 text-xs text-gray-700">{bulkScoreMessage}</p>
+              ) : null}
+            </div>
             <div ref={masterSyncWarningsRef} id="master-sync-warnings" className="mt-4 scroll-mt-24">
               <MasterSheetSyncWarningsPanel
                 key={`master-sync-${masterSyncPanelEpoch}`}
