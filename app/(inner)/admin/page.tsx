@@ -219,6 +219,10 @@ export default function AdminPage() {
   const [scoringSummaryLoading, setScoringSummaryLoading] = useState(false)
   const [repairGroupLinksBusy, setRepairGroupLinksBusy] = useState(false)
   const [repairGroupLinksMessage, setRepairGroupLinksMessage] = useState('')
+  const [repairGroupLinkExamples, setRepairGroupLinkExamples] = useState<{
+    skipped: string[]
+    unresolved: string[]
+  } | null>(null)
 
   const [matchImageForm, setMatchImageForm] = useState({
     homeTeam: '',
@@ -512,6 +516,7 @@ export default function AdminPage() {
   async function runRepairFixtureGroupLinks() {
     setRepairGroupLinksBusy(true)
     setRepairGroupLinksMessage('')
+    setRepairGroupLinkExamples(null)
     const {
       data: { session },
     } = await supabase.auth.getSession()
@@ -532,6 +537,8 @@ export default function AdminPage() {
       linked?: number
       skippedNoGroupFields?: number
       unresolvedWithFields?: number
+      skippedNoGroupFieldsExamples?: string[]
+      unresolvedWithFieldsExamples?: string[]
       warnings?: string[]
     }
     if (!res.ok || !json.ok) {
@@ -543,9 +550,17 @@ export default function AdminPage() {
     const wn = warnList.length
     let detail = `Completed matches processed: ${json.processed ?? 0}; group row inserted for ${json.linked ?? 0}. Skipped ${json.skippedNoGroupFields ?? 0} with no league/province fields; ${json.unresolvedWithFields ?? 0} had fields but no matching fixture group.`
     if (wn > 0) {
-      detail += ` ${wn} warning(s): ${warnList.slice(0, 5).join(' · ')}${wn > 5 ? '…' : ''}`
+      detail += ` ${wn} repair message(s) — see panel below and sync warnings if listed.`
     }
     setRepairGroupLinksMessage(detail)
+    setRepairGroupLinkExamples({
+      skipped: Array.isArray(json.skippedNoGroupFieldsExamples) ? json.skippedNoGroupFieldsExamples : [],
+      unresolved: Array.isArray(json.unresolvedWithFieldsExamples) ? json.unresolvedWithFieldsExamples : [],
+    })
+    if (warnList.length > 0) {
+      setLatestMasterSyncWarnings(normalizeSyncWarningsInput(warnList))
+      setMasterSyncPanelEpoch((e) => e + 1)
+    }
     void loadScoringSummary()
     setRepairGroupLinksBusy(false)
   }
@@ -2356,6 +2371,35 @@ export default function AdminPage() {
                 </div>
                 {repairGroupLinksMessage ? (
                   <p className="mt-2 text-xs text-gray-700">{repairGroupLinksMessage}</p>
+                ) : null}
+                {repairGroupLinkExamples &&
+                (repairGroupLinkExamples.skipped.length > 0 || repairGroupLinkExamples.unresolved.length > 0) ? (
+                  <div className="mt-3 space-y-3 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs text-amber-950">
+                    {repairGroupLinkExamples.skipped.length > 0 ? (
+                      <div>
+                        <p className="font-semibold">
+                          Examples — no league_group, province_group, and not prestige (fix sheet or /admin/game-matches)
+                        </p>
+                        <ul className="mt-1 list-inside list-disc space-y-0.5 font-mono text-[11px]">
+                          {repairGroupLinkExamples.skipped.map((line, i) => (
+                            <li key={`skip-${i}`}>{line}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                    {repairGroupLinkExamples.unresolved.length > 0 ? (
+                      <div>
+                        <p className="font-semibold">
+                          Examples — text present but no matching fixture group (aliases / names / slugs)
+                        </p>
+                        <ul className="mt-1 list-inside list-disc space-y-0.5 font-mono text-[11px]">
+                          {repairGroupLinkExamples.unresolved.map((line, i) => (
+                            <li key={`unres-${i}`}>{line}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
             </div>

@@ -7,6 +7,7 @@ import {
   linkMatchToFixtureGroup,
   loadFixtureGroupMaps,
   resolveGroupIdForRow,
+  resolvePrestigePoolGroupId,
 } from '@/lib/fixture-group-resolve'
 import { relinkAllCompletedMatchesToFixtureGroups } from '@/lib/repair-missing-fixture-group-links'
 import { scoreCompletedPredictionMatches } from '@/lib/score-completed-unscored-matches'
@@ -148,7 +149,8 @@ function canonicalProvinceGroup(raw: string): { value: string | null; warning?: 
   if (PROVINCE_ALIAS_TO_CANONICAL[key]) return { value: PROVINCE_ALIAS_TO_CANONICAL[key] }
   const canonicalValues = new Set(Object.values(PROVINCE_ALIAS_TO_CANONICAL).map((v) => v.toLowerCase()))
   if (canonicalValues.has(key)) return { value: t }
-  return { value: null, warning: `Unknown province_group "${t}" mapped to null` }
+  // Keep sheet text so `game_matches.province_group` is populated and pool linking / DB trigger can resolve it.
+  return { value: t }
 }
 
 function dateInSastFromIso(iso: string): string {
@@ -171,6 +173,13 @@ function parseCsvRows(csvText: string): { rows: MasterCsvRow[]; errors: string[]
   if (!lines.length) return { rows: [], errors: ['CSV is empty'] }
 
   const header = splitCsvLine(lines[0]).map(normalizeHeader)
+  const firstIdx = (names: string[]) => {
+    for (const n of names) {
+      const i = header.indexOf(n)
+      if (i >= 0) return i
+    }
+    return -1
+  }
   const idx = {
     date: header.indexOf('date'),
     time: header.indexOf('time'),
@@ -178,9 +187,9 @@ function parseCsvRows(csvText: string): { rows: MasterCsvRow[]; errors: string[]
     away_team: header.indexOf('away_team'),
     home_score: header.indexOf('home_score'),
     away_score: header.indexOf('away_score'),
-    province_group: header.indexOf('province_group'),
-    league_group: header.indexOf('league_group'),
-    is_prestige: header.indexOf('is_prestige'),
+    province_group: firstIdx(['province_group', 'province']),
+    league_group: firstIdx(['league_group', 'league']),
+    is_prestige: firstIdx(['is_prestige', 'prestige']),
     status: header.indexOf('status'),
     verification_status: header.indexOf('verification_status'),
     source: header.indexOf('source'),
@@ -557,13 +566,25 @@ export async function POST(request: Request) {
   for (const row of normalized) {
     const pairOnDate = `${row.match_date}|${orderedPairKey(row.home_team, row.away_team)}`
     if (row.status === 'upcoming') {
+      const upLeague = (row.league_group ?? '').trim()
+      const upProvince = (row.province_group ?? '').trim()
       const resolvedGroup = resolveGroupIdForRow(
-        row.league_group,
-        row.province_group,
+        upLeague,
+        upProvince,
         aliasToGroupId,
         nameToGroupId,
         slugToGroupId
       )
+      const prestigeLinkIds: string[] = []
+      if (row.is_prestige) {
+        const pid = resolvePrestigePoolGroupId({ aliasToGroupId, nameToGroupId, slugToGroupId })
+        if (pid) prestigeLinkIds.push(pid)
+        else {
+          errors.push(
+            `Warning: is_prestige is true (${row.home_team} vs ${row.away_team}) but Prestige Pool fixture group was not found`
+          )
+        }
+      }
       const existingGmUp = existingGameMatchByPairOnDate.get(pairOnDate)
       let touchedMatchId: string | null = null
       if (existingGmUp?.id) {
@@ -573,9 +594,9 @@ export async function POST(request: Request) {
             kickoff_time: row.kickoff_time,
             home_team: row.home_team,
             away_team: row.away_team,
-            province_group: row.province_group || null,
-            league_group: row.league_group || null,
-            is_prestige: row.is_prestige,
+            province_group: upProvince || null,
+            league_group: upLeague || null,
+            is_prestige: !!row.is_prestige,
             status: 'upcoming',
             verification_status: 'verified',
             source_name: row.source || 'Google Fixture Master',
@@ -610,9 +631,9 @@ export async function POST(request: Request) {
           kickoff_time: row.kickoff_time,
           status: 'upcoming',
           verification_status: 'verified',
-          province_group: row.province_group || null,
-          league_group: row.league_group || null,
-          is_prestige: row.is_prestige,
+          province_group: upProvince || null,
+          league_group: upLeague || null,
+          is_prestige: !!row.is_prestige,
           source_name: row.source || 'Google Fixture Master',
           source_url: csvUrl,
           source_type: 'google_sheet_master',
@@ -645,7 +666,8 @@ export async function POST(request: Request) {
           touchedMatchId,
           resolvedGroup,
           `${row.home_team} vs ${row.away_team}`,
-          errors
+          errors,
+          prestigeLinkIds
         )
         linked_groups += gl.linked_groups
         group_link_warnings += gl.group_link_warnings
@@ -653,14 +675,7 @@ export async function POST(request: Request) {
       continue
     }
 
-    // completed
-    const resolvedGroupCompleted = resolveGroupIdForRow(
-      row.league_group,
-      row.province_group,
-      aliasToGroupId,
-      nameToGroupId,
-      slugToGroupId
-    )
+    // completed — group fields always come from the sheet row; DB is updated before linking (see game_matches update/insert below).
     const homeMatch = matchTeamName(row.home_team, teams, aliasMap)
     const awayMatch = matchTeamName(row.away_team, teams, aliasMap)
     if (!homeMatch.matchedTeamId || !awayMatch.matchedTeamId) {
@@ -674,6 +689,14 @@ export async function POST(request: Request) {
     if (row.home_score == null || row.away_score == null) {
       errors.push(`Completed row missing score (${row.home_team} vs ${row.away_team})`)
       continue
+    }
+
+    const sheetLeague = (row.league_group ?? '').trim()
+    const sheetProvince = (row.province_group ?? '').trim()
+    if (!sheetLeague && !sheetProvince && !row.is_prestige) {
+      errors.push(
+        `Warning: completed sheet row has empty league_group and province_group and is_prestige is false (${row.home_team} vs ${row.away_team}, ${row.match_date}) — add province/league on the sheet or in fixture management so pool fixture groups can be linked.`
+      )
     }
 
     const existingForDate = existingMatchesByDate.get(row.match_date) ?? []
@@ -737,9 +760,9 @@ export async function POST(request: Request) {
           home_score: row.home_score,
           away_score: row.away_score,
           verification_status: 'verified',
-          province_group: row.province_group || null,
-          league_group: row.league_group || null,
-          is_prestige: row.is_prestige,
+          province_group: sheetProvince || null,
+          league_group: sheetLeague || null,
+          is_prestige: !!row.is_prestige,
           rejected_reason: null,
           source_name: row.source || 'Google Fixture Master',
           source_url: csvUrl,
@@ -772,9 +795,9 @@ export async function POST(request: Request) {
           home_score: row.home_score,
           away_score: row.away_score,
           verification_status: 'verified',
-          province_group: row.province_group || null,
-          league_group: row.league_group || null,
-          is_prestige: row.is_prestige,
+          province_group: sheetProvince || null,
+          league_group: sheetLeague || null,
+          is_prestige: !!row.is_prestige,
           rejected_reason: null,
           source_name: row.source || 'Google Fixture Master',
           source_url: csvUrl,
@@ -803,13 +826,33 @@ export async function POST(request: Request) {
       }
     }
 
+    const resolvedGroupCompleted = resolveGroupIdForRow(
+      sheetLeague,
+      sheetProvince,
+      aliasToGroupId,
+      nameToGroupId,
+      slugToGroupId
+    )
+
+    const completedPrestigeIds: string[] = []
+    if (row.is_prestige) {
+      const pid = resolvePrestigePoolGroupId({ aliasToGroupId, nameToGroupId, slugToGroupId })
+      if (pid) completedPrestigeIds.push(pid)
+      else {
+        errors.push(
+          `Warning: is_prestige is true for completed row (${row.home_team} vs ${row.away_team}, ${row.match_date}) but Prestige Pool fixture group was not found`
+        )
+      }
+    }
+
     if (completedGmTouchedId) {
       const gl = await linkMatchToFixtureGroup(
         supabase,
         completedGmTouchedId,
         resolvedGroupCompleted,
         `${row.home_team} vs ${row.away_team}`,
-        errors
+        errors,
+        completedPrestigeIds
       )
       linked_groups += gl.linked_groups
       group_link_warnings += gl.group_link_warnings
