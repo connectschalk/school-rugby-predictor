@@ -35,6 +35,50 @@ export const PROVINCE_CODE_TO_CANONICAL_SLUG: Record<string, string> = {
 
 const PROVINCE_CODE_KEYS = new Set(Object.keys(PROVINCE_CODE_TO_CANONICAL_SLUG))
 
+/**
+ * Canonical `fixture_groups.name` strings for province/union rows.
+ * Used when writing `game_matches.home_team_province` / `away_team_province` so DB triggers
+ * resolve to the same rows as `fixture_group_aliases` (WP, FS, … → full names).
+ */
+export const PROVINCE_CODE_TO_GAME_MATCHES_DISPLAY_NAME: Record<string, string> = {
+  wp: 'Western Province',
+  ep: 'Eastern Cape',
+  fs: 'Free State / Griquas',
+  nc: 'Free State / Griquas',
+  gp: 'Noordvaal',
+  kzn: 'KwaZulu-Natal',
+  bl: 'Boland',
+  swd: 'South Western Districts',
+  bul: 'Noordvaal',
+  leo: 'Noordvaal',
+  lim: 'Noordvaal',
+  pum: 'Noordvaal',
+}
+
+/** Map sheet province short codes (and those codes alone) to canonical display names for `game_matches`. */
+export function normalizeProvinceLabelForGameMatches(raw: string): string {
+  const t = raw.trim()
+  if (!t) return ''
+  const key = t.toLowerCase()
+  if (PROVINCE_CODE_KEYS.has(key)) {
+    return PROVINCE_CODE_TO_GAME_MATCHES_DISPLAY_NAME[key] ?? t
+  }
+  return t
+}
+
+/**
+ * When `league_group` is only a province short code (2–4 letters), store the canonical province/union name.
+ * Leaves values like `WP Premier` unchanged.
+ */
+export function normalizeLeagueGroupForGameMatches(raw: string): string {
+  const t = raw.trim()
+  if (!t) return ''
+  if (/^[A-Za-z]{2,4}$/.test(t) && PROVINCE_CODE_KEYS.has(t.toLowerCase())) {
+    return PROVINCE_CODE_TO_GAME_MATCHES_DISPLAY_NAME[t.toLowerCase()] ?? t
+  }
+  return t
+}
+
 /** Slug of any row that is only a short-code duplicate (see migration 037); never use as link target. */
 const AD_HOC_PROVINCE_SHORT_SLUGS = new Set(Object.keys(PROVINCE_CODE_TO_CANONICAL_SLUG))
 

@@ -9,6 +9,8 @@ import {
   effectiveGroupFieldsForMatchRow,
   loadFixtureGroupMaps,
   replaceMatchFixtureGroupLinks,
+  normalizeLeagueGroupForGameMatches,
+  normalizeProvinceLabelForGameMatches,
   type FixtureGroupLinkInput,
   type GroupLinkBudget,
   type FixtureGroupMaps,
@@ -296,31 +298,15 @@ function orderedPairKey(a: string, b: string): string {
   return [a.trim().toLowerCase(), b.trim().toLowerCase()].sort().join('|')
 }
 
-const PROVINCE_ALIAS_TO_CANONICAL: Record<string, string> = {
-  wp: 'Western Province',
-  ep: 'Eastern Province',
-  kzn: 'KwaZulu-Natal',
-  fs: 'Free State',
-  gp: 'Gauteng',
-  bul: 'Blue Bulls',
-  val: 'Valke',
-  leo: 'Lions',
-  lim: 'Limpopo',
-  pum: 'Pumas',
-  bor: 'Border',
-  bl: 'Boland',
-  swd: 'South Western Districts',
-}
-
+/**
+ * Teams-tab provinces → `game_matches.home_team_province` / `away_team_province`.
+ * Short codes (FS, WP, …) must match `fixture_groups.name` so `trg_sync_game_match_groups_from_fields`
+ * (after insert/update on `game_matches`) inserts canonical `game_match_groups` rows, not ad-hoc slug rows.
+ */
 function canonicalProvinceGroup(raw: string): { value: string | null; warning?: string } {
   const t = raw.trim()
   if (!t) return { value: null }
-  const key = t.toLowerCase()
-  if (PROVINCE_ALIAS_TO_CANONICAL[key]) return { value: PROVINCE_ALIAS_TO_CANONICAL[key] }
-  const canonicalValues = new Set(Object.values(PROVINCE_ALIAS_TO_CANONICAL).map((v) => v.toLowerCase()))
-  if (canonicalValues.has(key)) return { value: t }
-  // Keep sheet text so `game_matches.province_group` is populated and pool linking / DB trigger can resolve it.
-  return { value: t }
+  return { value: normalizeProvinceLabelForGameMatches(t) }
 }
 
 function dateInSastFromIso(iso: string): string {
@@ -688,7 +674,7 @@ export async function POST(request: Request) {
       away_team: away,
       home_score: hs,
       away_score: as,
-      league_group: r.league_group.trim(),
+      league_group: normalizeLeagueGroupForGameMatches(r.league_group.trim()),
       home_team_province: hp,
       away_team_province: ap,
       is_interprovincial: inter,
@@ -884,9 +870,9 @@ export async function POST(request: Request) {
     const pairOnDate = `${row.match_date}|${orderedPairKey(row.home_team, row.away_team)}`
     if (row.status === 'upcoming') {
       const { eff, linkInput, warnEff, sheetWarn } = buildLinkContext(row)
-      const upLeague = eff.leagueForDb ?? ''
-      const upHomeTeamProv = row.home_team_province.trim()
-      const upAwayTeamProv = row.away_team_province.trim()
+      const upLeague = normalizeLeagueGroupForGameMatches(row.league_group.trim())
+      const upHomeTeamProv = normalizeProvinceLabelForGameMatches(row.home_team_province.trim())
+      const upAwayTeamProv = normalizeProvinceLabelForGameMatches(row.away_team_province.trim())
       const rowLabelUp = `${row.home_team} vs ${row.away_team}`
       const warnUp = collectGroupLinkResolutionWarnings(fixtureGroupMaps, warnEff, sheetWarn, rowLabelUp)
       group_link_warnings += warnUp.messages.length
@@ -1041,9 +1027,9 @@ export async function POST(request: Request) {
     }
 
     const { eff, linkInput, warnEff, sheetWarn } = buildLinkContext(row)
-    const dbLeague = eff.leagueForDb
-    const dbHomeTeamProv = row.home_team_province.trim()
-    const dbAwayTeamProv = row.away_team_province.trim()
+    const dbLeague = normalizeLeagueGroupForGameMatches(row.league_group.trim()) || null
+    const dbHomeTeamProv = normalizeProvinceLabelForGameMatches(row.home_team_province.trim())
+    const dbAwayTeamProv = normalizeProvinceLabelForGameMatches(row.away_team_province.trim())
 
     const existingForDate = existingMatchesByDate.get(row.match_date) ?? []
     const duplicateMatch = existingForDate.find((m) => {
