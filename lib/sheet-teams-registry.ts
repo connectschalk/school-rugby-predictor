@@ -1,6 +1,10 @@
 export type SheetTeamCsvRow = {
   team_name: string
   canonical_name: string
+  /** Trimmed cell from the team_name / display column (may be empty when only canonical is set). */
+  raw_team_name: string
+  /** Trimmed cell from the canonical_name column (may be empty when only team_name is set). */
+  raw_canonical_name: string
   province: string
   is_prestige_team: string
   is_wp_elite: string
@@ -21,7 +25,11 @@ function parseBoolCell(v: string): boolean {
 }
 
 function normHeader(v: string): string {
-  return v.trim().toLowerCase().replace(/\s+/g, '_')
+  return v
+    .replace(/^\ufeff/, '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_')
 }
 
 function splitAliases(raw: string): string[] {
@@ -30,9 +38,29 @@ function splitAliases(raw: string): string[] {
   return s.split(',').map((x) => x.trim()).filter(Boolean)
 }
 
-/** Single lookup key: trim + lowercase (no other normalization). */
-function lookupKey(raw: string): string {
+/** Lookup key for sheet sync: trim + lowercase (used for Teams tab + fixture cells). */
+export function teamLookupNormalize(raw: string): string {
   return raw.trim().toLowerCase()
+}
+
+/**
+ * All distinct lookup keys for a Teams CSV row: raw team_name cell, raw canonical_name cell,
+ * comma-separated aliases, plus coalesced display fields (so nothing is alias-only).
+ */
+export function buildTeamLookupKeys(row: SheetTeamCsvRow): string[] {
+  const keys = new Set<string>()
+  const add = (s: string) => {
+    const k = teamLookupNormalize(s)
+    if (k) keys.add(k)
+  }
+  add(row.raw_team_name)
+  add(row.raw_canonical_name)
+  add(row.team_name)
+  add(row.canonical_name)
+  for (const a of splitAliases(row.aliases)) {
+    add(a)
+  }
+  return [...keys]
 }
 
 function splitCsvLine(line: string): string[] {
@@ -92,9 +120,10 @@ export function parseTeamsSheetCsv(csvText: string): { rows: SheetTeamCsvRow[]; 
 
   for (let li = 1; li < lines.length; li += 1) {
     const cells = splitCsvLine(lines[li])
-    const teamName = read(cells, col.team_name)
-    const canonical = read(cells, col.canonical_name) || teamName
-    const display = teamName || canonical
+    const rawTeam = col.team_name >= 0 ? read(cells, col.team_name) : ''
+    const rawCanon = col.canonical_name >= 0 ? read(cells, col.canonical_name) : ''
+    const canonical = rawCanon || rawTeam
+    const display = rawTeam || canonical
     if (!display) {
       errors.push(`Teams row ${li + 1}: empty team_name and canonical_name`)
       continue
@@ -102,6 +131,8 @@ export function parseTeamsSheetCsv(csvText: string): { rows: SheetTeamCsvRow[]; 
     rows.push({
       team_name: display,
       canonical_name: canonical || display,
+      raw_team_name: rawTeam,
+      raw_canonical_name: rawCanon,
       province: read(cells, col.province),
       is_prestige_team: read(cells, col.is_prestige_team),
       is_wp_elite: read(cells, col.is_wp_elite),
@@ -113,17 +144,16 @@ export function parseTeamsSheetCsv(csvText: string): { rows: SheetTeamCsvRow[]; 
 
 type RegistryEntry = ResolvedSheetTeam & { lookupKeys: Set<string> }
 
-function addKey(set: Set<string>, raw: string) {
-  const k = lookupKey(raw)
-  if (!k) return
-  set.add(k)
-}
-
 /**
  * In-memory registry from the Teams tab — source of truth for identity, province, flags.
  */
+function significantTokens(normalizedKey: string): string[] {
+  return normalizedKey.split(/[^a-z0-9]+/).filter((t) => t.length >= 3)
+}
+
 export class SheetTeamsRegistry {
   private byKey = new Map<string, RegistryEntry>()
+  private readonly allLookupKeysSorted: string[]
 
   constructor(rows: SheetTeamCsvRow[]) {
     for (const r of rows) {
@@ -138,19 +168,48 @@ export class SheetTeamsRegistry {
         isWpElite: parseBoolCell(r.is_wp_elite),
         lookupKeys: new Set<string>(),
       }
-      addKey(entry.lookupKeys, teamName)
-      addKey(entry.lookupKeys, canonicalName)
-      for (const a of splitAliases(r.aliases)) {
-        addKey(entry.lookupKeys, a)
+      for (const k of buildTeamLookupKeys(r)) {
+        entry.lookupKeys.add(k)
       }
       for (const k of entry.lookupKeys) {
         if (!this.byKey.has(k)) this.byKey.set(k, entry)
       }
     }
+    this.allLookupKeysSorted = [...this.byKey.keys()].sort((a, b) => a.localeCompare(b))
+  }
+
+  /** Sorted list of every distinct lookup key in the registry (for debug / suggestions). */
+  getAllLookupKeys(): string[] {
+    return [...this.allLookupKeysSorted]
+  }
+
+  /**
+   * Keys that share at least one significant token (len ≥ 3) with the fixture cell, ranked by overlap.
+   */
+  findSimilarLookupKeys(rawFixtureCell: string, limit: number): string[] {
+    const q = teamLookupNormalize(rawFixtureCell)
+    if (!q) return []
+    const tokens = significantTokens(q)
+    if (!tokens.length) {
+      const prefix = q.slice(0, Math.min(4, q.length))
+      if (!prefix) return []
+      return this.allLookupKeysSorted.filter((k) => k.includes(prefix)).slice(0, limit)
+    }
+    const scored = this.allLookupKeysSorted
+      .map((k) => {
+        let score = 0
+        for (const t of tokens) {
+          if (k.includes(t)) score += 1
+        }
+        return { k, score }
+      })
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score || a.k.localeCompare(b.k))
+    return scored.slice(0, limit).map((x) => x.k)
   }
 
   resolve(fixtureCell: string): { ok: true; team: ResolvedSheetTeam } | { ok: false; reason: string } {
-    const k = lookupKey(fixtureCell)
+    const k = teamLookupNormalize(fixtureCell)
     if (!k) return { ok: false, reason: 'empty' }
     const hit = this.byKey.get(k)
     if (!hit) return { ok: false, reason: 'not_in_teams_tab' }

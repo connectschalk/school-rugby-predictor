@@ -14,7 +14,7 @@ import {
   type GroupLinkWarningEffective,
   type SheetClassificationForWarnings,
 } from '@/lib/fixture-group-resolve'
-import { parseTeamsSheetCsv, SheetTeamsRegistry } from '@/lib/sheet-teams-registry'
+import { parseTeamsSheetCsv, SheetTeamsRegistry, teamLookupNormalize } from '@/lib/sheet-teams-registry'
 import { relinkAllCompletedMatchesToFixtureGroups } from '@/lib/repair-missing-fixture-group-links'
 import { scoreCompletedPredictionMatches } from '@/lib/score-completed-unscored-matches'
 import { rpcScorePredictionsForMatch } from '@/lib/score-predictions-for-match'
@@ -77,7 +77,11 @@ type SyncSummary = {
 }
 
 function normalizeHeader(v: string): string {
-  return v.trim().toLowerCase().replace(/\s+/g, '_')
+  return v
+    .replace(/^\ufeff/, '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_')
 }
 
 function parseBool(v: string): boolean {
@@ -465,13 +469,23 @@ export async function POST(request: Request) {
     const hr = teamRegistry.resolve(rawHome)
     const ar = teamRegistry.resolve(rawAway)
     if (!hr.ok) {
+      const nk = teamLookupNormalize(rawHome)
+      const similar = teamRegistry.findSimilarLookupKeys(rawHome, 10)
+      const similarStr = similar.length ? similar.join(', ') : 'none'
       errors.push(
-        `Row ${i + 2}: unmatched home_team "${rawHome}" (Teams tab: team_name, canonical_name, comma-separated aliases)`
+        `Row ${i + 2}: unmatched home_team raw=${JSON.stringify(rawHome)} normalized_key=${JSON.stringify(
+          nk
+        )} similar_lookup_keys=[${similarStr}] (Teams tab: team_name, canonical_name, comma-separated aliases; keys are trim+lowercase)`
       )
     }
     if (!ar.ok) {
+      const nk = teamLookupNormalize(rawAway)
+      const similar = teamRegistry.findSimilarLookupKeys(rawAway, 10)
+      const similarStr = similar.length ? similar.join(', ') : 'none'
       errors.push(
-        `Row ${i + 2}: unmatched away_team "${rawAway}" (Teams tab: team_name, canonical_name, comma-separated aliases)`
+        `Row ${i + 2}: unmatched away_team raw=${JSON.stringify(rawAway)} normalized_key=${JSON.stringify(
+          nk
+        )} similar_lookup_keys=[${similarStr}] (Teams tab: team_name, canonical_name, comma-separated aliases; keys are trim+lowercase)`
       )
     }
 
