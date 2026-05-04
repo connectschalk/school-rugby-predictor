@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
+import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js'
 
 export type ResolvedFixtureGroup = { groupId: string | null; sourceValue: string | null }
 
@@ -36,8 +36,37 @@ export async function loadFixtureGroupMaps(supabase: SupabaseClient): Promise<Fi
   return { aliasToGroupId, nameToGroupId, slugToGroupId }
 }
 
-function formatMatchContext(matchId: string, rowLabel: string): string {
-  return rowLabel.trim() ? `${matchId} (${rowLabel})` : matchId
+/** Full PostgREST / Postgres error for logs and admin validation messages. */
+export function formatPostgrestError(err: PostgrestError): string {
+  const parts = [err.message]
+  if (err.code) parts.push(`code=${err.code}`)
+  if (err.details) parts.push(`details=${err.details}`)
+  if (err.hint) parts.push(`hint=${err.hint}`)
+  return parts.join(' | ')
+}
+
+/** Standard string form UUID (any version) from DB / maps. */
+const UUID_STRING_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+export type GroupLinkBudget = {
+  failures: number
+  maxFailures: number
+}
+
+export type ReplaceMatchFixtureGroupLinksOptions = {
+  budget?: GroupLinkBudget
+  matchTeams?: { home: string; away: string }
+}
+
+function budgetExceeded(budget: GroupLinkBudget | undefined): boolean {
+  return !!budget && budget.failures >= budget.maxFailures
+}
+
+function registerGroupLinkDbFailure(budget: GroupLinkBudget | undefined): boolean {
+  if (!budget) return false
+  budget.failures += 1
+  return budget.failures >= budget.maxFailures
 }
 
 /** Canonical Prestige Pool fixture group id from loaded maps (name, alias, or slug). */
@@ -290,45 +319,115 @@ export function collectGroupLinkResolutionWarnings(
 }
 
 /**
- * Clears existing `game_match_groups` for the match, then inserts each id in order (deduped).
+ * Clears existing `game_match_groups` for the match, then bulk-inserts
+ * `{ match_id, group_id }` rows (schema: PK match_id + group_id, both UUIDs).
+ * One round trip per match; surfaces full PostgREST errors and respects optional failure budget.
  */
 export async function replaceMatchFixtureGroupLinks(
   supabase: SupabaseClient,
   matchId: string,
   orderedGroupIds: string[],
   rowLabel: string,
-  errors: string[]
-): Promise<{ linked_groups: number; group_link_warnings: number }> {
+  errors: string[],
+  options?: ReplaceMatchFixtureGroupLinksOptions
+): Promise<{ linked_groups: number; group_link_warnings: number; aborted?: boolean }> {
+  const budget = options?.budget
+  const matchTeams = options?.matchTeams
+
+  if (budgetExceeded(budget)) {
+    return { linked_groups: 0, group_link_warnings: 0, aborted: true }
+  }
+
   let linked_groups = 0
   let group_link_warnings = 0
+
   const { error: clearLinksErr } = await supabase.from('game_match_groups').delete().eq('match_id', matchId)
   if (clearLinksErr) {
+    const full = formatPostgrestError(clearLinksErr)
+    console.error('[replaceMatchFixtureGroupLinks] DELETE game_match_groups failed', {
+      matchId,
+      rowLabel,
+      home_team: matchTeams?.home,
+      away_team: matchTeams?.away,
+      postgrest: {
+        message: clearLinksErr.message,
+        code: clearLinksErr.code,
+        details: clearLinksErr.details,
+        hint: clearLinksErr.hint,
+      },
+    })
     group_link_warnings += 1
+    const teamPart =
+      matchTeams && (matchTeams.home || matchTeams.away)
+        ? ` home_team="${matchTeams.home}" away_team="${matchTeams.away}"`
+        : ''
     errors.push(
-      `Warning: could not clear old group links for match ${formatMatchContext(matchId, rowLabel)}: ${clearLinksErr.message}`
+      `Warning: could not clear game_match_groups for match_id=${matchId}${teamPart} (${rowLabel}); DB error: ${full}`
     )
+    if (registerGroupLinkDbFailure(budget)) {
+      return { linked_groups, group_link_warnings, aborted: true }
+    }
     return { linked_groups, group_link_warnings }
   }
-  const linkedIds = new Set<string>()
+
+  const seen = new Set<string>()
+  const validGroupIds: string[] = []
+  const invalidIds: string[] = []
   for (const gid of orderedGroupIds) {
     const id = gid?.trim()
-    if (!id || linkedIds.has(id)) continue
-    const { error: linkErr } = await supabase
-      .from('game_match_groups')
-      .upsert({ match_id: matchId, group_id: id }, { onConflict: 'match_id,group_id', ignoreDuplicates: true })
-    if (linkErr) {
-      group_link_warnings += 1
-      errors.push(
-        `Warning: could not link fixture group for match ${formatMatchContext(matchId, rowLabel)}: ${linkErr.message}`
-      )
-    } else {
-      linked_groups += 1
-      linkedIds.add(id)
+    if (!id || seen.has(id)) continue
+    if (!UUID_STRING_RE.test(id)) {
+      if (invalidIds.length < 12) invalidIds.push(id)
+      continue
     }
+    seen.add(id)
+    validGroupIds.push(id)
   }
-  if (orderedGroupIds.filter(Boolean).length === 0) {
-    /* no-op: match intentionally has no group links */
+
+  if (invalidIds.length) {
+    group_link_warnings += 1
+    errors.push(
+      `Warning: skipped non-UUID group_id value(s) for match_id=${matchId} (${rowLabel}): ${invalidIds.join(', ')}`
+    )
   }
+
+  if (validGroupIds.length === 0) {
+    return { linked_groups, group_link_warnings }
+  }
+
+  const rows = validGroupIds.map((group_id) => ({ match_id: matchId, group_id }))
+  const { error: insertErr } = await supabase.from('game_match_groups').insert(rows)
+
+  if (insertErr) {
+    const full = formatPostgrestError(insertErr)
+    console.error('[replaceMatchFixtureGroupLinks] INSERT game_match_groups failed', {
+      matchId,
+      rowLabel,
+      home_team: matchTeams?.home,
+      away_team: matchTeams?.away,
+      attemptedGroupIds: validGroupIds,
+      postgrest: {
+        message: insertErr.message,
+        code: insertErr.code,
+        details: insertErr.details,
+        hint: insertErr.hint,
+      },
+    })
+    group_link_warnings += 1
+    const teamPart =
+      matchTeams && (matchTeams.home || matchTeams.away)
+        ? ` home_team="${matchTeams.home}" away_team="${matchTeams.away}"`
+        : ''
+    errors.push(
+      `Warning: could not insert game_match_groups for match_id=${matchId}${teamPart} (${rowLabel}); attempted group_id=[${validGroupIds.join(', ')}]; DB error: ${full}`
+    )
+    if (registerGroupLinkDbFailure(budget)) {
+      return { linked_groups, group_link_warnings, aborted: true }
+    }
+    return { linked_groups, group_link_warnings }
+  }
+
+  linked_groups = validGroupIds.length
   return { linked_groups, group_link_warnings }
 }
 
@@ -340,8 +439,9 @@ export async function linkMatchToFixtureGroup(
   matchId: string,
   orderedGroupIds: string[],
   rowLabel: string,
-  errors: string[]
-): Promise<{ linked_groups: number; group_link_warnings: number }> {
+  errors: string[],
+  options?: ReplaceMatchFixtureGroupLinksOptions
+): Promise<{ linked_groups: number; group_link_warnings: number; aborted?: boolean }> {
   const deduped: string[] = []
   const seen = new Set<string>()
   for (const gid of orderedGroupIds) {
@@ -350,5 +450,5 @@ export async function linkMatchToFixtureGroup(
     seen.add(id)
     deduped.push(id)
   }
-  return replaceMatchFixtureGroupLinks(supabase, matchId, deduped, rowLabel, errors)
+  return replaceMatchFixtureGroupLinks(supabase, matchId, deduped, rowLabel, errors, options)
 }

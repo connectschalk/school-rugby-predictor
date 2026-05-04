@@ -4,6 +4,7 @@ import {
   computeFixtureGroupLinkIds,
   loadFixtureGroupMaps,
   replaceMatchFixtureGroupLinks,
+  type GroupLinkBudget,
 } from '@/lib/fixture-group-resolve'
 import { ensureTournamentFixtureGroups } from '@/lib/tournament-fixture-groups'
 
@@ -62,7 +63,10 @@ async function collectDistinctTournamentsFromCompleted(supabase: SupabaseClient)
  * league → tournament → interprovincial (when flagged or inferred from team provinces) → prestige → WP Elite →
  * team provinces → optional legacy province_group, then insert resolved group links.
  */
-export async function relinkAllCompletedMatchesToFixtureGroups(supabase: SupabaseClient): Promise<{
+export async function relinkAllCompletedMatchesToFixtureGroups(
+  supabase: SupabaseClient,
+  linkBudget?: GroupLinkBudget
+): Promise<{
   processed: number
   linked: number
   skippedNoGroupFields: number
@@ -72,6 +76,7 @@ export async function relinkAllCompletedMatchesToFixtureGroups(supabase: Supabas
   interprovincialDefaultsExamples: string[]
   unresolvedWithFieldsExamples: string[]
   warnings: string[]
+  group_link_aborted?: boolean
 }> {
   const tournamentNames = await collectDistinctTournamentsFromCompleted(supabase)
   const ens = await ensureTournamentFixtureGroups(supabase, tournamentNames)
@@ -89,7 +94,8 @@ export async function relinkAllCompletedMatchesToFixtureGroups(supabase: Supabas
 
   const pageSize = 500
   let from = 0
-  for (;;) {
+  let group_link_aborted = false
+  outer: for (;;) {
     const { data, error } = await supabase
       .from('game_matches')
       .select(
@@ -145,8 +151,18 @@ export async function relinkAllCompletedMatchesToFixtureGroups(supabase: Supabas
       for (const w of rowRes.messages) warnings.push(w)
 
       const ids = computeFixtureGroupLinkIds(maps, linkInput)
-      const gl = await replaceMatchFixtureGroupLinks(supabase, m.id, ids, label, warnings)
+      const gl = await replaceMatchFixtureGroupLinks(supabase, m.id, ids, label, warnings, {
+        budget: linkBudget,
+        matchTeams: { home: m.home_team, away: m.away_team },
+      })
       if (gl.linked_groups > 0) linked += 1
+      if (gl.aborted) {
+        group_link_aborted = true
+        warnings.push(
+          'Repair: stopped fixture group linking after too many database failures (see warnings above).'
+        )
+        break outer
+      }
 
       if (rowRes.hasHardIssue) {
         unresolvedWithFields += 1
@@ -172,5 +188,6 @@ export async function relinkAllCompletedMatchesToFixtureGroups(supabase: Supabas
     interprovincialDefaultsExamples: [],
     unresolvedWithFieldsExamples,
     warnings,
+    group_link_aborted,
   }
 }

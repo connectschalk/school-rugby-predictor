@@ -10,6 +10,7 @@ import {
   loadFixtureGroupMaps,
   replaceMatchFixtureGroupLinks,
   type FixtureGroupLinkInput,
+  type GroupLinkBudget,
   type FixtureGroupMaps,
   type GroupLinkWarningEffective,
   type SheetClassificationForWarnings,
@@ -851,7 +852,11 @@ export async function POST(request: Request) {
     }
   }
 
+  let groupLinkBudget: GroupLinkBudget | undefined
+  let groupLinkAborted = false
+
   if (!dryRun) {
+  groupLinkBudget = { failures: 0, maxFailures: 20 }
   fixtureGroupMaps = await loadFixtureGroupMaps(supabase)
 
   const completedTeamIdCache = new Map<string, number>()
@@ -974,10 +979,21 @@ export async function POST(request: Request) {
           touchedMatchId,
           linkIdsUp,
           rowLabelUp,
-          errors
+          errors,
+          {
+            budget: groupLinkBudget,
+            matchTeams: { home: row.home_team, away: row.away_team },
+          }
         )
         linked_groups += gl.linked_groups
         group_link_warnings += gl.group_link_warnings
+        if (gl.aborted) {
+          groupLinkAborted = true
+          errors.push(
+            'Stopped fixture group linking after 20 database failures (remaining sheet rows were not processed).'
+          )
+          break
+        }
       }
       continue
     }
@@ -1170,10 +1186,21 @@ export async function POST(request: Request) {
         completedGmTouchedId,
         linkIdsCompleted,
         rowLabelC,
-        errors
+        errors,
+        {
+          budget: groupLinkBudget,
+          matchTeams: { home: row.home_team, away: row.away_team },
+        }
       )
       linked_groups += gl.linked_groups
       group_link_warnings += gl.group_link_warnings
+      if (gl.aborted) {
+        groupLinkAborted = true
+        errors.push(
+          'Stopped fixture group linking after 20 database failures (remaining sheet rows were not processed).'
+        )
+        break
+      }
       const sc = await rpcScorePredictionsForMatch(supabase, completedGmTouchedId)
       if (sc.error) {
         errors.push(
@@ -1212,17 +1239,22 @@ export async function POST(request: Request) {
   }
   }
 
-  if (!dryRun) {
+  if (!dryRun && groupLinkBudget && !groupLinkAborted) {
     try {
-      const rep = await relinkAllCompletedMatchesToFixtureGroups(supabase)
+      const rep = await relinkAllCompletedMatchesToFixtureGroups(supabase, groupLinkBudget)
       group_link_repair_examined = rep.processed
       group_link_repair_linked = rep.linked
       for (const w of rep.warnings) errors.push(w)
+      if (rep.group_link_aborted) {
+        groupLinkAborted = true
+      }
     } catch (e) {
       errors.push(
         `Warning: completed fixture group relink failed: ${e instanceof Error ? e.message : String(e)}`
       )
     }
+  } else if (!dryRun && groupLinkAborted) {
+    errors.push('Skipped post-sync completed fixture group repair because group linking was stopped early.')
   }
 
   if (!dryRun) {
