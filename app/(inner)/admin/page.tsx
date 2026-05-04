@@ -778,7 +778,7 @@ export default function AdminPage() {
       const glSkip = json.skipped_group_linking_count ?? 0
       const gmIns = json.game_matches_inserted ?? (json.inserted_upcoming ?? 0) + (json.inserted_completed ?? 0)
       const gmUpd = json.game_matches_updated ?? (json.updated_upcoming ?? 0) + (json.updated_completed ?? 0)
-      let msg = `Sync complete: incoming ${json.incoming_rows ?? 0}, game_matches inserted/updated ${gmIns}/${gmUp}, upcoming inserted/updated ${json.inserted_upcoming ?? 0}/${json.updated_upcoming ?? 0}, completed inserted/updated ${json.inserted_completed ?? 0}/${json.updated_completed ?? 0}, duplicates skipped ${json.skipped_duplicates ?? 0}, validation messages ${warningCount}.`
+      let msg = `Sync complete: incoming ${json.incoming_rows ?? 0}, game_matches inserted/updated ${gmIns}/${gmUpd}, upcoming inserted/updated ${json.inserted_upcoming ?? 0}/${json.updated_upcoming ?? 0}, completed inserted/updated ${json.inserted_completed ?? 0}/${json.updated_completed ?? 0}, duplicates skipped ${json.skipped_duplicates ?? 0}, validation messages ${warningCount}.`
       if (glFail > 0 || glSkip > 0) {
         msg += ` Group link failures ${glFail}, group linking skipped for ${glSkip} row(s) after budget.`
       }
