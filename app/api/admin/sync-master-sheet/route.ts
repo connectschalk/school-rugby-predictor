@@ -14,7 +14,13 @@ import {
   type GroupLinkWarningEffective,
   type SheetClassificationForWarnings,
 } from '@/lib/fixture-group-resolve'
-import { parseTeamsSheetCsv, SheetTeamsRegistry, teamLookupNormalize } from '@/lib/sheet-teams-registry'
+import {
+  buildTeamsRegistryDebug,
+  parseTeamsSheetCsv,
+  SheetTeamsRegistry,
+  teamLookupNormalize,
+  type TeamsRegistryDebug,
+} from '@/lib/sheet-teams-registry'
 import { relinkAllCompletedMatchesToFixtureGroups } from '@/lib/repair-missing-fixture-group-links'
 import { scoreCompletedPredictionMatches } from '@/lib/score-completed-unscored-matches'
 import { rpcScorePredictionsForMatch } from '@/lib/score-predictions-for-match'
@@ -74,6 +80,8 @@ type SyncSummary = {
   group_link_repair_linked?: number
   validation_errors: string[]
   warnings: SyncWarningItem[]
+  /** Present on dry-run (preview) responses and stored on preview `sync_runs.summary`. */
+  teams_registry_debug?: TeamsRegistryDebug
 }
 
 function normalizeHeader(v: string): string {
@@ -387,6 +395,9 @@ export async function POST(request: Request) {
   const teamsParsed = parseTeamsSheetCsv(teamsCsvText)
   errors.push(...teamsParsed.errors)
   const teamRegistry = new SheetTeamsRegistry(teamsParsed.rows)
+  const teamsRegistryDebug = dryRun
+    ? buildTeamsRegistryDebug(teamRegistry, teamsParsed.rows.length)
+    : undefined
   const parsed = parseFixturesSheetCsv(fixturesCsvText)
   errors.push(...parsed.errors)
   if (!parsed.rows.length) {
@@ -421,6 +432,7 @@ export async function POST(request: Request) {
       group_link_repair_linked: 0,
       validation_errors,
       warnings: buildStructuredWarningsFromStrings(validation_errors),
+      ...(teamsRegistryDebug ? { teams_registry_debug: teamsRegistryDebug } : {}),
     }
     await supabase.from('sync_runs').insert({
       mode: dryRun ? 'dry_run' : 'run',
@@ -1144,6 +1156,7 @@ export async function POST(request: Request) {
     group_link_repair_linked,
     validation_errors: errors,
     warnings: buildStructuredWarningsFromStrings(errors),
+    ...(teamsRegistryDebug ? { teams_registry_debug: teamsRegistryDebug } : {}),
   }
 
   const { error: logErr } = await supabase.from('sync_runs').insert({

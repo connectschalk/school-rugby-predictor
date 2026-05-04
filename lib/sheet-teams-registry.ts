@@ -229,3 +229,32 @@ export class SheetTeamsRegistry {
     return new Set([...this.byKey.values()].map((e) => e.canonicalName)).size
   }
 }
+
+const TEAMS_REGISTRY_DEBUG_SAMPLE_LIMIT = 20
+
+/** Preview-only debug payload for admin sheet sync (Teams registry lookup sanity). */
+export type TeamsRegistryDebug = {
+  teams_rows_count: number
+  has_heidelberg_volkskool_lookup: boolean
+  has_hugenote_welkom_lookup: boolean
+  sample_lookup_keys_containing_heidelberg: string[]
+  sample_lookup_keys_containing_hugenote: string[]
+}
+
+export function buildTeamsRegistryDebug(
+  registry: SheetTeamsRegistry,
+  teamsRowsCount: number
+): TeamsRegistryDebug {
+  const keys = registry.getAllLookupKeys()
+  return {
+    teams_rows_count: teamsRowsCount,
+    has_heidelberg_volkskool_lookup: registry.resolve('Heidelberg Volkskool').ok,
+    has_hugenote_welkom_lookup: registry.resolve('Hugenote Welkom').ok,
+    sample_lookup_keys_containing_heidelberg: keys
+      .filter((k) => k.includes('heidelberg'))
+      .slice(0, TEAMS_REGISTRY_DEBUG_SAMPLE_LIMIT),
+    sample_lookup_keys_containing_hugenote: keys
+      .filter((k) => k.includes('hugenote'))
+      .slice(0, TEAMS_REGISTRY_DEBUG_SAMPLE_LIMIT),
+  }
+}

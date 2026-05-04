@@ -13,6 +13,7 @@ import MasterSheetSyncWarningsPanel from '@/components/admin/MasterSheetSyncWarn
 import PredictionCard from '@/components/admin/PredictionCard'
 import PredictedVsActualCard from '@/components/admin/PredictedVsActualCard'
 import { normalizeSyncWarningsInput, type SyncWarningItem } from '@/lib/sync-master-warnings'
+import type { TeamsRegistryDebug } from '@/lib/sheet-teams-registry'
 import { recordMatchResultWithPrediction } from '@/lib/admin-match'
 import {
   backfillPredictionHistoryForSeason,
@@ -139,6 +140,66 @@ function masterSyncWarningsFromRun(run: SyncRunRow | undefined): SyncWarningItem
   return normalizeSyncWarningsInput(run.validation_errors)
 }
 
+function teamsRegistryDebugFromRunSummary(summary: unknown): TeamsRegistryDebug | null {
+  if (!summary || typeof summary !== 'object') return null
+  const raw = (summary as { teams_registry_debug?: unknown }).teams_registry_debug
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Record<string, unknown>
+  if (typeof o.teams_rows_count !== 'number') return null
+  if (typeof o.has_heidelberg_volkskool_lookup !== 'boolean') return null
+  if (typeof o.has_hugenote_welkom_lookup !== 'boolean') return null
+  if (!Array.isArray(o.sample_lookup_keys_containing_heidelberg)) return null
+  if (!Array.isArray(o.sample_lookup_keys_containing_hugenote)) return null
+  return {
+    teams_rows_count: o.teams_rows_count,
+    has_heidelberg_volkskool_lookup: o.has_heidelberg_volkskool_lookup,
+    has_hugenote_welkom_lookup: o.has_hugenote_welkom_lookup,
+    sample_lookup_keys_containing_heidelberg: o.sample_lookup_keys_containing_heidelberg.map(String),
+    sample_lookup_keys_containing_hugenote: o.sample_lookup_keys_containing_hugenote.map(String),
+  }
+}
+
+function TeamsRegistryDebugDetails({
+  debug,
+  className = 'mt-3',
+}: {
+  debug: TeamsRegistryDebug
+  className?: string
+}) {
+  return (
+    <details
+      className={`rounded-lg border border-dashed border-gray-300 bg-white px-3 py-2 text-xs text-gray-800 ${className}`}
+    >
+      <summary className="cursor-pointer font-semibold text-gray-900">Teams registry debug</summary>
+      <ul className="mt-2 list-inside list-disc space-y-1 text-gray-700">
+        <li>
+          <span className="font-medium text-gray-900">teams_rows_count:</span> {debug.teams_rows_count}
+        </li>
+        <li>
+          <span className="font-medium text-gray-900">has_heidelberg_volkskool_lookup:</span>{' '}
+          {debug.has_heidelberg_volkskool_lookup ? 'true' : 'false'}
+        </li>
+        <li>
+          <span className="font-medium text-gray-900">has_hugenote_welkom_lookup:</span>{' '}
+          {debug.has_hugenote_welkom_lookup ? 'true' : 'false'}
+        </li>
+        <li>
+          <span className="font-medium text-gray-900">sample_lookup_keys containing &quot;heidelberg&quot;:</span>{' '}
+          {debug.sample_lookup_keys_containing_heidelberg.length
+            ? debug.sample_lookup_keys_containing_heidelberg.join(', ')
+            : '—'}
+        </li>
+        <li>
+          <span className="font-medium text-gray-900">sample_lookup_keys containing &quot;hugenote&quot;:</span>{' '}
+          {debug.sample_lookup_keys_containing_hugenote.length
+            ? debug.sample_lookup_keys_containing_hugenote.join(', ')
+            : '—'}
+        </li>
+      </ul>
+    </details>
+  )
+}
+
 export default function AdminPage() {
   const router = useRouter()
 
@@ -201,6 +262,7 @@ export default function AdminPage() {
   const [syncMasterBusy, setSyncMasterBusy] = useState(false)
   const [syncMasterMessage, setSyncMasterMessage] = useState('')
   const [syncMasterReplaceUpcoming, setSyncMasterReplaceUpcoming] = useState(false)
+  const [teamsRegistryPreviewDebug, setTeamsRegistryPreviewDebug] = useState<TeamsRegistryDebug | null>(null)
   const [syncRuns, setSyncRuns] = useState<SyncRunRow[]>([])
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null)
   const [latestMasterSyncWarnings, setLatestMasterSyncWarnings] = useState<SyncWarningItem[]>([])
@@ -636,6 +698,7 @@ export default function AdminPage() {
 
   async function runMasterSheetSync(mode: 'preview' | 'run') {
     setSyncMasterMessage('')
+    setTeamsRegistryPreviewDebug(null)
     setSyncMasterBusy(true)
     const {
       data: { session },
@@ -676,6 +739,11 @@ export default function AdminPage() {
       post_sync_sweep_attempted?: number
       group_link_repair_examined?: number
       group_link_repair_linked?: number
+      teams_registry_debug?: TeamsRegistryDebug
+    }
+
+    if (mode === 'preview' && json.teams_registry_debug) {
+      setTeamsRegistryPreviewDebug(json.teams_registry_debug)
     }
 
     const items = normalizeSyncWarningsInput(json.warnings ?? json.validation_errors)
@@ -705,6 +773,7 @@ export default function AdminPage() {
         `Preview: incoming ${json.incoming_rows ?? 0}, upcoming insert/update ${json.would_insert_upcoming ?? 0}/${json.would_update_upcoming ?? 0}, completed insert/update ${json.would_insert_completed ?? 0}/${json.would_update_completed ?? 0}, duplicates skipped ${json.skipped_duplicates ?? 0}, validation messages ${warningCount}.`
       )
     } else {
+      setTeamsRegistryPreviewDebug(null)
       const nScored = json.completed_matches_scored ?? 0
       const sweepOk = json.post_sync_sweep_scored ?? 0
       const sweepAttempted = json.post_sync_sweep_attempted ?? 0
@@ -2329,6 +2398,9 @@ export default function AdminPage() {
                 {syncMasterMessage}
               </p>
             ) : null}
+            {teamsRegistryPreviewDebug ? (
+              <TeamsRegistryDebugDetails debug={teamsRegistryPreviewDebug} />
+            ) : null}
             <div className="mt-5 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-800">
               <p className="font-semibold text-gray-900">Prediction scoring &amp; pools</p>
               <p className="mt-1 text-xs text-gray-600">
@@ -2512,6 +2584,13 @@ export default function AdminPage() {
                       </button>
                     </div>
                     <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-4 pt-2 md:px-4">
+                      {(() => {
+                        const run = syncRuns.find((x) => x.id === syncRunDetailId)
+                        const dbg = teamsRegistryDebugFromRunSummary(run?.summary)
+                        return dbg ? (
+                          <TeamsRegistryDebugDetails debug={dbg} className="mt-0 mb-3" />
+                        ) : null
+                      })()}
                       <MasterSheetSyncWarningsPanel
                         key={syncRunDetailId}
                         items={masterSyncWarningsFromRun(syncRuns.find((x) => x.id === syncRunDetailId))}
