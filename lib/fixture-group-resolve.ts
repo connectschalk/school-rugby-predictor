@@ -70,6 +70,16 @@ export function resolveWpElitePoolGroupId(maps: FixtureGroupMaps): string | null
   )
 }
 
+/** WP Premium pool (sheet / product); falls back to legacy WP Elite group if Premium slug missing. */
+export function resolveWpPremiumPoolGroupId(maps: FixtureGroupMaps): string | null {
+  return (
+    maps.slugToGroupId.get('wp-premium') ??
+    maps.nameToGroupId.get('wp premium') ??
+    maps.aliasToGroupId.get('wp premium') ??
+    resolveWpElitePoolGroupId(maps)
+  )
+}
+
 /**
  * Resolve a single label against aliases → fixture_groups.name → slug (direct or slugified).
  */
@@ -136,7 +146,7 @@ export type FixtureGroupLinkInput = {
 }
 
 /**
- * Ordered group ids: league → tournament → Interprovincial (when cross-province) → Prestige Pool → WP Elite →
+ * Ordered group ids: league → tournament → Interprovincial (when cross-province) → Prestige Pool → WP Premium (elite teams) →
  * team provinces (home, away) → optional legacy province_group.
  */
 export function computeFixtureGroupLinkIds(maps: FixtureGroupMaps, input: FixtureGroupLinkInput): string[] {
@@ -169,7 +179,7 @@ export function computeFixtureGroupLinkIds(maps: FixtureGroupMaps, input: Fixtur
     if (pid) push(pid)
   }
   if (input.linkWpElitePool) {
-    const wid = resolveWpElitePoolGroupId(maps)
+    const wid = resolveWpPremiumPoolGroupId(maps)
     if (wid) push(wid)
   }
   for (const raw of [(input.homeTeamProvince ?? '').trim(), (input.awayTeamProvince ?? '').trim()].filter(Boolean)) {
@@ -233,7 +243,7 @@ export function collectGroupLinkResolutionWarnings(
 
   if (isTotallyUnclassified(effective, sheet)) {
     messages.push(
-      `Notice: no league, tournament, legacy province_group, prestige, interprovincial, WP Elite, or team provinces (${rowLabel}) — no fixture group links will be created from classification.`
+      `Notice: no league, tournament, legacy province_group, prestige, interprovincial, WP Premium, or team provinces (${rowLabel}) — no fixture group links will be created from classification.`
     )
     return { messages, hasHardIssue: false }
   }
@@ -272,8 +282,8 @@ export function collectGroupLinkResolutionWarnings(
   if (effective.linkPrestigePool && !resolvePrestigePoolGroupId(maps)) {
     messages.push(`Warning: prestige match but Prestige Pool fixture group was not found (${rowLabel})`)
   }
-  if (effective.linkWpElitePool && !resolveWpElitePoolGroupId(maps)) {
-    messages.push(`Warning: WP Elite team involved but WP Elite fixture group was not found (${rowLabel})`)
+  if (effective.linkWpElitePool && !resolveWpPremiumPoolGroupId(maps)) {
+    messages.push(`Warning: WP elite team involved but WP Premium / WP Elite fixture group was not found (${rowLabel})`)
   }
 
   return { messages, hasHardIssue: messages.length > 0 }

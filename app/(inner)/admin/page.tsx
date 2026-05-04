@@ -690,8 +690,8 @@ export default function AdminPage() {
     if (!json.ok) {
       setSyncMasterMessage(
         json.error
-          ? `Master sheet sync: ${json.error}`
-          : `Master sheet sync finished with ${items.length} message${items.length === 1 ? '' : 's'} (see panel below).`
+          ? `Sheet sync: ${json.error}`
+          : `Sheet sync finished with ${items.length} message${items.length === 1 ? '' : 's'} (see panel below).`
       )
       await loadSyncRuns()
       void refreshUpcomingFixtureCount()
@@ -2083,8 +2083,12 @@ export default function AdminPage() {
     ? `${new Date(lastSyncRun.created_at).toLocaleString()} · ${lastSyncRun.mode === 'dry_run' ? 'Preview' : 'Run'}`
     : 'No sync logged yet'
 
-  const masterSheetOpenUrl =
-    typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_GOOGLE_FIXTURE_MASTER_SHEET_URL ?? null : null
+  const teamsFixturesSheetOpenUrl =
+    typeof process !== 'undefined'
+      ? process.env.NEXT_PUBLIC_GOOGLE_FIXTURES_SHEET_URL ??
+          process.env.NEXT_PUBLIC_GOOGLE_FIXTURE_MASTER_SHEET_URL ??
+          null
+      : null
 
   function formatDetails(details: Record<string, any> | null) {
     if (!details || Object.keys(details).length === 0) return '-'
@@ -2211,17 +2215,18 @@ export default function AdminPage() {
           </h2>
           <div className="mt-3 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm md:p-6">
             <p className="text-sm text-gray-600">
-              Update the Google Sheet or use in-app tools to align fixtures before syncing.
+              Source of truth: <strong className="font-medium text-gray-900">Teams + Fixtures</strong> tabs. Update the
+              Google Sheet or use in-app tools to align fixtures before syncing.
             </p>
             <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-              {masterSheetOpenUrl ? (
+              {teamsFixturesSheetOpenUrl ? (
                 <a
-                  href={masterSheetOpenUrl}
+                  href={teamsFixturesSheetOpenUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-900 hover:bg-gray-50"
                 >
-                  Open Fixture Master Sheet (Google)
+                  Open Google Sheet (Teams + Fixtures)
                 </a>
               ) : (
                 <Link
@@ -2230,7 +2235,7 @@ export default function AdminPage() {
                   rel="noopener noreferrer"
                   className="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-900 hover:bg-gray-50"
                 >
-                  Fixture Master Sheet (app)
+                  In-app fixture paste (legacy)
                 </Link>
               )}
               <Link
@@ -2256,15 +2261,19 @@ export default function AdminPage() {
           <div className="mt-3 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm md:p-6">
             <ol className="list-decimal space-y-1 pl-5 text-sm text-gray-600">
               <li>
-                Configure two Google Sheet CSV exports: <code className="rounded bg-gray-100 px-1">GOOGLE_SHEET_TEAMS_CSV_URL</code>{' '}
-                (Teams tab: team_name, canonical_name, province, is_prestige_team, is_wp_elite, aliases) and{' '}
-                <code className="rounded bg-gray-100 px-1">GOOGLE_SHEET_FIXTURES_CSV_URL</code> or{' '}
-                <code className="rounded bg-gray-100 px-1">GOOGLE_FIXTURE_MASTER_CSV_URL</code> (Fixtures tab: date, time,
-                home_team, away_team, scores, league_group, tournament, is_prestige_match, status). Sync resolves fixture team
-                names against the Teams tab, derives <code className="rounded bg-gray-100 px-1">home_team_province</code> /{' '}
-                <code className="rounded bg-gray-100 px-1">away_team_province</code>, sets cross-province and prestige flags,
-                and links fixture groups in order: league, tournament, Interprovincial (when provinces differ), Prestige Pool,
-                WP Elite, team provinces, then optional legacy <code className="rounded bg-gray-100 px-1">province_group</code>.
+                Configure two Google Sheet CSV exports:{' '}
+                <code className="rounded bg-gray-100 px-1">GOOGLE_SHEET_TEAMS_CSV_URL</code> (Teams tab: team_name,
+                canonical_name, province, is_prestige_team, is_wp_elite, aliases — comma-separated aliases, lookup keys are
+                trim + lowercase) and <code className="rounded bg-gray-100 px-1">GOOGLE_SHEET_FIXTURES_CSV_URL</code>{' '}
+                (Fixtures tab only — not the old Master tab: date, time, home_team, away_team, home_score, away_score,
+                league_group, is_prestige, status). Sync resolves home/away through Teams, stores{' '}
+                <code className="rounded bg-gray-100 px-1">canonical_name</code> on fixtures, enriches provinces and flags,
+                derives <code className="rounded bg-gray-100 px-1">is_interprovincial</code>, forces{' '}
+                <code className="rounded bg-gray-100 px-1">completed</code> when both scores exist else{' '}
+                <code className="rounded bg-gray-100 px-1">upcoming</code>, and links groups: league, Interprovincial when
+                cross-province, Prestige Pool when <code className="rounded bg-gray-100 px-1">is_prestige</code> or a prestige
+                team, WP Premium when a team is WP elite, then home/away province pools (no dependence on sheet{' '}
+                <code className="rounded bg-gray-100 px-1">province_group</code>).
               </li>
               <li>
                 <strong className="text-gray-900">Preview</strong> sync — check counts and messages.
@@ -2283,7 +2292,7 @@ export default function AdminPage() {
                 disabled={syncMasterBusy}
                 className="inline-flex items-center justify-center rounded-xl bg-gray-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-black disabled:opacity-50"
               >
-                {syncMasterBusy ? 'Running…' : 'Preview Master Sheet Sync'}
+                {syncMasterBusy ? 'Running…' : 'Preview sheet sync'}
               </button>
               <button
                 type="button"
@@ -2303,7 +2312,7 @@ export default function AdminPage() {
                 disabled={syncMasterBusy}
                 className="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50"
               >
-                {syncMasterBusy ? 'Running…' : 'Run Master Sheet Sync'}
+                {syncMasterBusy ? 'Running…' : 'Run sheet sync'}
               </button>
             </div>
             <label className="mt-4 flex cursor-pointer items-start gap-2 text-sm text-gray-700">
@@ -2323,7 +2332,7 @@ export default function AdminPage() {
             <div className="mt-5 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-800">
               <p className="font-semibold text-gray-900">Prediction scoring &amp; pools</p>
               <p className="mt-1 text-xs text-gray-600">
-                After each <strong className="font-medium text-gray-800">Run Master Sheet Sync</strong>, the server
+                After each <strong className="font-medium text-gray-800">Run sheet sync</strong>, the server
                 automatically scores every completed match that has predictions and results but no{' '}
                 <code className="rounded bg-gray-200 px-1">user_prediction_scores</code> yet (same RPC as fixture
                 &quot;Run scoring&quot;). Refresh the summary below after a sync to confirm counts.
@@ -2368,8 +2377,9 @@ export default function AdminPage() {
                 <p className="mt-1 text-xs text-gray-600">
                   Every <strong className="font-medium text-gray-800">completed</strong> match gets{' '}
                   <code className="rounded bg-gray-200 px-1">game_match_groups</code> cleared and rebuilt from stored context:
-                  league, tournament, Interprovincial (when flagged or inferred from team provinces), Prestige Pool, WP Elite,
-                  team province links, and optional legacy <code className="rounded bg-gray-200 px-1">province_group</code>.
+                  league, tournament (if set on the row), Interprovincial (when flagged or inferred from team provinces),
+                  Prestige Pool, WP Premium (elite teams), team province links, and optional legacy{' '}
+                  <code className="rounded bg-gray-200 px-1">province_group</code>.
                   Runs automatically after each sync; use the button to repair pool visibility without re-running the sheet.
                 </p>
                 <div className="mt-2 flex flex-wrap items-center gap-2">

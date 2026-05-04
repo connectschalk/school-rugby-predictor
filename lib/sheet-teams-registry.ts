@@ -1,5 +1,3 @@
-import { normalizeTeamKey } from '@/lib/team-name-match'
-
 export type SheetTeamCsvRow = {
   team_name: string
   canonical_name: string
@@ -29,8 +27,12 @@ function normHeader(v: string): string {
 function splitAliases(raw: string): string[] {
   const s = raw.trim()
   if (!s) return []
-  const parts = s.split(/[,|;/]/g).map((x) => x.trim()).filter(Boolean)
-  return parts
+  return s.split(',').map((x) => x.trim()).filter(Boolean)
+}
+
+/** Single lookup key: trim + lowercase (no other normalization). */
+function lookupKey(raw: string): string {
+  return raw.trim().toLowerCase()
 }
 
 function splitCsvLine(line: string): string[] {
@@ -112,10 +114,9 @@ export function parseTeamsSheetCsv(csvText: string): { rows: SheetTeamCsvRow[]; 
 type RegistryEntry = ResolvedSheetTeam & { lookupKeys: Set<string> }
 
 function addKey(set: Set<string>, raw: string) {
-  const t = raw.trim()
-  if (!t) return
-  set.add(normalizeTeamKey(t))
-  set.add(t.toLowerCase())
+  const k = lookupKey(raw)
+  if (!k) return
+  set.add(k)
 }
 
 /**
@@ -149,11 +150,9 @@ export class SheetTeamsRegistry {
   }
 
   resolve(fixtureCell: string): { ok: true; team: ResolvedSheetTeam } | { ok: false; reason: string } {
-    const raw = fixtureCell.trim()
-    if (!raw) return { ok: false, reason: 'empty' }
-    const nk = normalizeTeamKey(raw)
-    const lk = raw.toLowerCase()
-    const hit = this.byKey.get(nk) ?? this.byKey.get(lk)
+    const k = lookupKey(fixtureCell)
+    if (!k) return { ok: false, reason: 'empty' }
+    const hit = this.byKey.get(k)
     if (!hit) return { ok: false, reason: 'not_in_teams_tab' }
     return {
       ok: true,

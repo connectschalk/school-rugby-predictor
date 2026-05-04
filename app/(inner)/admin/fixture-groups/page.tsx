@@ -178,8 +178,10 @@ export default function AdminFixtureGroupsPage() {
           <div>
             <h1 className="text-3xl font-bold">Fixture groups / leagues</h1>
             <p className="mt-1 text-sm text-gray-600">
-              Create and maintain province, league, festival, prestige, tournament, and custom groups. Master sheet sync
-              auto-creates tournament groups from the <code className="rounded bg-gray-100 px-1">tournament</code> column.
+              Create and maintain province, league, festival, prestige, tournament, and custom groups. Sheet sync uses the
+              Fixtures tab <code className="rounded bg-gray-100 px-1">league_group</code> column for league links; optional
+              <code className="rounded bg-gray-100 px-1"> tournament</code> on older rows is still respected when present in
+              the database.
             </p>
           </div>
           <Link href="/admin" className="text-sm text-gray-700 underline hover:text-black">

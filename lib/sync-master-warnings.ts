@@ -1,5 +1,5 @@
 /**
- * Structured warnings for Master Sheet sync (API + admin UI).
+ * Structured warnings for Google Sheet sync (Teams + Fixtures tabs; API + admin UI).
  * Plain-string validation_errors are normalized into this shape for display.
  */
 
@@ -47,6 +47,8 @@ function inferSeverity(message: string): SyncWarningSeverity {
   if (
     /\bfailed\b/i.test(message) ||
     /missing required/i.test(m) ||
+    /missing or invalid (date|time)/i.test(m) ||
+    /unmatched (home|away)_team/i.test(m) ||
     /missing score/i.test(m) ||
     /home_team and away_team are the same/i.test(m) ||
     /could not reject/i.test(m) ||
@@ -68,7 +70,9 @@ function inferCategory(message: string): SyncWarningCategory {
     return 'group_link'
   }
   if (lower.includes('province_group') || lower.includes('unknown province')) return 'province'
-  if (lower.includes('duplicate pair_key') || lower.includes('duplicate')) return 'duplicate'
+  if (lower.includes('duplicate fixture') || lower.includes('duplicate pair_key') || lower.includes('duplicate')) {
+    return 'duplicate'
+  }
   if (lower.includes('same team appears multiple times') || lower.includes('same date')) return 'team_date'
   if (
     lower.includes('upcoming insert failed') ||
@@ -112,9 +116,9 @@ function suggestedFix(category: SyncWarningCategory, message: string): string | 
     case 'province':
       return 'Use a known province_group label (or canonical name) from Fixture groups, or leave blank if N/A.'
     case 'group_link':
-      return 'Add or fix league_group / province_group in the sheet to match a fixture group name, slug, or alias in Admin → Fixture groups.'
+      return 'Add or fix league_group to match a fixture group in Admin → Fixture groups; province links come from team provinces on the Teams tab.'
     case 'duplicate':
-      return 'Remove duplicate rows for the same pair_key or same teams on the same date in the Google Sheet.'
+      return 'Remove duplicate Fixtures rows with the same date and the same two teams (order of home/away does not matter).'
     case 'team_date':
       return 'Ensure each team plays at most once per date in the sheet; remove or merge duplicate fixtures.'
     case 'insert':

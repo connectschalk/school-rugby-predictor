@@ -16,7 +16,6 @@ import {
 } from '@/lib/fixture-group-resolve'
 import { parseTeamsSheetCsv, SheetTeamsRegistry } from '@/lib/sheet-teams-registry'
 import { relinkAllCompletedMatchesToFixtureGroups } from '@/lib/repair-missing-fixture-group-links'
-import { ensureTournamentFixtureGroups } from '@/lib/tournament-fixture-groups'
 import { scoreCompletedPredictionMatches } from '@/lib/score-completed-unscored-matches'
 import { rpcScorePredictionsForMatch } from '@/lib/score-predictions-for-match'
 import { buildTeamAliasResolverMap } from '@/lib/team-aliases-db'
@@ -24,7 +23,7 @@ import { matchTeamName, type TeamRow } from '@/lib/team-name-match'
 
 export const runtime = 'nodejs'
 
-/** Raw row from the Fixtures tab CSV. */
+/** Raw row from the Fixtures tab CSV (Teams + Fixtures are the only source of truth). */
 type FixtureCsvRow = {
   date: string
   time: string
@@ -33,16 +32,10 @@ type FixtureCsvRow = {
   home_score: string
   away_score: string
   league_group: string
-  tournament: string
-  /** Explicit match-level prestige from sheet; empty when column absent. */
-  is_prestige_match: string
-  /** Legacy `is_prestige` column when `is_prestige_match` is not present. */
-  is_prestige_legacy: string
-  legacy_province_group: string
+  is_prestige: string
   status: string
   verification_status: string
   source: string
-  pair_key: string
 }
 
 type SyncSummary = {
@@ -103,13 +96,13 @@ function normalizeDate(v: string): string | null {
   return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`
 }
 
-function normalizeTime(v: string): string {
+function normalizeTime(v: string): string | null {
   const s = v.trim()
-  if (!s) return '11:00'
+  if (!s) return null
   const hm = s.match(/^(\d{1,2}):(\d{2})$/)
   if (hm) return `${String(Number(hm[1])).padStart(2, '0')}:${hm[2]}`
   const dt = new Date(s)
-  if (Number.isNaN(dt.getTime())) return '11:00'
+  if (Number.isNaN(dt.getTime())) return null
   const p = (n: number) => String(n).padStart(2, '0')
   return `${p(dt.getHours())}:${p(dt.getMinutes())}`
 }
@@ -126,25 +119,6 @@ function normalizeGameMatchStatus(v: string): 'upcoming' | 'locked' | 'completed
   return 'upcoming'
 }
 
-/** null = cell blank / column missing — team-level flags may apply. */
-function parseTriStateBool(v: string): boolean | null {
-  const s = v.trim().toLowerCase()
-  if (!s) return null
-  if (s === 'true' || s === '1' || s === 'yes' || s === 'y') return true
-  if (s === 'false' || s === '0' || s === 'no' || s === 'n') return false
-  return null
-}
-
-function effectivePrestigeForLink(
-  explicitMatch: boolean | null,
-  homePrestigeTeam: boolean,
-  awayPrestigeTeam: boolean
-): boolean {
-  if (explicitMatch === true) return true
-  if (explicitMatch === false) return false
-  return homePrestigeTeam || awayPrestigeTeam
-}
-
 function shouldPersistInterprovincial(homeProvince: string, awayProvince: string): boolean {
   const h = homeProvince.trim().toLowerCase()
   const a = awayProvince.trim().toLowerCase()
@@ -155,27 +129,31 @@ function shouldPersistInterprovincial(homeProvince: string, awayProvince: string
 type NormalizedSheetRow = {
   kickoff_time: string
   match_date: string
+  /** Stored on `game_matches` — canonical_name from Teams tab. */
   home_team: string
   away_team: string
   home_score: number | null
   away_score: number | null
-  legacy_province_group: string
   league_group: string
-  tournament: string
   home_team_province: string
   away_team_province: string
   is_interprovincial: boolean
   has_wp_elite_team: boolean
-  is_prestige_match_explicit: boolean | null
+  home_is_prestige_team: boolean
+  away_is_prestige_team: boolean
+  home_is_wp_elite: boolean
+  away_is_wp_elite: boolean
+  /** Fixtures `is_prestige` cell when present; null if column missing. */
+  is_prestige_sheet: boolean | null
   is_prestige_effective: boolean
-  status: 'upcoming' | 'locked' | 'completed' | 'cancelled'
+  status: 'upcoming' | 'completed'
   verification_status: 'draft' | 'needs_review' | 'verified' | 'rejected'
   source: string
   dedupe_key: string
 }
 
 function buildLinkContext(row: NormalizedSheetRow) {
-  const eff = effectiveGroupFieldsForMatchRow(row.league_group, row.legacy_province_group, row.tournament, false)
+  const eff = effectiveGroupFieldsForMatchRow(row.league_group, '', '', false)
   const linkInput: FixtureGroupLinkInput = {
     leagueForDb: eff.leagueForDb,
     legacyProvinceGroupForDb: eff.legacyProvinceGroupForDb,
@@ -196,11 +174,11 @@ function buildLinkContext(row: NormalizedSheetRow) {
   }
   const sheetWarn: SheetClassificationForWarnings = {
     league: row.league_group,
-    legacyProvince: row.legacy_province_group,
-    tournament: row.tournament,
+    legacyProvince: '',
+    tournament: '',
     homeTeamProvince: row.home_team_province,
     awayTeamProvince: row.away_team_province,
-    isPrestigeMatchExplicit: row.is_prestige_match_explicit,
+    isPrestigeMatchExplicit: row.is_prestige_sheet,
   }
   return { eff, linkInput, warnEff, sheetWarn }
 }
@@ -282,17 +260,16 @@ function parseFixturesSheetCsv(csvText: string): { rows: FixtureCsvRow[]; errors
     home_score: header.indexOf('home_score'),
     away_score: header.indexOf('away_score'),
     league_group: firstIdx(['league_group', 'league']),
-    tournament: firstIdx(['tournament', 'tournament_name', 'cup']),
-    is_prestige_match: firstIdx(['is_prestige_match', 'prestige_match']),
-    is_prestige_legacy: firstIdx(['is_prestige', 'prestige']),
-    legacy_province_group: firstIdx(['province_group', 'province']),
+    is_prestige: firstIdx(['is_prestige', 'prestige']),
     status: header.indexOf('status'),
     verification_status: header.indexOf('verification_status'),
     source: header.indexOf('source'),
-    pair_key: header.indexOf('pair_key'),
   }
-  if (idx.date < 0 || idx.home_team < 0 || idx.away_team < 0) {
-    return { rows: [], errors: ['Fixtures CSV requires at least date, home_team, away_team headers'] }
+  if (idx.date < 0 || idx.time < 0 || idx.home_team < 0 || idx.away_team < 0) {
+    return {
+      rows: [],
+      errors: ['Fixtures CSV requires headers: date, time, home_team, away_team'],
+    }
   }
 
   const rows: FixtureCsvRow[] = []
@@ -308,14 +285,10 @@ function parseFixturesSheetCsv(csvText: string): { rows: FixtureCsvRow[]; errors
       home_score: read('home_score'),
       away_score: read('away_score'),
       league_group: read('league_group'),
-      tournament: read('tournament'),
-      is_prestige_match: idx.is_prestige_match >= 0 ? read('is_prestige_match') : '',
-      is_prestige_legacy: idx.is_prestige_legacy >= 0 ? read('is_prestige_legacy') : '',
-      legacy_province_group: read('legacy_province_group'),
+      is_prestige: idx.is_prestige >= 0 ? read('is_prestige') : '',
       status: read('status'),
       verification_status: read('verification_status'),
       source: read('source'),
-      pair_key: read('pair_key'),
     })
   }
   return { rows, errors }
@@ -334,11 +307,16 @@ export async function POST(request: Request) {
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  const fixturesCsvUrl =
-    process.env.GOOGLE_SHEET_FIXTURES_CSV_URL ?? process.env.GOOGLE_FIXTURE_MASTER_CSV_URL ?? ''
+  const fixturesCsvUrl = process.env.GOOGLE_SHEET_FIXTURES_CSV_URL ?? ''
   const teamsCsvUrl = process.env.GOOGLE_SHEET_TEAMS_CSV_URL ?? ''
-  if (!url || !anonKey || !fixturesCsvUrl) {
+  if (!url || !anonKey) {
     return NextResponse.json({ ok: false, error: 'Server misconfigured for sheet sync' }, { status: 500 })
+  }
+  if (!fixturesCsvUrl) {
+    return NextResponse.json(
+      { ok: false, error: 'GOOGLE_SHEET_FIXTURES_CSV_URL is required (Fixtures tab CSV export only — Master tab is not used)' },
+      { status: 500 }
+    )
   }
   if (!teamsCsvUrl) {
     return NextResponse.json(
@@ -467,37 +445,61 @@ export async function POST(request: Request) {
   for (let i = 0; i < parsed.rows.length; i += 1) {
     const r = parsed.rows[i]
     const date = normalizeDate(r.date)
-    const time = normalizeTime(r.time)
+    const timeNorm = normalizeTime(r.time)
     const rawHome = r.home_team.trim()
     const rawAway = r.away_team.trim()
-    if (!date || !rawHome || !rawAway) {
-      errors.push(`Row ${i + 2}: missing required date/home_team/away_team`)
+    if (!date) {
+      errors.push(`Row ${i + 2}: missing or invalid date`)
+      continue
+    }
+    if (!timeNorm) {
+      errors.push(`Row ${i + 2}: missing or invalid time`)
+      continue
+    }
+    if (!rawHome || !rawAway) {
+      errors.push(`Row ${i + 2}: missing home_team or away_team`)
       continue
     }
     const hr = teamRegistry.resolve(rawHome)
     const ar = teamRegistry.resolve(rawAway)
     if (!hr.ok) {
-      errors.push(`Row ${i + 2}: home_team "${rawHome}" not found on Teams tab (canonical_name / aliases)`)
+      errors.push(
+        `Row ${i + 2}: unmatched home_team "${rawHome}" (Teams tab: team_name, canonical_name, comma-separated aliases)`
+      )
     }
     if (!ar.ok) {
-      errors.push(`Row ${i + 2}: away_team "${rawAway}" not found on Teams tab (canonical_name / aliases)`)
+      errors.push(
+        `Row ${i + 2}: unmatched away_team "${rawAway}" (Teams tab: team_name, canonical_name, comma-separated aliases)`
+      )
     }
-    const home = hr.ok ? hr.team.teamName : rawHome
-    const away = ar.ok ? ar.team.teamName : rawAway
-    if (home.toLowerCase() === away.toLowerCase()) {
-      errors.push(`Row ${i + 2}: home and away resolve to the same display team`)
+
+    const pairCountKey = `${date}|${
+      hr.ok && ar.ok
+        ? orderedPairKey(hr.team.canonicalName.trim(), ar.team.canonicalName.trim())
+        : orderedPairKey(rawHome, rawAway)
+    }`
+    pairKeyCounts.set(pairCountKey, (pairKeyCounts.get(pairCountKey) ?? 0) + 1)
+
+    if (!hr.ok || !ar.ok) {
       continue
     }
-    const dedupe = r.pair_key?.trim() || `${date}|${orderedPairKey(home, away)}`
-    pairKeyCounts.set(dedupe, (pairKeyCounts.get(dedupe) ?? 0) + 1)
+
+    const home = hr.team.canonicalName.trim()
+    const away = ar.team.canonicalName.trim()
+    if (home.toLowerCase() === away.toLowerCase()) {
+      errors.push(`Row ${i + 2}: home and away resolve to the same canonical team`)
+      continue
+    }
+
+    const dedupe = `${date}|${orderedPairKey(home, away)}`
     if (seen.has(dedupe)) {
       skipped_duplicates += 1
       continue
     }
     seen.add(dedupe)
 
-    const hpRaw = hr.ok ? (hr.team.province ?? '').trim() : ''
-    const apRaw = ar.ok ? (ar.team.province ?? '').trim() : ''
+    const hpRaw = (hr.team.province ?? '').trim()
+    const apRaw = (ar.team.province ?? '').trim()
     const homeProv = canonicalProvinceGroup(hpRaw)
     const awayProv = canonicalProvinceGroup(apRaw)
     if (homeProv.warning) {
@@ -508,43 +510,52 @@ export async function POST(request: Request) {
       province_group_warnings += 1
       errors.push(`Warning row ${i + 2} away province: ${awayProv.warning}`)
     }
-    const legacyP = canonicalProvinceGroup(r.legacy_province_group.trim())
-    if (legacyP.warning) {
-      province_group_warnings += 1
-      errors.push(`Warning row ${i + 2} legacy province_group: ${legacyP.warning}`)
+
+    const hs = toNumOrNull(r.home_score)
+    const as = toNumOrNull(r.away_score)
+    const hasBothScores = hs != null && as != null
+    const status: 'upcoming' | 'completed' = hasBothScores ? 'completed' : 'upcoming'
+    const sheetStatus = normalizeGameMatchStatus(r.status)
+    if (hasBothScores && sheetStatus !== 'completed') {
+      errors.push(
+        `Warning row ${i + 2}: both scores present — status forced to completed (sheet had "${r.status.trim()}")`
+      )
+    }
+    if (!hasBothScores && sheetStatus === 'completed') {
+      errors.push(
+        `Warning row ${i + 2}: sheet status completed but scores incomplete — using upcoming`
+      )
     }
 
-    let isPrestigeMatchExplicit: boolean | null = null
-    if (r.is_prestige_match.trim() !== '') {
-      isPrestigeMatchExplicit = parseTriStateBool(r.is_prestige_match)
-    } else if (r.is_prestige_legacy.trim() !== '') {
-      isPrestigeMatchExplicit = parseTriStateBool(r.is_prestige_legacy)
-    }
-    const homePrestigeT = hr.ok && hr.team.isPrestigeTeam
-    const awayPrestigeT = ar.ok && ar.team.isPrestigeTeam
-    const isPrestigeEffective = effectivePrestigeForLink(isPrestigeMatchExplicit, homePrestigeT, awayPrestigeT)
-    const wpElite = (hr.ok && hr.team.isWpElite) || (ar.ok && ar.team.isWpElite)
+    const isPrestigeSheet: boolean | null = r.is_prestige.trim() === '' ? null : parseBool(r.is_prestige)
+    const homePrestigeT = hr.team.isPrestigeTeam
+    const awayPrestigeT = ar.team.isPrestigeTeam
+    const isPrestigeEffective = (isPrestigeSheet === true) || homePrestigeT || awayPrestigeT
+    const homeWp = hr.team.isWpElite
+    const awayWp = ar.team.isWpElite
     const hp = homeProv.value ?? ''
     const ap = awayProv.value ?? ''
     const inter = shouldPersistInterprovincial(hp, ap)
 
     normalized.push({
-      kickoff_time: toSastKickoffIso(date, time),
+      kickoff_time: toSastKickoffIso(date, timeNorm),
       match_date: date,
       home_team: home,
       away_team: away,
-      home_score: toNumOrNull(r.home_score),
-      away_score: toNumOrNull(r.away_score),
-      legacy_province_group: legacyP.value ?? '',
+      home_score: hs,
+      away_score: as,
       league_group: r.league_group.trim(),
-      tournament: r.tournament.trim(),
       home_team_province: hp,
       away_team_province: ap,
       is_interprovincial: inter,
-      has_wp_elite_team: wpElite,
-      is_prestige_match_explicit: isPrestigeMatchExplicit,
+      has_wp_elite_team: homeWp || awayWp,
+      home_is_prestige_team: homePrestigeT,
+      away_is_prestige_team: awayPrestigeT,
+      home_is_wp_elite: homeWp,
+      away_is_wp_elite: awayWp,
+      is_prestige_sheet: isPrestigeSheet,
       is_prestige_effective: isPrestigeEffective,
-      status: normalizeGameMatchStatus(r.status),
+      status,
       verification_status: normalizeVerification(r.verification_status),
       source: r.source.trim(),
       dedupe_key: dedupe,
@@ -557,7 +568,11 @@ export async function POST(request: Request) {
   }
 
   for (const [pair, count] of pairKeyCounts.entries()) {
-    if (count > 1) errors.push(`Warning: duplicate pair_key encountered (${pair})`)
+    if (count > 1) {
+      errors.push(
+        `Warning: duplicate fixture — same calendar date and same two teams (home/away order ignored): ${pair}`
+      )
+    }
   }
   for (const [teamDate, count] of teamDayCounts.entries()) {
     if (count > 1) errors.push(`Warning: same team appears multiple times on same date (${teamDate})`)
@@ -703,11 +718,6 @@ export async function POST(request: Request) {
   }
 
   if (!dryRun) {
-  const tournamentNamesRun = [...new Set(normalized.map((r) => r.tournament.trim()).filter(Boolean))]
-  const ensRun = await ensureTournamentFixtureGroups(supabase, tournamentNamesRun)
-  if (ensRun.error) {
-    errors.push(`Warning: ${ensRun.error}`)
-  }
   fixtureGroupMaps = await loadFixtureGroupMaps(supabase)
 
   let upcomingUpsertFailed = false
@@ -717,8 +727,6 @@ export async function POST(request: Request) {
     if (row.status === 'upcoming') {
       const { eff, linkInput, warnEff, sheetWarn } = buildLinkContext(row)
       const upLeague = eff.leagueForDb ?? ''
-      const upLegacyProvince = eff.legacyProvinceGroupForDb ?? ''
-      const upTournament = eff.tournamentForDb ?? ''
       const upHomeTeamProv = row.home_team_province.trim()
       const upAwayTeamProv = row.away_team_province.trim()
       const rowLabelUp = `${row.home_team} vs ${row.away_team}`
@@ -734,20 +742,24 @@ export async function POST(request: Request) {
             kickoff_time: row.kickoff_time,
             home_team: row.home_team,
             away_team: row.away_team,
-            province_group: upLegacyProvince ? upLegacyProvince : null,
+            province_group: null,
             league_group: upLeague ? upLeague : null,
-            tournament: upTournament ? upTournament : null,
+            tournament: null,
             home_team_province: upHomeTeamProv ? upHomeTeamProv : null,
             away_team_province: upAwayTeamProv ? upAwayTeamProv : null,
             is_interprovincial: row.is_interprovincial,
             has_wp_elite_team: row.has_wp_elite_team,
-            is_prestige_match: row.is_prestige_match_explicit,
+            home_is_prestige_team: row.home_is_prestige_team,
+            away_is_prestige_team: row.away_is_prestige_team,
+            home_is_wp_elite: row.home_is_wp_elite,
+            away_is_wp_elite: row.away_is_wp_elite,
+            is_prestige_match: row.is_prestige_sheet,
             is_prestige: !!row.is_prestige_effective,
             status: row.status,
             verification_status: 'verified',
-            source_name: row.source || 'Google Sheet (Fixtures tab)',
+            source_name: row.source || 'Google Sheet (Teams + Fixtures)',
             source_url: fixturesCsvUrl,
-            source_type: 'google_sheet_fixtures',
+            source_type: 'google_sheet_teams_fixtures',
             rejected_reason: null,
           })
           .eq('id', existingGmUp.id)
@@ -777,18 +789,22 @@ export async function POST(request: Request) {
           kickoff_time: row.kickoff_time,
           status: row.status,
           verification_status: 'verified',
-          province_group: upLegacyProvince ? upLegacyProvince : null,
+          province_group: null,
           league_group: upLeague ? upLeague : null,
-          tournament: upTournament ? upTournament : null,
+          tournament: null,
           home_team_province: upHomeTeamProv ? upHomeTeamProv : null,
           away_team_province: upAwayTeamProv ? upAwayTeamProv : null,
           is_interprovincial: row.is_interprovincial,
           has_wp_elite_team: row.has_wp_elite_team,
-          is_prestige_match: row.is_prestige_match_explicit,
+          home_is_prestige_team: row.home_is_prestige_team,
+          away_is_prestige_team: row.away_is_prestige_team,
+          home_is_wp_elite: row.home_is_wp_elite,
+          away_is_wp_elite: row.away_is_wp_elite,
+          is_prestige_match: row.is_prestige_sheet,
           is_prestige: !!row.is_prestige_effective,
-          source_name: row.source || 'Google Sheet (Fixtures tab)',
+          source_name: row.source || 'Google Sheet (Teams + Fixtures)',
           source_url: fixturesCsvUrl,
-          source_type: 'google_sheet_fixtures',
+          source_type: 'google_sheet_teams_fixtures',
         }).select('id').single()
         if (error) {
           upcomingUpsertFailed = true
@@ -849,8 +865,6 @@ export async function POST(request: Request) {
 
     const { eff, linkInput, warnEff, sheetWarn } = buildLinkContext(row)
     const dbLeague = eff.leagueForDb
-    const dbLegacyProvince = eff.legacyProvinceGroupForDb
-    const dbTournament = eff.tournamentForDb
     const dbHomeTeamProv = row.home_team_province.trim()
     const dbAwayTeamProv = row.away_team_province.trim()
 
@@ -915,19 +929,23 @@ export async function POST(request: Request) {
           home_score: row.home_score,
           away_score: row.away_score,
           verification_status: 'verified',
-          province_group: dbLegacyProvince,
+          province_group: null,
           league_group: dbLeague,
-          tournament: dbTournament,
+          tournament: null,
           home_team_province: dbHomeTeamProv ? dbHomeTeamProv : null,
           away_team_province: dbAwayTeamProv ? dbAwayTeamProv : null,
           is_interprovincial: row.is_interprovincial,
           has_wp_elite_team: row.has_wp_elite_team,
-          is_prestige_match: row.is_prestige_match_explicit,
+          home_is_prestige_team: row.home_is_prestige_team,
+          away_is_prestige_team: row.away_is_prestige_team,
+          home_is_wp_elite: row.home_is_wp_elite,
+          away_is_wp_elite: row.away_is_wp_elite,
+          is_prestige_match: row.is_prestige_sheet,
           is_prestige: !!row.is_prestige_effective,
           rejected_reason: null,
-          source_name: row.source || 'Google Sheet (Fixtures tab)',
+          source_name: row.source || 'Google Sheet (Teams + Fixtures)',
           source_url: fixturesCsvUrl,
-          source_type: 'google_sheet_fixtures',
+          source_type: 'google_sheet_teams_fixtures',
         })
         .eq('id', existingGmCompleted.id)
       if (gmUpdateErr) {
@@ -956,19 +974,23 @@ export async function POST(request: Request) {
           home_score: row.home_score,
           away_score: row.away_score,
           verification_status: 'verified',
-          province_group: dbLegacyProvince,
+          province_group: null,
           league_group: dbLeague,
-          tournament: dbTournament,
+          tournament: null,
           home_team_province: dbHomeTeamProv ? dbHomeTeamProv : null,
           away_team_province: dbAwayTeamProv ? dbAwayTeamProv : null,
           is_interprovincial: row.is_interprovincial,
           has_wp_elite_team: row.has_wp_elite_team,
-          is_prestige_match: row.is_prestige_match_explicit,
+          home_is_prestige_team: row.home_is_prestige_team,
+          away_is_prestige_team: row.away_is_prestige_team,
+          home_is_wp_elite: row.home_is_wp_elite,
+          away_is_wp_elite: row.away_is_wp_elite,
+          is_prestige_match: row.is_prestige_sheet,
           is_prestige: !!row.is_prestige_effective,
           rejected_reason: null,
-          source_name: row.source || 'Google Sheet (Fixtures tab)',
+          source_name: row.source || 'Google Sheet (Teams + Fixtures)',
           source_url: fixturesCsvUrl,
-          source_type: 'google_sheet_fixtures',
+          source_type: 'google_sheet_teams_fixtures',
         })
         .select('id')
         .single()
@@ -1022,7 +1044,7 @@ export async function POST(request: Request) {
   }
 
   if (replaceUpcoming && !upcomingUpsertFailed) {
-    const note = 'Replaced by Google Sheet master sync'
+    const note = 'Replaced by Google Sheet sync (Teams + Fixtures)'
     for (const [key] of snapshotUpcomingKeyToId.entries()) {
       if (sheetUpcomingKeys.has(key)) continue
       if (sheetCompletedPairKeys.has(key)) continue
