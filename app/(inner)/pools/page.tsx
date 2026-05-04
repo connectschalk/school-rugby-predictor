@@ -403,7 +403,7 @@ function PoolsPageContent() {
 
   if (!authReady || loading) {
     return (
-      <main className="mx-auto max-w-6xl px-4 py-8 md:px-6 md:py-12">
+      <main className="mx-auto w-full min-w-0 max-w-6xl overflow-x-hidden px-4 py-8 sm:px-6 md:py-12">
         <p className="text-sm text-gray-500">Loading pools…</p>
       </main>
     )
@@ -411,17 +411,19 @@ function PoolsPageContent() {
 
   if (!user) {
     return (
-      <main className="mx-auto max-w-6xl px-4 py-8 md:px-6 md:py-12">
+      <main className="mx-auto w-full min-w-0 max-w-6xl overflow-x-hidden px-4 py-8 sm:px-6 md:py-12">
         <h1 className="text-3xl font-black tracking-tight text-gray-900 md:text-4xl">Pools</h1>
-        <p className="mt-3 text-sm text-gray-600">Log in to create pools, request to join, and track pool leaderboards.</p>
+        <p className="mt-3 min-w-0 break-words text-sm text-gray-600">
+          Log in to create pools, request to join, and track pool leaderboards.
+        </p>
       </main>
     )
   }
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8 md:px-6 md:py-12">
+    <main className="mx-auto w-full min-w-0 max-w-6xl overflow-x-hidden px-4 py-8 sm:px-6 md:py-12">
       <h1 className="text-3xl font-black tracking-tight text-gray-900 md:text-4xl">Pools</h1>
-      <p className="mt-2 text-sm text-gray-600">
+      <p className="mt-2 min-w-0 break-words text-sm text-gray-600">
         Private prediction groups with admin approvals, weekly match selection, and pool-only leaderboards.
       </p>
       <div className="mt-4">
@@ -432,11 +434,15 @@ function PoolsPageContent() {
           Manage pools
         </Link>
       </div>
-      {message ? <p className="mt-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-2 text-sm text-gray-700">{message}</p> : null}
+      {message ? (
+        <p className="mt-4 min-w-0 break-words rounded-xl border border-gray-200 bg-gray-50 px-4 py-2 text-sm text-gray-700">
+          {message}
+        </p>
+      ) : null}
 
       {myPools.length === 0 ? (
-        <section className="mt-8 rounded-2xl border border-gray-200 bg-white p-6">
-          <p className="text-sm text-gray-700">Create or join a pool.</p>
+        <section className="mt-8 w-full max-w-full min-w-0 rounded-2xl border border-gray-200 bg-white p-6">
+          <p className="min-w-0 break-words text-sm text-gray-700">Create or join a pool.</p>
           <Link
             href="/pools/manage"
             className="mt-4 inline-flex rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-black"
@@ -447,23 +453,25 @@ function PoolsPageContent() {
       ) : null}
 
       {showManagement ? (
-      <section className="mt-8 grid gap-4 lg:grid-cols-2">
-        <div className="rounded-2xl border border-gray-200 bg-white p-4">
+      <section className="mt-8 grid min-w-0 max-w-full gap-4 lg:grid-cols-2">
+        <div className="w-full max-w-full min-w-0 rounded-2xl border border-gray-200 bg-white p-4">
           <h2 className="text-base font-black uppercase tracking-wide text-gray-900">Join a pool</h2>
-          <p className="mt-1 text-xs text-gray-600">Find a pool by name or join with a code from your organiser.</p>
-          <div className="mt-3 flex gap-2">
+          <p className="mt-1 min-w-0 break-words text-xs text-gray-600">
+            Find a pool by name or join with a code from your organiser.
+          </p>
+          <div className="mt-3 flex min-w-0 flex-col gap-2 sm:flex-row">
             <input
               type="search"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search pool name…"
-              className="w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
+              className="min-w-0 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
             />
             <button
               type="button"
               onClick={() => void onSearchPools()}
               disabled={searching}
-              className="rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-800"
+              className="w-full shrink-0 rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-800 sm:w-auto"
             >
               Search
             </button>
@@ -474,15 +482,20 @@ function PoolsPageContent() {
               const name = String(r.name ?? 'Pool')
               const memberCount = Number(r.member_count ?? 0)
               return (
-                <div key={id} className="flex items-center justify-between rounded-xl border border-gray-200 px-3 py-2">
-                  <div>
-                    <p className="text-sm font-semibold text-gray-900">{name}</p>
+                <div
+                  key={id}
+                  className="flex min-w-0 max-w-full items-center justify-between gap-2 rounded-xl border border-gray-200 px-3 py-2"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-gray-900" title={name}>
+                      {name}
+                    </p>
                     <p className="text-xs text-gray-500">{memberCount} members</p>
                   </div>
                   <button
                     type="button"
                     onClick={() => void onRequestJoin(id)}
-                    className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-800"
+                    className="shrink-0 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-800"
                   >
                     Request join
                   </button>
@@ -492,7 +505,7 @@ function PoolsPageContent() {
           </div>
         </div>
 
-        <div className="rounded-2xl border border-gray-200 bg-white p-4">
+        <div className="w-full max-w-full min-w-0 rounded-2xl border border-gray-200 bg-white p-4">
           <h2 className="text-base font-black uppercase tracking-wide text-gray-900">Create your own pool</h2>
           <div className="mt-3">
             <input
@@ -500,7 +513,7 @@ function PoolsPageContent() {
               value={createName}
               onChange={(e) => setCreateName(e.target.value)}
               placeholder="Pool name (3–80 characters)"
-              className="w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
+              className="min-w-0 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
             />
             <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-gray-700">
@@ -526,24 +539,24 @@ function PoolsPageContent() {
       </section>
       ) : null}
 
-      <section className="mt-8 grid gap-4 lg:grid-cols-[280px_1fr]">
-        <aside className="rounded-2xl border border-gray-200 bg-white p-4">
+      <section className="mt-8 grid min-w-0 max-w-full gap-4 lg:grid-cols-[minmax(0,280px)_minmax(0,1fr)]">
+        <aside className="w-full max-w-full min-w-0 rounded-2xl border border-gray-200 bg-white p-4">
           <h2 className="text-base font-black text-gray-900">My pools</h2>
           <div className="mt-3 space-y-2">
             {myPools.length === 0 ? (
-              <p>No pools yet.</p>
+              <p className="min-w-0 break-words">No pools yet.</p>
             ) : (
               myPools.map((pool) => (
                 <button
                   key={pool.id}
                   type="button"
                   onClick={() => setSelectedPoolId(pool.id)}
-                  className={`w-full rounded-xl border px-3 py-2 text-left ${
+                  className={`w-full max-w-full min-w-0 rounded-xl border px-3 py-2 text-left ${
                     pool.id === selectedPoolId ? 'border-gray-900 bg-gray-100' : 'border-gray-200'
                   }`}
                 >
-                  <div className="flex items-center gap-2">
-                    <span>{pool.name}</span>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="min-w-0 truncate font-medium">{pool.name}</span>
                     {pool.admin_user_id === user.id ? (
                       <span className="rounded-full border border-gray-300 px-2 py-0.5 text-[10px] font-semibold text-gray-700">
                         Admin
@@ -557,14 +570,14 @@ function PoolsPageContent() {
           </div>
         </aside>
 
-        <div className="rounded-2xl border border-gray-200 bg-white p-4">
+        <div className="w-full max-w-full min-w-0 rounded-2xl border border-gray-200 bg-white p-4">
           {!selectedPool ? (
-            <p className="text-sm text-gray-500">Select a pool to view details.</p>
+            <p className="min-w-0 break-words text-sm text-gray-500">Select a pool to view details.</p>
           ) : (
             <>
-              <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex min-w-0 max-w-full flex-wrap items-start justify-between gap-3">
                 <div className="flex min-w-0 flex-1 items-center gap-2">
-                  <h2 className="text-lg font-black text-gray-900">{selectedPool.name}</h2>
+                  <h2 className="min-w-0 break-words text-lg font-black text-gray-900">{selectedPool.name}</h2>
                   {selectedPool.admin_user_id === user.id ? (
                     <span className="shrink-0 rounded-full border border-gray-300 px-2 py-0.5 text-[10px] font-semibold text-gray-700">
                       Admin
@@ -592,61 +605,69 @@ function PoolsPageContent() {
                 </div>
               </div>
 
-              <div className="mt-5 flex flex-wrap items-end justify-between gap-2 border-b border-gray-200 pb-1">
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setPoolDetailTab('leaderboard')}
-                    className={`rounded-t-lg px-4 py-2 text-sm font-bold transition ${
-                      poolDetailTab === 'leaderboard'
-                        ? 'bg-gray-900 text-white'
-                        : 'text-gray-700 hover:bg-gray-100'
-                    }`}
-                  >
-                    Leaderboard
-                  </button>
-                  {isPoolMember ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => setPoolDetailTab('picks')}
-                        className={`rounded-t-lg px-4 py-2 text-sm font-bold transition ${
-                          poolDetailTab === 'picks'
-                            ? 'bg-gray-900 text-white'
-                            : 'text-gray-700 hover:bg-gray-100'
-                        }`}
-                      >
-                        Pool Picks
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPoolDetailTab('predict')}
-                        className={`rounded-t-lg px-4 py-2 text-sm font-bold transition ${
-                          poolDetailTab === 'predict'
-                            ? 'bg-gray-900 text-white'
-                            : 'text-gray-700 hover:bg-gray-100'
-                        }`}
-                      >
-                        Predict
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <span className="rounded-t-lg px-4 py-2 text-sm font-semibold text-gray-400" title="Join this pool to see pool picks">
-                        Pool Picks (members only)
-                      </span>
-                      <span className="rounded-t-lg px-4 py-2 text-sm font-semibold text-gray-400" title="Join this pool to enter predictions for this pool">
-                        Predict (members only)
-                      </span>
-                    </>
-                  )}
+              <div className="mt-5 flex min-w-0 max-w-full flex-col gap-2 border-b border-gray-200 pb-1 sm:flex-row sm:items-end sm:justify-between">
+                <div className="min-w-0 max-w-full overflow-x-auto whitespace-nowrap">
+                  <div className="inline-flex gap-2 pr-1">
+                    <button
+                      type="button"
+                      onClick={() => setPoolDetailTab('leaderboard')}
+                      className={`rounded-t-lg px-4 py-2 text-sm font-bold transition ${
+                        poolDetailTab === 'leaderboard'
+                          ? 'bg-gray-900 text-white'
+                          : 'text-gray-700 hover:bg-gray-100'
+                      }`}
+                    >
+                      Leaderboard
+                    </button>
+                    {isPoolMember ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setPoolDetailTab('picks')}
+                          className={`rounded-t-lg px-4 py-2 text-sm font-bold transition ${
+                            poolDetailTab === 'picks'
+                              ? 'bg-gray-900 text-white'
+                              : 'text-gray-700 hover:bg-gray-100'
+                          }`}
+                        >
+                          Pool Picks
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPoolDetailTab('predict')}
+                          className={`rounded-t-lg px-4 py-2 text-sm font-bold transition ${
+                            poolDetailTab === 'predict'
+                              ? 'bg-gray-900 text-white'
+                              : 'text-gray-700 hover:bg-gray-100'
+                          }`}
+                        >
+                          Predict
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span
+                          className="inline-block max-w-[11rem] truncate rounded-t-lg px-4 py-2 text-sm font-semibold text-gray-400 sm:max-w-none sm:whitespace-normal"
+                          title="Join this pool to see pool picks"
+                        >
+                          Pool Picks (members only)
+                        </span>
+                        <span
+                          className="inline-block max-w-[11rem] truncate rounded-t-lg px-4 py-2 text-sm font-semibold text-gray-400 sm:max-w-none sm:whitespace-normal"
+                          title="Join this pool to enter predictions for this pool"
+                        >
+                          Predict (members only)
+                        </span>
+                      </>
+                    )}
+                  </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setPoolInfoModalOpen(true)}
                   aria-expanded={poolInfoModalOpen}
                   aria-controls="pool-info-dialog"
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-800 shadow-sm transition hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
+                  className="inline-flex w-full shrink-0 items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-800 shadow-sm transition hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 sm:w-auto sm:justify-start"
                 >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -667,16 +688,16 @@ function PoolsPageContent() {
 
               {poolDetailTab === 'leaderboard' ? (
                 <>
-                  <div className="mt-6">
+                  <div className="mt-6 min-w-0 max-w-full">
                     <h3 className="text-sm font-black uppercase tracking-wide text-gray-700">Leaderboard</h3>
-                    <p className="mt-1 text-xs text-gray-500">
+                    <p className="mt-1 min-w-0 break-words text-xs text-gray-500">
                       Pool members only, scored on games in this pool&apos;s fixture scope (groups and optional team
                       filter).
                     </p>
                     {leaderLoading ? (
                       <p className="mt-3 text-sm text-gray-500">Loading leaderboard…</p>
                     ) : (
-                      <div className="mt-3 overflow-x-auto rounded-xl border border-gray-200">
+                      <div className="mt-3 w-full max-w-full overflow-x-auto rounded-xl border border-gray-200">
                         <table className="min-w-[640px] w-full text-left text-sm">
                           <thead>
                             <tr className="border-b border-gray-100 bg-gray-50 text-xs font-bold uppercase tracking-wide text-gray-600">
@@ -702,18 +723,22 @@ function PoolsPageContent() {
                                   <td className="whitespace-nowrap px-3 py-2 text-xs font-bold text-gray-500">
                                     #{i + 1}
                                   </td>
-                                  <td className="px-3 py-2">
-                                    <div className="flex min-w-0 items-center gap-2">
-                                      <LetterAvatar
-                                        letter={r.avatar_letter}
-                                        colour={r.avatar_colour}
-                                        avatarUrl={r.avatar_url}
-                                        displayName={r.display_name}
-                                        name={r.display_name}
-                                        size={28}
-                                        className="ring-1 ring-gray-200"
-                                      />
-                                      <span className="truncate font-semibold text-gray-900">{r.display_name}</span>
+                                  <td className="max-w-[11rem] px-3 py-2 sm:max-w-none">
+                                    <div className="flex min-w-0 flex-col gap-0.5">
+                                      <div className="flex min-w-0 items-center gap-2">
+                                        <LetterAvatar
+                                          letter={r.avatar_letter}
+                                          colour={r.avatar_colour}
+                                          avatarUrl={r.avatar_url}
+                                          displayName={r.display_name}
+                                          name={r.display_name}
+                                          size={28}
+                                          className="shrink-0 ring-1 ring-gray-200"
+                                        />
+                                        <span className="min-w-0 truncate font-semibold text-gray-900" title={r.display_name}>
+                                          {r.display_name}
+                                        </span>
+                                      </div>
                                       {!afterJoin ? (
                                         <span className="text-[10px] text-gray-500">Late joiner</span>
                                       ) : null}
@@ -741,9 +766,9 @@ function PoolsPageContent() {
                     )}
                   </div>
 
-                  <div className="mt-6">
+                  <div className="mt-6 min-w-0 max-w-full">
                     <h3 className="text-sm font-black uppercase tracking-wide text-gray-700">Weekly matches</h3>
-                    <p className="mt-1 text-xs text-gray-500">
+                    <p className="mt-1 min-w-0 break-words text-xs text-gray-500">
                       Pool fixture scope (prestige fallback when no groups selected).
                     </p>
                     {effectiveMatches.length === 0 ? (
@@ -751,7 +776,10 @@ function PoolsPageContent() {
                     ) : (
                       <div className="mt-3 space-y-2">
                         {effectiveMatches.map((m) => (
-                          <div key={m.id} className="rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-800">
+                          <div
+                            key={m.id}
+                            className="min-w-0 max-w-full break-words rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-800"
+                          >
                             {teamVs(m)}
                           </div>
                         ))}
@@ -848,7 +876,7 @@ function PoolsPageContent() {
                       </section>
                       <section>
                         <h3 className="text-xs font-black uppercase tracking-wide text-gray-500">How fixtures are included</h3>
-                        <p className="mt-2 text-sm leading-relaxed text-gray-600">
+                        <p className="mt-2 min-w-0 break-words text-sm leading-relaxed text-gray-600">
                           This pool includes matches from selected groups and/or matches involving selected teams.
                         </p>
                       </section>
@@ -868,8 +896,11 @@ function PoolsPageContent() {
                         <p className="text-sm text-gray-500">No pending requests.</p>
                       ) : (
                         joinRequests.map((r) => (
-                            <div key={r.id} className="flex items-center justify-between rounded-xl border border-gray-200 px-3 py-2">
-                              <p className="text-sm text-gray-800">
+                            <div
+                              key={r.id}
+                              className="flex min-w-0 max-w-full items-center justify-between gap-2 rounded-xl border border-gray-200 px-3 py-2"
+                            >
+                              <p className="min-w-0 truncate text-sm text-gray-800" title={requestDisplayName(r, profilesById)}>
                                 {requestDisplayName(r, profilesById)}
                               </p>
                               <div className="flex gap-2">
@@ -901,8 +932,13 @@ function PoolsPageContent() {
                   <h3 className="text-sm font-black uppercase tracking-wide text-gray-700">Members</h3>
                   <div className="mt-2 space-y-2">
                     {leaderRows.map((r) => (
-                      <div key={r.user_id} className="flex items-center justify-between rounded-xl border border-gray-200 px-3 py-2">
-                        <p className="text-sm text-gray-800">{r.display_name}</p>
+                      <div
+                        key={r.user_id}
+                        className="flex min-w-0 max-w-full items-center justify-between gap-2 rounded-xl border border-gray-200 px-3 py-2"
+                      >
+                        <p className="min-w-0 truncate text-sm text-gray-800" title={r.display_name}>
+                          {r.display_name}
+                        </p>
                         {r.user_id !== selectedPool.admin_user_id ? (
                           <button
                             type="button"
@@ -929,7 +965,13 @@ function PoolsPageContent() {
 
 export default function PoolsPage() {
   return (
-    <Suspense fallback={<div className="mx-auto max-w-6xl px-6 py-12 text-slate-500">Loading pools...</div>}>
+    <Suspense
+      fallback={
+        <div className="mx-auto w-full min-w-0 max-w-6xl overflow-x-hidden px-4 py-12 text-slate-500 sm:px-6">
+          Loading pools...
+        </div>
+      }
+    >
       <PoolsPageContent />
     </Suspense>
   )

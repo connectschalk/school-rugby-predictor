@@ -208,14 +208,14 @@ export default function PoolPredictTabSection({
 
   if (scopeIdSet.size === 0) {
     return (
-      <p className="mt-4 text-sm text-gray-600">
+      <p className="mt-4 min-w-0 max-w-full break-words text-sm text-gray-600">
         This pool has no fixtures in scope yet. Configure groups or teams under Manage pools.
       </p>
     )
   }
 
   return (
-    <div className="mt-4">
+    <div className="mt-4 w-full max-w-full min-w-0">
       <PredictScoreAuthModal open={authModalOpen} onClose={() => setAuthModalOpen(false)} />
       <PredictionMarginModal match={marginModalMatch} onClose={() => setMarginModalMatch(null)} />
 
@@ -234,15 +234,15 @@ export default function PoolPredictTabSection({
         </p>
       ) : (
         grouped.map((block) => (
-          <section key={block.province} className="mt-6 space-y-4">
-            <h3 className="flex items-center gap-2 border-b border-gray-200 pb-2 text-base font-black text-gray-900">
-              <ProvinceLogoMark label={block.province} labelOnly size={28} className="shadow-sm" />
-              <span className="leading-tight">{block.province}</span>
+          <section key={block.province} className="mt-6 w-full min-w-0 max-w-full space-y-4">
+            <h3 className="flex min-w-0 max-w-full items-center gap-2 border-b border-gray-200 pb-2 text-base font-black text-gray-900">
+              <ProvinceLogoMark label={block.province} labelOnly size={28} className="shrink-0 shadow-sm" />
+              <span className="min-w-0 break-words leading-tight">{block.province}</span>
             </h3>
             {block.dates.map((day) => (
-              <div key={day.dateKey} className="space-y-3">
-                <h4 className="text-sm font-semibold text-gray-500">{day.label}</h4>
-                <div className="mb-1 overflow-x-auto rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5">
+              <div key={day.dateKey} className="min-w-0 max-w-full space-y-3">
+                <h4 className="min-w-0 break-words text-sm font-semibold text-gray-500">{day.label}</h4>
+                <div className="mb-1 hidden w-full max-w-full overflow-x-auto rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5 md:block">
                   <div className="grid min-w-[640px] grid-cols-[5.25rem_minmax(0,1fr)_minmax(0,1fr)_3.25rem_4.25rem_6.5rem] items-center gap-2 text-[10px] font-black uppercase tracking-wide text-gray-500">
                     <span>Kickoff</span>
                     <span>Home</span>

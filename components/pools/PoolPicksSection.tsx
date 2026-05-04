@@ -204,13 +204,13 @@ export default function PoolPicksSection({
   }
 
   return (
-    <div className="mt-4 space-y-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
+    <div className="mt-4 w-full max-w-full min-w-0 space-y-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0 max-w-full">
           <h3 className="text-base font-black text-gray-900">This week’s pool picks</h3>
-          <p className="text-xs text-gray-500">{weekLabel}</p>
+          <p className="min-w-0 break-words text-xs text-gray-500">{weekLabel}</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex min-w-0 w-full max-w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
           <label className="sr-only" htmlFor="pool-picks-game-select">
             Select game
           </label>
@@ -218,7 +218,7 @@ export default function PoolPicksSection({
             id="pool-picks-game-select"
             value={gameIndex}
             onChange={(e) => setGameIndex(Number(e.target.value))}
-            className="max-w-[min(100%,280px)] rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900"
+            className="min-w-0 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900 sm:max-w-[min(100%,280px)]"
           >
             {weekGames.map((g, i) => (
               <option key={g.id} value={i}>
@@ -226,7 +226,7 @@ export default function PoolPicksSection({
               </option>
             ))}
           </select>
-          <div className="flex items-center gap-1">
+          <div className="flex w-full min-w-0 items-center justify-center gap-1 sm:w-auto sm:justify-start">
             <button
               type="button"
               aria-label="Previous game"
@@ -263,11 +263,11 @@ export default function PoolPicksSection({
       {match && !loadingPicks ? (
         <>
           {!showPicksData ? (
-            <div className="overflow-hidden rounded-3xl border border-gray-200 bg-white p-6 shadow-lg shadow-black/10">
-              <div className="grid grid-cols-3 gap-2 border-b border-gray-100 pb-6">
+            <div className="w-full max-w-full min-w-0 overflow-hidden rounded-3xl border border-gray-200 bg-white p-6 shadow-lg shadow-black/10">
+              <div className="grid min-w-0 grid-cols-3 gap-2 border-b border-gray-100 pb-6">
                 <div className="min-w-0 text-right">
                   <p className="text-xs uppercase tracking-wide text-gray-500">Home</p>
-                  <p className="mt-1 font-semibold text-gray-900">{match.home_team}</p>
+                  <p className="mt-1 break-words font-semibold text-gray-900">{match.home_team}</p>
                 </div>
                 <div className="flex flex-col items-center justify-center text-center">
                   <span className="text-xs tracking-widest text-gray-400">VS</span>
@@ -277,7 +277,7 @@ export default function PoolPicksSection({
                 </div>
                 <div className="min-w-0 text-left">
                   <p className="text-xs uppercase tracking-wide text-red-600">Away</p>
-                  <p className="mt-1 font-semibold text-gray-900">{match.away_team}</p>
+                  <p className="mt-1 break-words font-semibold text-gray-900">{match.away_team}</p>
                 </div>
               </div>
               <p className="mt-6 text-center text-sm font-semibold text-gray-800">
@@ -287,7 +287,7 @@ export default function PoolPicksSection({
           ) : stats ? (
             <>
               <CommunityDistributionPanel stats={stats} viewerAvatar={viewerAvatar} />
-              <div className="mt-4 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
+              <div className="mt-4 w-full max-w-full min-w-0 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
                 <p className="text-xs font-black uppercase tracking-wide text-gray-600">Pool picks</p>
                 <div className="mt-3 flex flex-col gap-4 sm:flex-row sm:justify-between">
                   <div className="min-w-0 flex-1">
@@ -338,12 +338,12 @@ export default function PoolPicksSection({
           ) : null}
 
           {showPicksData ? (
-            <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
+            <div className="w-full max-w-full min-w-0 overflow-hidden rounded-2xl border border-gray-200 bg-white">
               <div className="border-b border-gray-100 px-4 py-3">
                 <h4 className="text-sm font-black text-gray-900">Picks detail</h4>
               </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-left text-sm">
+              <div className="w-full max-w-full overflow-x-auto">
+                <table className="min-w-[640px] w-full text-left text-sm">
                   <thead>
                     <tr className="border-b border-gray-100 bg-gray-50 text-xs font-bold uppercase tracking-wide text-gray-600">
                       <th className="whitespace-nowrap px-4 py-3">Player</th>
@@ -374,8 +374,8 @@ export default function PoolPicksSection({
                         r.score_margin_difference != null ? String(r.score_margin_difference) : match.status === 'completed' ? '—' : '—'
                       return (
                         <tr key={r.user_id} className="border-b border-gray-50">
-                          <td className="whitespace-nowrap px-4 py-2 font-medium text-gray-900">
-                            <span className="inline-flex items-center gap-2">
+                          <td className="max-w-[10rem] px-4 py-2 font-medium text-gray-900 sm:max-w-none">
+                            <span className="inline-flex min-w-0 max-w-full items-center gap-2">
                               <LetterAvatar
                                 letter={r.avatar_letter}
                                 colour={r.avatar_colour}
@@ -383,12 +383,16 @@ export default function PoolPicksSection({
                                 displayName={r.display_name}
                                 name={r.display_name}
                                 size={24}
-                                className="ring-1 ring-gray-200"
+                                className="shrink-0 ring-1 ring-gray-200"
                               />
-                              {r.display_name}
+                              <span className="min-w-0 truncate" title={r.display_name}>
+                                {r.display_name}
+                              </span>
                             </span>
                           </td>
-                          <td className="whitespace-nowrap px-4 py-2 text-gray-800">{winnerLabel}</td>
+                          <td className="max-w-[8rem] truncate px-4 py-2 text-gray-800 sm:max-w-none sm:whitespace-nowrap" title={winnerLabel}>
+                            {winnerLabel}
+                          </td>
                           <td className="whitespace-nowrap px-4 py-2 tabular-nums text-gray-800">{marginLabel}</td>
                           <td className="whitespace-nowrap px-4 py-2 text-gray-600">{formatSubmitted(r.submitted_at)}</td>
                           <td className="whitespace-nowrap px-4 py-2 tabular-nums text-gray-800">{pts}</td>

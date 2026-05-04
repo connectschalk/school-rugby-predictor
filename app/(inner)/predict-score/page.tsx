@@ -331,11 +331,11 @@ export default function PredictScorePage() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-100 pb-20 pt-8">
+    <main className="min-h-screen w-full max-w-full min-w-0 overflow-x-hidden bg-gradient-to-b from-slate-50 via-white to-slate-100 pb-20 pt-8">
       <Suspense fallback={null}>
         <PredictScoreFocusHandler ready={!loading} />
       </Suspense>
-      <div className="mx-auto max-w-5xl space-y-6 px-4">
+      <div className="mx-auto w-full min-w-0 max-w-5xl space-y-6 px-4 sm:px-6">
         <header className="text-center">
           <h1 className="text-3xl font-black tracking-tight text-slate-900">Predict</h1>
           <p className="mt-2 text-sm font-medium text-slate-500">
@@ -354,7 +354,7 @@ export default function PredictScorePage() {
         <PredictScoreAuthModal open={authModalOpen} onClose={() => setAuthModalOpen(false)} />
         <PredictionMarginModal match={marginModalMatch} onClose={() => setMarginModalMatch(null)} />
 
-        <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-sm">
+        <div className="w-full max-w-full min-w-0 rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-sm">
           <label className="block text-xs font-bold uppercase tracking-widest text-slate-500">Search team</label>
           <input
             type="search"
@@ -371,7 +371,7 @@ export default function PredictScorePage() {
               selected teams or by the pool&apos;s competitions and provinces. Province crests keep games where either
               home or away province matches.
             </p>
-            <div className="mt-3 flex flex-wrap items-center gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="mt-3 flex max-w-full min-w-0 flex-wrap items-center gap-2 overflow-x-auto pb-1">
               <button
                 type="button"
                 onClick={() => {
@@ -501,22 +501,22 @@ export default function PredictScorePage() {
             </p>
           )
         ) : selectedProvinceCode && provinceFilterDayGroups ? (
-          <section className="space-y-4">
-            <h2 className="flex flex-wrap items-center gap-2.5 border-b border-slate-200 pb-2 text-lg font-black text-slate-900">
+          <section className="w-full min-w-0 max-w-full space-y-4">
+            <h2 className="flex min-w-0 max-w-full flex-wrap items-center gap-2.5 border-b border-slate-200 pb-2 text-lg font-black text-slate-900">
               <ProvinceLogoMark
                 label={PROVINCE_PREDICT_FILTER_LABEL[selectedProvinceCode]}
                 labelOnly
                 size={32}
-                className="shadow-sm"
+                className="shrink-0 shadow-sm"
               />
-              <span className="min-w-0 leading-tight">
+              <span className="min-w-0 break-words leading-tight">
                 {PROVINCE_PREDICT_FILTER_LABEL[selectedProvinceCode]} fixtures: {filteredMatches.length}
               </span>
             </h2>
             {provinceFilterDayGroups.map((day) => (
-              <div key={day.dateKey} className="space-y-3">
-                <h3 className="text-sm font-semibold text-slate-500">{day.label}</h3>
-                <div className="mb-1 overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5">
+              <div key={day.dateKey} className="min-w-0 max-w-full space-y-3">
+                <h3 className="min-w-0 break-words text-sm font-semibold text-slate-500">{day.label}</h3>
+                <div className="mb-1 hidden overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 md:block">
                   <div className="grid min-w-[640px] grid-cols-[5.25rem_minmax(0,1fr)_minmax(0,1fr)_3.25rem_4.25rem_6.5rem] items-center gap-2 text-[10px] font-black uppercase tracking-wide text-slate-500">
                     <span>Kickoff</span>
                     <span>Home</span>
@@ -570,15 +570,15 @@ export default function PredictScorePage() {
           </section>
         ) : (
           groupedByProvince.map((block) => (
-            <section key={block.province} className="space-y-4">
-              <h2 className="flex items-center gap-2.5 border-b border-slate-200 pb-2 text-lg font-black text-slate-900">
-                <ProvinceLogoMark label={block.province} labelOnly size={32} className="shadow-sm" />
-                <span className="leading-tight">{block.province}</span>
+            <section key={block.province} className="w-full min-w-0 max-w-full space-y-4">
+              <h2 className="flex min-w-0 max-w-full items-center gap-2.5 border-b border-slate-200 pb-2 text-lg font-black text-slate-900">
+                <ProvinceLogoMark label={block.province} labelOnly size={32} className="shrink-0 shadow-sm" />
+                <span className="min-w-0 break-words leading-tight">{block.province}</span>
               </h2>
               {block.dates.map((day) => (
-                <div key={day.dateKey} className="space-y-3">
-                  <h3 className="text-sm font-semibold text-slate-500">{day.label}</h3>
-                  <div className="mb-1 overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5">
+                <div key={day.dateKey} className="min-w-0 max-w-full space-y-3">
+                  <h3 className="min-w-0 break-words text-sm font-semibold text-slate-500">{day.label}</h3>
+                  <div className="mb-1 hidden overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 md:block">
                     <div className="grid min-w-[640px] grid-cols-[5.25rem_minmax(0,1fr)_minmax(0,1fr)_3.25rem_4.25rem_6.5rem] items-center gap-2 text-[10px] font-black uppercase tracking-wide text-slate-500">
                       <span>Kickoff</span>
                       <span>Home</span>

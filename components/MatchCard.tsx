@@ -41,7 +41,7 @@ function TeamPickCell({
       type="button"
       disabled={disabled}
       onClick={onSelect}
-      className={`flex min-h-[2.75rem] w-full min-w-0 items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 ${
+      className={`flex min-h-[2.75rem] w-full min-w-0 max-w-full items-center gap-2 rounded-lg border px-2 py-2 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 md:py-1.5 ${
         selected
           ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
           : 'border-slate-200 bg-slate-50 text-slate-900 hover:border-slate-400'
@@ -61,7 +61,9 @@ function TeamPickCell({
       </span>
       <span className="min-w-0 flex-1">
         <span className="block text-[9px] font-semibold uppercase tracking-wide opacity-80">{label}</span>
-        <span className="block truncate text-xs font-bold leading-tight">{name}</span>
+        <span className="block break-words text-xs font-bold leading-tight md:truncate" title={name}>
+          {name}
+        </span>
       </span>
     </button>
   )
@@ -160,10 +162,10 @@ export default function MatchCard({
   }
 
   return (
-    <div className={rowShell}>
-      <div className="overflow-x-auto">
-        <div className="grid min-w-[640px] grid-cols-[5.25rem_minmax(0,1fr)_minmax(0,1fr)_3.25rem_4.25rem_6.5rem] items-center gap-2 px-2 py-2">
-          <div className="text-[10px] leading-tight text-slate-600">
+    <div className={`${rowShell} w-full max-w-full min-w-0`}>
+      <div className="w-full min-w-0 md:overflow-x-auto">
+        <div className="grid w-full min-w-0 grid-cols-1 gap-2 px-2 py-2 md:min-w-[640px] md:grid-cols-[5.25rem_minmax(0,1fr)_minmax(0,1fr)_3.25rem_4.25rem_6.5rem] md:items-center">
+          <div className="w-full min-w-0 border-b border-slate-100 pb-2 text-[10px] leading-tight text-slate-600 md:border-b-0 md:pb-0">
             {predictionsClosed ? (
               <span className="font-bold uppercase tracking-wide text-slate-500">Closed</span>
             ) : predictionRowLocked ? (
@@ -171,7 +173,7 @@ export default function MatchCard({
             ) : (
               <span className="font-bold uppercase tracking-wide text-slate-500">Upcoming</span>
             )}
-            <div className="mt-0.5 font-medium text-slate-700">{formatKickoffShort(kickoffTime)}</div>
+            <div className="mt-0.5 break-words font-medium text-slate-700">{formatKickoffShort(kickoffTime)}</div>
           </div>
 
           <TeamPickCell
@@ -191,7 +193,8 @@ export default function MatchCard({
             onSelect={() => tapSide('away')}
           />
 
-          <div className="shrink-0">
+          <div className="w-full min-w-0 md:w-auto md:shrink-0">
+            <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-600 md:hidden">Margin (pts)</p>
             <label className="sr-only" htmlFor={`margin-${matchId}`}>
               Margin
             </label>
@@ -214,21 +217,21 @@ export default function MatchCard({
               onClick={() => {
                 if (!signedIn && !disablePickers) onRequireAuth?.()
               }}
-              className="w-full rounded-md border border-slate-200 bg-white px-1.5 py-2 text-center text-xs font-bold tabular-nums text-slate-900 outline-none placeholder:text-slate-400 focus:border-slate-400 focus:ring-1 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-50"
+              className="w-full max-w-full rounded-md border border-slate-200 bg-white px-2 py-2.5 text-center text-sm font-bold tabular-nums text-slate-900 outline-none placeholder:text-slate-400 focus:border-slate-400 focus:ring-1 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-50 md:px-1.5 md:py-2 md:text-xs"
             />
           </div>
 
-          <div className="flex min-w-0 flex-col items-stretch gap-1">
+          <div className="flex w-full min-w-0 flex-col items-stretch gap-2 md:gap-1">
             {predictionsClosed ? (
               <div
-                className="rounded-md border border-slate-200 bg-slate-50 px-1 py-2 text-center text-[10px] font-bold leading-tight text-slate-600"
+                className="rounded-md border border-slate-200 bg-slate-50 px-2 py-2.5 text-center text-[10px] font-bold leading-tight text-slate-600 md:px-1 md:py-2"
                 role="status"
               >
                 Predictions closed
               </div>
             ) : !editable || predictionRowLocked ? (
               <div
-                className="rounded-md border border-slate-200 bg-slate-50 px-1 py-2 text-center text-[10px] font-bold leading-tight text-slate-600"
+                className="rounded-md border border-slate-200 bg-slate-50 px-2 py-2.5 text-center text-[10px] font-bold leading-tight text-slate-600 md:px-1 md:py-2"
                 role="status"
               >
                 {predictionRowLocked ? 'Locked in' : 'Predictions closed'}
@@ -245,7 +248,7 @@ export default function MatchCard({
                     }
                     onSubmit?.()
                   }}
-                  className="rounded-md border border-slate-900 bg-slate-900 px-2 py-2 text-center text-[11px] font-black uppercase tracking-wide text-white shadow-sm hover:bg-black disabled:cursor-not-allowed disabled:opacity-40"
+                  className="w-full rounded-md border border-slate-900 bg-slate-900 px-3 py-2.5 text-center text-xs font-black uppercase tracking-wide text-white shadow-sm hover:bg-black disabled:cursor-not-allowed disabled:opacity-40 md:w-auto md:px-2 md:py-2 md:text-[11px]"
                 >
                   {submitting ? '…' : saveLabel}
                 </button>
@@ -254,7 +257,7 @@ export default function MatchCard({
                     type="button"
                     disabled={lockingPick || submitting || predictionRowLocked}
                     onClick={() => onLockPick()}
-                    className="text-center text-[10px] font-semibold text-slate-500 underline decoration-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="w-full py-1 text-center text-xs font-semibold text-slate-500 underline decoration-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40 md:w-auto md:text-[10px]"
                   >
                     {lockingPick ? 'Locking…' : 'Lock'}
                   </button>
@@ -266,12 +269,12 @@ export default function MatchCard({
             )}
           </div>
 
-          <div className="flex min-w-0 flex-col items-stretch gap-1">
+          <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:items-stretch md:flex-col md:gap-1">
             {isAdmin && onAdminModel ? (
               <button
                 type="button"
                 onClick={() => onAdminModel()}
-                className="rounded-md border border-slate-300 bg-slate-50 px-2 py-1.5 text-center text-[10px] font-black uppercase tracking-wide text-slate-800 hover:bg-slate-100"
+                className="w-full rounded-md border border-slate-300 bg-slate-50 px-3 py-2.5 text-center text-xs font-black uppercase tracking-wide text-slate-800 hover:bg-slate-100 sm:flex-1 md:w-full md:flex-none md:px-2 md:py-1.5 md:text-[10px]"
                 title="View model prediction"
               >
                 MODEL
@@ -279,7 +282,7 @@ export default function MatchCard({
             ) : null}
             <Link
               href={`/predict-score/${matchId}`}
-              className="rounded-md border border-slate-300 bg-white py-1.5 text-center text-[10px] font-black uppercase tracking-wide text-slate-800 hover:bg-slate-50"
+              className="w-full rounded-md border border-slate-300 bg-white py-2.5 text-center text-xs font-black uppercase tracking-wide text-slate-800 hover:bg-slate-50 sm:flex-1 md:w-full md:flex-none md:py-1.5 md:text-[10px]"
             >
               COMMENTS
             </Link>
