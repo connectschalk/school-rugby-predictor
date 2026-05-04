@@ -22,15 +22,15 @@ export const PROVINCE_CODE_TO_CANONICAL_SLUG: Record<string, string> = {
   wp: 'western-province',
   ep: 'eastern-cape',
   fs: 'free-state-griquas',
-  nc: 'free-state-griquas',
-  gp: 'noordvaal',
+  nc: 'northern-cape',
+  gp: 'gauteng',
   kzn: 'kwazulu-natal',
   bl: 'boland',
   swd: 'south-western-districts',
-  bul: 'noordvaal',
-  leo: 'noordvaal',
-  lim: 'noordvaal',
-  pum: 'noordvaal',
+  bul: 'blue-bulls',
+  leo: 'leopards',
+  lim: 'limpopo',
+  pum: 'pumas',
 }
 
 const PROVINCE_CODE_KEYS = new Set(Object.keys(PROVINCE_CODE_TO_CANONICAL_SLUG))
@@ -44,15 +44,15 @@ export const PROVINCE_CODE_TO_GAME_MATCHES_DISPLAY_NAME: Record<string, string> 
   wp: 'Western Province',
   ep: 'Eastern Cape',
   fs: 'Free State / Griquas',
-  nc: 'Free State / Griquas',
-  gp: 'Noordvaal',
+  nc: 'Northern Cape',
+  gp: 'Gauteng',
   kzn: 'KwaZulu-Natal',
   bl: 'Boland',
   swd: 'South Western Districts',
-  bul: 'Noordvaal',
-  leo: 'Noordvaal',
-  lim: 'Noordvaal',
-  pum: 'Noordvaal',
+  bul: 'Blue Bulls',
+  leo: 'Leopards',
+  lim: 'Limpopo',
+  pum: 'Pumas',
 }
 
 /** Map sheet province short codes (and those codes alone) to canonical display names for `game_matches`. */

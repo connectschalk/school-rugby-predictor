@@ -34,6 +34,13 @@ export type PoolMemberRow = {
   joined_at: string
 }
 
+export type PoolTeamRow = {
+  id: string
+  pool_id: string
+  team_name: string
+  created_at: string
+}
+
 export type PoolJoinRequestRow = {
   id: string
   user_id: string
@@ -304,6 +311,25 @@ export async function fetchFixtureGroups(client: SupabaseClient) {
     group_type: null,
   }))
   return { rows, error: null }
+}
+
+export async function fetchPoolTeams(client: SupabaseClient, poolId: string) {
+  const { data, error } = await client
+    .from('pool_teams')
+    .select('id, pool_id, team_name, created_at')
+    .eq('pool_id', poolId)
+    .order('team_name', { ascending: true })
+  return { rows: (data as PoolTeamRow[] | null) ?? [], error }
+}
+
+/** Replaces all pool_teams for the pool (admin only via RLS). Pass [] to clear. */
+export async function replacePoolTeams(client: SupabaseClient, poolId: string, teamNames: string[]) {
+  const unique = [...new Set(teamNames.map((t) => t.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b))
+  const { error: delErr } = await client.from('pool_teams').delete().eq('pool_id', poolId)
+  if (delErr) return { error: delErr }
+  if (unique.length === 0) return { error: null }
+  const { error: insErr } = await client.from('pool_teams').insert(unique.map((team_name) => ({ pool_id: poolId, team_name })))
+  return { error: insErr }
 }
 
 export async function fetchPoolGroups(client: SupabaseClient, poolId: string) {
@@ -640,4 +666,75 @@ export async function upsertPoolMatches(client: SupabaseClient, poolId: string, 
     p_week_start: null,
   })
   return { inserted: num(data), error }
+}
+
+export type GameMatchGroupLink = { match_id: string; group_id: string }
+
+export async function fetchGameMatchGroupLinksForGroups(client: SupabaseClient, groupIds: string[]) {
+  const ids = [...new Set(groupIds.filter(Boolean))]
+  if (ids.length === 0) {
+    return { links: [] as GameMatchGroupLink[], error: null as Error | null }
+  }
+  const { data, error } = await client.from('game_match_groups').select('match_id, group_id').in('group_id', ids)
+  if (error) return { links: [] as GameMatchGroupLink[], error: new Error(error.message) }
+  const links = ((data as GameMatchGroupLink[] | null) ?? []).map((r) => ({
+    match_id: String(r.match_id),
+    group_id: String(r.group_id),
+  }))
+  return { links, error: null }
+}
+
+export async function fetchFixtureGroupTeamsForGroups(client: SupabaseClient, groupIds: string[]) {
+  const ids = [...new Set(groupIds.filter(Boolean))]
+  if (ids.length === 0) {
+    return { coreTeamsByGroupId: new Map<string, Set<string>>(), error: null as Error | null }
+  }
+  const { data, error } = await client.from('fixture_group_teams').select('group_id, team_name').in('group_id', ids)
+  if (error) {
+    const msg = error.message ?? ''
+    if (error.code === '42P01' || msg.includes('does not exist')) {
+      return { coreTeamsByGroupId: new Map<string, Set<string>>(), error: null }
+    }
+    return { coreTeamsByGroupId: new Map<string, Set<string>>(), error: new Error(error.message) }
+  }
+  const coreTeamsByGroupId = new Map<string, Set<string>>()
+  for (const row of (data as { group_id: string; team_name: string | null }[] | null) ?? []) {
+    const t = (row.team_name ?? '').trim()
+    if (!t) continue
+    if (!coreTeamsByGroupId.has(row.group_id)) coreTeamsByGroupId.set(row.group_id, new Set())
+    coreTeamsByGroupId.get(row.group_id)!.add(t)
+  }
+  return { coreTeamsByGroupId, error: null }
+}
+
+/** All fixture group aliases (cache once; filter client-side by selected groups). */
+export async function fetchFixtureGroupAliasesMap(client: SupabaseClient) {
+  const { data, error } = await client.from('fixture_group_aliases').select('group_id, alias')
+  if (error) return { map: new Map<string, string[]>(), error: new Error(error.message) }
+  const map = new Map<string, string[]>()
+  for (const row of (data as { group_id: string; alias: string | null }[] | null) ?? []) {
+    const a = (row.alias ?? '').trim()
+    if (!a) continue
+    const list = map.get(row.group_id) ?? []
+    list.push(a)
+    map.set(row.group_id, list)
+  }
+  return { map, error: null }
+}
+
+/** Row counts per group for optional “Western Cape (24 teams)” labels. */
+export async function fetchFixtureGroupTeamCounts(client: SupabaseClient) {
+  const { data, error } = await client.from('fixture_group_teams').select('group_id')
+  if (error) {
+    const msg = error.message ?? ''
+    if (error.code === '42P01' || msg.includes('does not exist')) {
+      return { counts: new Map<string, number>(), error: null as Error | null }
+    }
+    return { counts: new Map<string, number>(), error: new Error(error.message) }
+  }
+  const counts = new Map<string, number>()
+  for (const row of (data as { group_id: string }[] | null) ?? []) {
+    counts.set(row.group_id, (counts.get(row.group_id) ?? 0) + 1)
+  }
+  return { counts, error: null }
 }

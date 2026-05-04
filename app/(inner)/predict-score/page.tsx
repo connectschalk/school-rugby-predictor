@@ -1,99 +1,86 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import type { User } from '@supabase/supabase-js'
-import HowItWorksModal from '@/components/HowItWorksModal'
-import CompletedMatchLeaderboard from '@/components/predict-score/CompletedMatchLeaderboard'
+import MatchCard, { MATCH_CARD_MARGIN_MAX } from '@/components/MatchCard'
+import ProvinceLogoMark from '@/components/ProvinceLogoMark'
 import PredictScoreAuthModal from '@/components/predict-score/PredictScoreAuthModal'
-import PredictScoreSlipListSection, {
-  CLOSED_SLIP_HEADER_CLASS,
-} from '@/components/predict-score/PredictScoreSlipListSection'
-import { type SlipPick } from '@/components/predict-score/PredictionSlipRow'
-import { canEditPredictionOnMatch, matchPredictionsClosed, matchStartsSoon } from '@/lib/prediction-cutoff'
+import PredictionMarginModal from '@/components/predict-score/PredictionMarginModal'
+import { fetchUserIsAdmin } from '@/lib/admin-access'
+import { canEditPredictionOnMatch, matchPredictionsClosed } from '@/lib/prediction-cutoff'
 import {
-  fetchCompletedGameMatches,
-  fetchPlayableGameMatches,
+  defaultPick,
+  groupByDateOnly,
+  groupByProvinceThenDate,
+  parseMarginFromInput,
+  predictionMap,
+  upsertUserPrediction,
+  type PickState,
+} from '@/lib/predict-score-common'
+import { fetchEffectivePoolMatches, fetchMyPools } from '@/lib/pools'
+import {
+  fetchUpcomingPredictScoreMatches,
   fetchUserPredictionsForMatches,
-  sortPlayableMatchesForPredictScore,
   type GameMatch,
   type UserPredictionRow,
 } from '@/lib/public-prediction-game'
-import { fetchUserIsAdmin } from '@/lib/admin-access'
-import PredictionMarginModal from '@/components/predict-score/PredictionMarginModal'
-import { LOCK_ALL_NO_CANDIDATES, lockAllUnlockedSavedForEditableMatches } from '@/lib/lock-user-predictions'
-import { matchGameAgainstTeamSearch } from '@/lib/team-aliases-db'
-import type { TeamRow } from '@/lib/team-name-match'
-import { fetchEffectivePoolMatches, fetchMyPools, type PoolRow } from '@/lib/pools'
+import {
+  getProvinceLogoPath,
+  matchBelongsToProvinceLogoCode,
+  PROVINCE_LOGO_CODES_UI_ORDER,
+  PROVINCE_LOGO_TITLES,
+  PROVINCE_PREDICT_FILTER_LABEL,
+  type ProvinceLogoCode,
+} from '@/lib/province-logos'
 import { supabase } from '@/lib/supabase'
 import { trackEvent } from '@/lib/trackEvent'
 
-function predictionMap(rows: UserPredictionRow[]) {
-  const m = new Map<string, UserPredictionRow>()
-  for (const r of rows) {
-    m.set(r.match_id, r)
-  }
-  return m
-}
-
-function parseMargin(s: string): number | null {
-  const m = Number(String(s).trim())
-  if (!Number.isFinite(m) || m < 1 || !Number.isInteger(m)) return null
-  return m
-}
-
-async function ensureUserProfile(user: User) {
-  const displayName =
-    (typeof user.user_metadata?.full_name === 'string' &&
-      user.user_metadata.full_name.trim()) ||
-    user.email?.split('@')[0]?.trim() ||
-    'Player'
-
-  const { error } = await supabase.from('user_profiles').upsert(
-    { id: user.id, display_name: displayName },
-    { onConflict: 'id' }
-  )
-  return error
+function PredictScoreFocusHandler({ ready }: { ready: boolean }) {
+  const searchParams = useSearchParams()
+  const focus = searchParams.get('focus')?.trim() ?? ''
+  useEffect(() => {
+    if (!ready || !focus) return
+    const id = window.setTimeout(() => {
+      document.getElementById(`predict-card-${focus}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 120)
+    return () => window.clearTimeout(id)
+  }, [ready, focus])
+  return null
 }
 
 export default function PredictScorePage() {
-  const PREDICT_BANNER_SEEN_KEY = 'predict-banner-seen'
   const [user, setUser] = useState<User | null>(null)
   const [authReady, setAuthReady] = useState(false)
-  const [playableMatches, setPlayableMatches] = useState<GameMatch[]>([])
-  const [completedMatches, setCompletedMatches] = useState<GameMatch[]>([])
-  const [predictions, setPredictions] = useState<Map<string, UserPredictionRow>>(
-    () => new Map()
-  )
-  const [slipByMatch, setSlipByMatch] = useState<Record<string, SlipPick>>({})
+  const [matches, setMatches] = useState<GameMatch[]>([])
+  const [predictions, setPredictions] = useState<Map<string, UserPredictionRow>>(() => new Map())
+  const [picksByMatch, setPicksByMatch] = useState<Record<string, PickState>>({})
   const [loadError, setLoadError] = useState('')
-  const [loadingMatches, setLoadingMatches] = useState(true)
-  const [submittingMatchId, setSubmittingMatchId] = useState<string | null>(null)
-  const [submittingAll, setSubmittingAll] = useState(false)
-  const [lockingMatchId, setLockingMatchId] = useState<string | null>(null)
-  const [lockingAll, setLockingAll] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [submitError, setSubmitError] = useState('')
+  const [submittingMatchId, setSubmittingMatchId] = useState<string | null>(null)
+  const [lockingMatchId, setLockingMatchId] = useState<string | null>(null)
   const [flashSubmittedId, setFlashSubmittedId] = useState<string | null>(null)
-  const [bulkSaveMsg, setBulkSaveMsg] = useState('')
-  const [lockAllMsg, setLockAllMsg] = useState('')
-  const [howModalOpen, setHowModalOpen] = useState(false)
   const [authModalOpen, setAuthModalOpen] = useState(false)
-  const [showInfoBanner, setShowInfoBanner] = useState(false)
-  const [teamSearch, setTeamSearch] = useState('')
-  const [aliasRowsForSearch, setAliasRowsForSearch] = useState<Record<string, unknown>[]>([])
-  const [teamsForSearch, setTeamsForSearch] = useState<TeamRow[]>([])
   const [nowTick, setNowTick] = useState(() => Date.now())
-  const [myPools, setMyPools] = useState<PoolRow[]>([])
-  const [selectedPoolFilter, setSelectedPoolFilter] = useState<string>('all')
-  const [poolFilterMatchIds, setPoolFilterMatchIds] = useState<Set<string>>(() => new Set())
-  const [poolFilterLoading, setPoolFilterLoading] = useState(false)
-  const [isAdmin, setIsAdmin] = useState(false)
-  const [adminModelMatch, setAdminModelMatch] = useState<GameMatch | null>(null)
+  const [teamSearch, setTeamSearch] = useState('')
+  const [myPoolIds, setMyPoolIds] = useState<{ id: string; name: string }[]>([])
+  const [selectedPoolId, setSelectedPoolId] = useState<string | null>(null)
+  /** Match IDs in this pool's fixture scope (RPC: groups, teams, or union when both). */
+  const [poolScopeMatchIds, setPoolScopeMatchIds] = useState<Set<string>>(() => new Set())
+  const [poolFilterReady, setPoolFilterReady] = useState(true)
+  const [selectedProvinceCode, setSelectedProvinceCode] = useState<ProvinceLogoCode | null>(null)
+  const [isUserAdmin, setIsUserAdmin] = useState(false)
+  const [marginModalMatch, setMarginModalMatch] = useState<GameMatch | null>(null)
 
   const signedIn = !!user
+  const atDate = useMemo(() => new Date(nowTick), [nowTick])
 
-  const reloadPredictions = useCallback(async (uid: string, matchIds: string[]) => {
-    const { data, error } = await fetchUserPredictionsForMatches(supabase, uid, matchIds)
+  const matchIds = useMemo(() => matches.map((m) => m.id), [matches])
+
+  const reloadPredictions = useCallback(async (uid: string, ids: string[]) => {
+    const { data, error } = await fetchUserPredictionsForMatches(supabase, uid, ids)
     if (error) {
       setLoadError(error.message)
       return
@@ -102,24 +89,16 @@ export default function PredictScorePage() {
   }, [])
 
   const loadMatches = useCallback(async () => {
-    setLoadingMatches(true)
+    setLoading(true)
     setLoadError('')
-    const [upcomingRes, completedRes, aliasRes, teamsRes] = await Promise.all([
-      fetchPlayableGameMatches(supabase),
-      fetchCompletedGameMatches(supabase, 15),
-      supabase.from('team_aliases').select('*'),
-      supabase.from('teams').select('id, name'),
-    ])
-    if (upcomingRes.error) {
-      setLoadError(upcomingRes.error.message)
-      setPlayableMatches([])
+    const { data, error } = await fetchUpcomingPredictScoreMatches(supabase)
+    if (error) {
+      setLoadError(error.message)
+      setMatches([])
     } else {
-      setPlayableMatches(upcomingRes.data)
+      setMatches(data)
     }
-    setCompletedMatches(completedRes.error ? [] : completedRes.data)
-    setAliasRowsForSearch((aliasRes.data as Record<string, unknown>[]) ?? [])
-    setTeamsForSearch((teamsRes.data as TeamRow[]) ?? [])
-    setLoadingMatches(false)
+    setLoading(false)
   }, [])
 
   useEffect(() => {
@@ -127,49 +106,38 @@ export default function PredictScorePage() {
   }, [])
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    const seen = window.localStorage.getItem(PREDICT_BANNER_SEEN_KEY) === '1'
-    if (seen) return
-    setShowInfoBanner(true)
-    const t = window.setTimeout(() => {
-      setShowInfoBanner(false)
-      window.localStorage.setItem(PREDICT_BANNER_SEEN_KEY, '1')
-    }, 6000)
-    return () => window.clearTimeout(t)
-  }, [])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const params = new URLSearchParams(window.location.search)
-    if (params.get('how') !== '1') return
-    setHowModalOpen(true)
-    params.delete('how')
-    const qs = params.toString()
-    const path = window.location.pathname
-    window.history.replaceState({}, '', qs ? `${path}?${qs}` : path)
-  }, [])
-
-  useEffect(() => {
     let cancelled = false
-
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!cancelled) {
         setUser(session?.user ?? null)
         setAuthReady(true)
       }
     })
-
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
     })
-
     return () => {
       cancelled = true
       subscription.unsubscribe()
     }
   }, [])
+
+  useEffect(() => {
+    if (!user) {
+      setIsUserAdmin(false)
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      const { isAdmin } = await fetchUserIsAdmin(supabase, user.id)
+      if (!cancelled) setIsUserAdmin(isAdmin)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [user])
 
   useEffect(() => {
     loadMatches()
@@ -181,74 +149,57 @@ export default function PredictScorePage() {
   }, [])
 
   useEffect(() => {
-    if (!user || playableMatches.length === 0) {
-      if (!user) setPredictions(new Map())
-      return
-    }
-    const ids = playableMatches.map((m) => m.id)
-    void reloadPredictions(user.id, ids)
-  }, [user, playableMatches, reloadPredictions])
-
-  useEffect(() => {
     if (!user) {
-      setMyPools([])
-      setSelectedPoolFilter('all')
-      setPoolFilterMatchIds(new Set())
-      setIsAdmin(false)
+      setMyPoolIds([])
       return
     }
-    let cancelled = false
     void (async () => {
       const { pools } = await fetchMyPools(supabase, user.id)
-      if (cancelled) return
-      setMyPools(pools)
+      setMyPoolIds(pools.map((p) => ({ id: p.id, name: p.name })).sort((a, b) => a.name.localeCompare(b.name)))
     })()
-    void fetchUserIsAdmin(supabase, user.id).then(({ isAdmin: next }) => {
-      if (!cancelled) setIsAdmin(next)
-    })
-    return () => {
-      cancelled = true
-    }
   }, [user])
 
   useEffect(() => {
-    if (!user || selectedPoolFilter === 'all') {
-      setPoolFilterMatchIds(new Set())
-      setPoolFilterLoading(false)
+    if (!selectedPoolId) {
+      setPoolScopeMatchIds(new Set())
+      setPoolFilterReady(true)
       return
     }
+    setPoolFilterReady(false)
     let cancelled = false
-    setPoolFilterLoading(true)
     void (async () => {
-      const { matchIds, error } = await fetchEffectivePoolMatches(supabase, selectedPoolFilter)
+      const { matchIds, error } = await fetchEffectivePoolMatches(supabase, selectedPoolId)
       if (cancelled) return
-      if (error) {
-        setSubmitError(error.message)
-        setPoolFilterMatchIds(new Set())
-      } else {
-        setPoolFilterMatchIds(new Set(matchIds))
-      }
-      setPoolFilterLoading(false)
+      setPoolScopeMatchIds(new Set(error ? [] : matchIds))
+      setPoolFilterReady(true)
     })()
     return () => {
       cancelled = true
     }
-  }, [selectedPoolFilter, user])
+  }, [selectedPoolId])
 
   useEffect(() => {
-    setSlipByMatch((prev) => {
-      const next: Record<string, SlipPick> = { ...prev }
-      for (const m of playableMatches) {
+    if (!user || matches.length === 0) {
+      if (!user) setPredictions(new Map())
+      return
+    }
+    void reloadPredictions(user.id, matchIds)
+  }, [user, matches, matchIds, reloadPredictions])
+
+  useEffect(() => {
+    setPicksByMatch((prev) => {
+      const next = { ...prev }
+      for (const m of matches) {
         const p = predictions.get(m.id)
         if (p) {
           next[m.id] = { winner: p.predicted_winner, margin: String(p.predicted_margin) }
         } else if (next[m.id] === undefined) {
-          next[m.id] = { winner: null, margin: '' }
+          next[m.id] = defaultPick()
         }
       }
       return next
     })
-  }, [playableMatches, predictions])
+  }, [matches, predictions])
 
   useEffect(() => {
     if (!flashSubmittedId) return
@@ -256,108 +207,62 @@ export default function PredictScorePage() {
     return () => window.clearTimeout(t)
   }, [flashSubmittedId])
 
-  useEffect(() => {
-    if (!bulkSaveMsg) return
-    const t = window.setTimeout(() => setBulkSaveMsg(''), 4000)
-    return () => window.clearTimeout(t)
-  }, [bulkSaveMsg])
+  const poolHasNoConfiguredScope = useMemo(
+    () => !!selectedPoolId && poolFilterReady && poolScopeMatchIds.size === 0,
+    [selectedPoolId, poolFilterReady, poolScopeMatchIds]
+  )
 
-  useEffect(() => {
-    if (!lockAllMsg) return
-    const t = window.setTimeout(() => setLockAllMsg(''), 4000)
-    return () => window.clearTimeout(t)
-  }, [lockAllMsg])
-
-  const matchIds = useMemo(() => playableMatches.map((m) => m.id), [playableMatches])
-
-  const poolFilteredPlayable = useMemo(() => {
-    if (!user || selectedPoolFilter === 'all') return playableMatches
-    return playableMatches.filter((m) => poolFilterMatchIds.has(m.id))
-  }, [playableMatches, poolFilterMatchIds, selectedPoolFilter, user])
-
-  const filteredPlayable = useMemo(() => {
-    const q = teamSearch.trim()
-    if (!q) return poolFilteredPlayable
-    return poolFilteredPlayable.filter((m) => matchGameAgainstTeamSearch(m, q, aliasRowsForSearch, teamsForSearch))
-  }, [poolFilteredPlayable, teamSearch, aliasRowsForSearch, teamsForSearch])
-
-  const atDate = useMemo(() => new Date(nowTick), [nowTick])
-
-  const { closedMatches, featuredEditable, openOtherMatches, startingSoonMatches } = useMemo(() => {
-    const closed: GameMatch[] = []
-    const editable: GameMatch[] = []
-    for (const m of filteredPlayable) {
-      if (matchPredictionsClosed(m, atDate)) closed.push(m)
-      else if (canEditPredictionOnMatch(m, atDate)) editable.push(m)
+  const filteredMatches = useMemo(() => {
+    let list = matches
+    if (selectedPoolId) {
+      if (!poolFilterReady) {
+        return []
+      }
+      list = list.filter((m) => poolScopeMatchIds.has(m.id))
     }
-    const sortedEditable = sortPlayableMatchesForPredictScore(editable)
-    const featured = sortedEditable.filter((m) => !!m.is_featured)
-    const nonFeatured = sortedEditable.filter((m) => !m.is_featured)
-    const soon: GameMatch[] = []
-    const open: GameMatch[] = []
-    for (const m of nonFeatured) {
-      if (matchStartsSoon(m, atDate)) soon.push(m)
-      else open.push(m)
+    const q = teamSearch.trim().toLowerCase()
+    if (q) {
+      list = list.filter(
+        (m) => m.home_team.toLowerCase().includes(q) || m.away_team.toLowerCase().includes(q)
+      )
     }
-    return {
-      closedMatches: sortPlayableMatchesForPredictScore(closed),
-      featuredEditable: featured,
-      openOtherMatches: open,
-      startingSoonMatches: soon,
+    if (selectedProvinceCode) {
+      list = list.filter((m) =>
+        matchBelongsToProvinceLogoCode(m.home_team_province, m.away_team_province, selectedProvinceCode)
+      )
     }
-  }, [filteredPlayable, atDate])
+    return list
+  }, [
+    matches,
+    selectedPoolId,
+    poolFilterReady,
+    poolScopeMatchIds,
+    teamSearch,
+    selectedProvinceCode,
+  ])
 
-  const startsSoonIds = useMemo(() => {
-    const set = new Set<string>()
-    for (const m of [...featuredEditable, ...openOtherMatches, ...startingSoonMatches]) {
-      if (matchStartsSoon(m, atDate)) set.add(m.id)
-    }
-    return set
-  }, [featuredEditable, openOtherMatches, startingSoonMatches, atDate])
+  const groupedByProvince = useMemo(() => groupByProvinceThenDate(filteredMatches), [filteredMatches])
 
-  const hasEditablePredictRows =
-    featuredEditable.length + openOtherMatches.length + startingSoonMatches.length > 0
+  const provinceFilterDayGroups = useMemo(
+    () => (selectedProvinceCode ? groupByDateOnly(filteredMatches) : null),
+    [selectedProvinceCode, filteredMatches]
+  )
 
-  const canLockAnySaved = useMemo(() => {
-    const open = [...featuredEditable, ...openOtherMatches, ...startingSoonMatches]
-    return open.some((m) => {
-      const p = predictions.get(m.id)
-      return p && !p.is_locked && canEditPredictionOnMatch(m, atDate)
+  const setPick = useCallback((matchId: string, patch: Partial<PickState>) => {
+    setPicksByMatch((prev) => {
+      const cur = prev[matchId] ?? defaultPick()
+      const merged: PickState = { ...cur, ...patch }
+      if (typeof patch.margin === 'string') {
+        merged.margin = patch.margin.replace(/\D/g, '').slice(0, 2)
+      }
+      return { ...prev, [matchId]: merged }
     })
-  }, [featuredEditable, openOtherMatches, startingSoonMatches, predictions, atDate])
-
-  const searchActive = teamSearch.trim().length > 0
-  const noSearchResults =
-    searchActive && filteredPlayable.length === 0 && poolFilteredPlayable.length > 0
-
-  const patchSlip = useCallback((matchId: string, patch: Partial<SlipPick>) => {
-    setSlipByMatch((prev) => ({
-      ...prev,
-      [matchId]: { ...(prev[matchId] ?? { winner: null, margin: '' }), ...patch },
-    }))
   }, [])
 
   const upsertPrediction = useCallback(
-    async (input: {
-      matchId: string
-      predictedWinner: 'home' | 'away'
-      predictedMargin: number
-    }) => {
+    async (input: { matchId: string; predictedWinner: 'home' | 'away'; predictedMargin: number }) => {
       if (!user) return { error: new Error('Not signed in') as Error | null }
-      const profileErr = await ensureUserProfile(user)
-      if (profileErr) return { error: new Error(profileErr.message) }
-
-      const { error } = await supabase.from('user_predictions').upsert(
-        {
-          match_id: input.matchId,
-          user_id: user.id,
-          predicted_winner: input.predictedWinner,
-          predicted_margin: input.predictedMargin,
-          submitted_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id,match_id' }
-      )
-      return { error: error ? new Error(error.message) : null }
+      return upsertUserPrediction(supabase, user, input)
     },
     [user]
   )
@@ -369,19 +274,19 @@ export default function PredictScorePage() {
       setSubmitError('This prediction is locked and cannot be changed.')
       return
     }
-    const rowMatch = playableMatches.find((m) => m.id === matchId)
+    const rowMatch = matches.find((m) => m.id === matchId)
     if (!rowMatch || !canEditPredictionOnMatch(rowMatch, new Date())) {
       setSubmitError('Predictions are closed for this match.')
       return
     }
-    const slip = slipByMatch[matchId]
+    const slip = picksByMatch[matchId]
     if (!slip?.winner) {
       setSubmitError('Pick a winner for this match.')
       return
     }
-    const margin = parseMargin(slip.margin)
+    const margin = parseMarginFromInput(slip.margin)
     if (margin === null) {
-      setSubmitError('Enter a whole-number margin of at least 1.')
+      setSubmitError(`Set a winning margin between 1 and ${MATCH_CARD_MARGIN_MAX} points.`)
       return
     }
     setSubmitError('')
@@ -401,55 +306,11 @@ export default function PredictScorePage() {
     setSubmittingMatchId(null)
   }
 
-  const handleSubmitAll = async () => {
-    if (!user) return
-    const targets = playableMatches.filter((m) => canEditPredictionOnMatch(m, new Date())).filter((m) => {
-      const s = slipByMatch[m.id]
-      if (!s?.winner) return false
-      return parseMargin(s.margin) !== null
-    })
-    if (targets.length === 0) {
-      setSubmitError(
-        'No rows ready: add a winner and margin on at least one match you want to save. Blank rows are skipped — you do not need to fill the whole slip.'
-      )
-      return
-    }
-    setSubmitError('')
-    setSubmittingAll(true)
-    const profileErr = await ensureUserProfile(user)
-    if (profileErr) {
-      setSubmitError(profileErr.message)
-      setSubmittingAll(false)
-      return
-    }
-    let lastErr: string | null = null
-    for (const m of targets) {
-      const s = slipByMatch[m.id]!
-      const margin = parseMargin(s.margin)!
-      const { error } = await upsertPrediction({
-        matchId: m.id,
-        predictedWinner: s.winner!,
-        predictedMargin: margin,
-      })
-      if (error) {
-        lastErr = error.message
-        break
-      }
-    }
-    if (lastErr) {
-      setSubmitError(lastErr)
-    } else {
-      await reloadPredictions(user.id, matchIds)
-      setBulkSaveMsg(`Submitted ${targets.length} prediction(s).`)
-    }
-    setSubmittingAll(false)
-  }
-
   const handleLockOne = async (matchId: string) => {
     if (!user) return
     const pred = predictions.get(matchId)
     if (!pred?.id || pred.is_locked) return
-    const rowMatch = playableMatches.find((m) => m.id === matchId)
+    const rowMatch = matches.find((m) => m.id === matchId)
     if (!rowMatch || !canEditPredictionOnMatch(rowMatch, new Date())) {
       setSubmitError('Predictions are closed for this match.')
       return
@@ -469,362 +330,313 @@ export default function PredictScorePage() {
     setLockingMatchId(null)
   }
 
-  const handleLockAll = async () => {
-    if (!user) return
-    const open = [...featuredEditable, ...openOtherMatches, ...startingSoonMatches]
-    setSubmitError('')
-    setLockAllMsg('')
-    setLockingAll(true)
-    const { locked, error } = await lockAllUnlockedSavedForEditableMatches(
-      supabase,
-      open,
-      predictions,
-      new Date()
-    )
-    if (error?.message === LOCK_ALL_NO_CANDIDATES) {
-      setSubmitError('No saved unlocked predictions to lock for open games.')
-    } else if (error) {
-      setSubmitError(error.message)
-    } else {
-      await reloadPredictions(user.id, matchIds)
-      setLockAllMsg(`Locked ${locked} prediction(s).`)
-    }
-    setLockingAll(false)
-  }
-
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8 md:px-6 md:py-12">
-      <div className="mx-auto max-w-3xl text-center">
-        <div className="flex flex-col items-center justify-center gap-3 sm:flex-row sm:flex-wrap sm:justify-center">
-          <h1 className="text-3xl font-black tracking-tight text-gray-900 md:text-4xl">
-            Predict a Score
-          </h1>
-          <button
-            type="button"
-            onClick={() => setHowModalOpen(true)}
-            className="shrink-0 rounded-xl border border-gray-900 bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
-          >
-            How it works
-          </button>
-        </div>
-        <p className="mx-auto mt-2 max-w-2xl text-center text-sm leading-relaxed text-gray-500">
-          You can predict one match or many. You do not have to predict every fixture. Have fun!
-        </p>
-      </div>
-
-      {showInfoBanner ? (
-        <div className="relative mx-auto mt-4 max-w-3xl rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-gray-700">
-          <span>You don't have to predict every game. Pick just one or as many as you like.</span>
-          <button
-            type="button"
-            onClick={() => {
-              setShowInfoBanner(false)
-              if (typeof window !== 'undefined') {
-                window.localStorage.setItem(PREDICT_BANNER_SEEN_KEY, '1')
-              }
-            }}
-            className="absolute right-3 top-2 text-gray-400 hover:text-gray-600"
-            aria-label="Dismiss notice"
-          >
-            ×
-          </button>
-        </div>
-      ) : null}
-
-      <HowItWorksModal open={howModalOpen} onClose={() => setHowModalOpen(false)} />
-      <PredictScoreAuthModal open={authModalOpen} onClose={() => setAuthModalOpen(false)} />
-      <PredictionMarginModal match={adminModelMatch} onClose={() => setAdminModelMatch(null)} />
-
-      {!authReady ? (
-        <p className="mt-10 text-center text-sm text-gray-500">Loading…</p>
-      ) : !signedIn ? (
-        <div className="mt-8 rounded-2xl border border-gray-200 bg-gray-50 px-6 py-8 text-center">
-          <p className="text-base font-bold text-gray-900">
-            Sign up or log in to make your prediction.
+    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-100 pb-20 pt-8">
+      <Suspense fallback={null}>
+        <PredictScoreFocusHandler ready={!loading} />
+      </Suspense>
+      <div className="mx-auto max-w-5xl space-y-6 px-4">
+        <header className="text-center">
+          <h1 className="text-3xl font-black tracking-tight text-slate-900">Predict</h1>
+          <p className="mt-2 text-sm font-medium text-slate-500">
+            Upcoming fixtures · search, pool or province filters, save picks
           </p>
-          <p className="mt-2 text-sm text-gray-600">
-            Pick any match you like after you have an account — you do not need to predict every
-            fixture.
-          </p>
-          <div className="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          <div className="mt-5 flex flex-wrap justify-center gap-3">
             <Link
-              href="/signup"
-              className="inline-flex rounded-xl border border-gray-900 bg-gray-900 px-8 py-3 text-sm font-bold uppercase tracking-wide text-white hover:bg-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
+              href="/my-predictions"
+              className="inline-flex rounded-xl border-2 border-slate-300 bg-white px-5 py-2.5 text-sm font-bold text-slate-900 shadow-sm transition hover:border-slate-400 hover:bg-slate-50"
             >
-              Sign up
-            </Link>
-            <Link
-              href="/login"
-              className="inline-flex rounded-xl border border-gray-300 bg-white px-8 py-3 text-sm font-bold uppercase tracking-wide text-gray-900 hover:border-gray-500 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
-            >
-              Log in
+              My Predictions
             </Link>
           </div>
-        </div>
-      ) : null}
+        </header>
 
-      {loadError ? (
-        <p className="mt-8 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
-          {loadError}
-        </p>
-      ) : null}
+        <PredictScoreAuthModal open={authModalOpen} onClose={() => setAuthModalOpen(false)} />
+        <PredictionMarginModal match={marginModalMatch} onClose={() => setMarginModalMatch(null)} />
 
-      {submitError ? (
-        <p className="mt-4 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
-          {submitError}
-        </p>
-      ) : null}
+        <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-sm">
+          <label className="block text-xs font-bold uppercase tracking-widest text-slate-500">Search team</label>
+          <input
+            type="search"
+            value={teamSearch}
+            onChange={(e) => setTeamSearch(e.target.value)}
+            placeholder="Search team…"
+            className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-inner placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+          />
 
-      {bulkSaveMsg ? (
-        <p className="mt-4 rounded-xl border border-gray-300 bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-900">
-          {bulkSaveMsg}
-        </p>
-      ) : null}
-
-      {lockAllMsg ? (
-        <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-900">
-          {lockAllMsg}
-        </p>
-      ) : null}
-
-      {loadingMatches ? (
-        <p className="mt-10 text-center text-sm text-gray-500">Loading matches…</p>
-      ) : playableMatches.length === 0 && completedMatches.length === 0 ? (
-        <p className="mt-10 text-center text-sm text-gray-600">No matches available yet. Check back soon.</p>
-      ) : (
-        <>
-          {playableMatches.length > 0 ? (
-            <section className="mt-10">
-              <div className="mx-auto mb-4 max-w-xl text-center">
-                <label className="block w-full">
-                  <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-700">
-                    Find a team
-                  </span>
-                  <input
-                    type="search"
-                    enterKeyHint="search"
-                    placeholder="Search team..."
-                    value={teamSearch}
-                    onChange={(e) => setTeamSearch(e.target.value)}
-                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
-                  />
-                </label>
-              </div>
-
-              {poolFilterLoading ? (
-                <p className="mt-6 border-2 border-gray-300 bg-gray-50 px-4 py-3 text-center text-sm text-gray-700">
-                  Loading pool games...
-                </p>
-              ) : !searchActive && signedIn && selectedPoolFilter !== 'all' && poolFilteredPlayable.length === 0 ? (
-                <p className="mt-6 border-2 border-gray-300 bg-gray-50 px-4 py-3 text-center text-sm text-gray-700">
-                  No available games for this pool right now.
-                </p>
-              ) : noSearchResults ? (
-                <p className="mt-6 border-2 border-gray-300 bg-gray-50 px-4 py-3 text-center text-sm text-gray-700">
-                  No matches found for this team.
-                </p>
-              ) : (
-                <>
-                  {!hasEditablePredictRows && closedMatches.length > 0 ? (
-                    <p className="mt-6 rounded-xl border border-gray-300 bg-gray-50 px-4 py-3 text-center text-sm text-gray-700">
-                      Nothing open for predictions here — kickoff has passed or these fixtures are
-                      locked. You can still open comments below.
-                    </p>
-                  ) : null}
-                  <div className="mt-3 flex flex-wrap items-center gap-2 md:gap-3">
+          <div className="mt-5">
+            <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Select pool</p>
+            <p className="mt-1 text-[11px] text-slate-500">
+              <span className="font-semibold">All</span> clears pool and province. A pool can narrow fixtures by
+              selected teams or by the pool&apos;s competitions and provinces. Province crests keep games where either
+              home or away province matches.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedPoolId(null)
+                  setSelectedProvinceCode(null)
+                }}
+                title="All fixtures · clear pool and province filters"
+                className={`shrink-0 rounded-full border-2 px-4 py-2 text-sm font-bold transition ${
+                  selectedPoolId === null && selectedProvinceCode === null
+                    ? 'border-slate-900 bg-slate-900 text-white shadow-md'
+                    : 'border-slate-200 bg-white text-slate-800 hover:border-slate-300'
+                }`}
+              >
+                All
+              </button>
+              {myPoolIds.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setSelectedPoolId(p.id)}
+                  className={`max-w-[200px] shrink-0 truncate rounded-full border-2 px-4 py-2 text-sm font-bold transition ${
+                    selectedPoolId === p.id
+                      ? 'border-slate-900 bg-slate-900 text-white shadow-md'
+                      : 'border-slate-200 bg-white text-slate-800 hover:border-slate-300'
+                  }`}
+                  title={p.name}
+                >
+                  {p.name}
+                </button>
+              ))}
+              <span
+                className="mx-0.5 hidden h-7 w-px shrink-0 bg-slate-200 sm:block"
+                aria-hidden
+              />
+              <div className="flex flex-wrap items-center gap-1.5">
+                {PROVINCE_LOGO_CODES_UI_ORDER.map((code) => {
+                  const active = selectedProvinceCode === code
+                  return (
                     <button
+                      key={code}
                       type="button"
-                      onClick={() => setSelectedPoolFilter('all')}
-                      className={`inline-flex items-center rounded-xl border px-5 py-2 text-base font-black uppercase tracking-wide shadow-sm transition ${
-                        selectedPoolFilter === 'all'
-                          ? 'border-gray-900 bg-gray-900 text-white shadow-black/10'
-                          : 'border-gray-300 bg-white text-gray-900 hover:bg-gray-50'
+                      title={PROVINCE_LOGO_TITLES[code]}
+                      aria-pressed={active}
+                      onClick={() =>
+                        setSelectedProvinceCode((prev) => (prev === code ? null : code))
+                      }
+                      className={`box-border flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 bg-white p-0 transition ${
+                        active
+                          ? 'border-slate-900 bg-slate-100 shadow-inner ring-2 ring-slate-900/20'
+                          : 'border-slate-200 hover:border-slate-400 hover:bg-slate-50'
                       }`}
                     >
-                      All games
+                      {/* eslint-disable-next-line @next/next/no-img-element -- small static public assets */}
+                      <img
+                        src={getProvinceLogoPath(code)}
+                        alt=""
+                        className="h-9 w-9 object-contain object-center"
+                        draggable={false}
+                      />
                     </button>
-                    {signedIn
-                      ? myPools.map((pool) => (
-                          <button
-                            key={pool.id}
-                            type="button"
-                            onClick={() => setSelectedPoolFilter(pool.id)}
-                            className={`inline-flex items-center rounded-xl border px-5 py-2 text-base font-black uppercase tracking-wide shadow-sm transition ${
-                              selectedPoolFilter === pool.id
-                                ? 'border-gray-900 bg-gray-900 text-white shadow-black/10'
-                                : 'border-gray-300 bg-white text-gray-900 hover:bg-gray-50'
-                            }`}
-                          >
-                            {pool.name}
-                          </button>
-                        ))
-                      : null}
-                  </div>
-                  <div className="mt-2 flex flex-col gap-10">
-                  <PredictScoreSlipListSection
-                    title="Featured games"
-                    sectionClassName="rounded-2xl border border-gray-200 bg-gradient-to-b from-gray-50 to-white p-3 md:p-4"
-                    titleClassName="inline-flex items-center rounded-xl border border-gray-900 bg-gray-900 px-5 py-2 text-base font-black uppercase tracking-wide text-white shadow-sm shadow-black/10"
-                    matches={featuredEditable}
-                    startsSoonIds={startsSoonIds}
-                    slipByMatch={slipByMatch}
-                    predictions={predictions}
-                    signedIn={signedIn}
-                    submittingMatchId={submittingMatchId}
-                    submittingAll={submittingAll}
-                    flashSubmittedId={flashSubmittedId}
-                    patchSlip={patchSlip}
-                    onPredict={handleSubmitOne}
-                    onLock={handleLockOne}
-                    lockingMatchId={lockingMatchId}
-                    onRequireAuth={() => setAuthModalOpen(true)}
-                    isAdmin={isAdmin}
-                    onAdminModel={setAdminModelMatch}
-                  />
-                  <PredictScoreSlipListSection
-                    title="All games"
-                    hideTitle
-                    titleClassName="inline-flex items-center rounded-xl border border-gray-900 bg-gray-900 px-5 py-2 text-base font-black uppercase tracking-wide text-white shadow-sm shadow-black/10"
-                    description="Kickoff more than 60 minutes away — predictions close at kickoff."
-                    matches={openOtherMatches}
-                    startsSoonIds={startsSoonIds}
-                    slipByMatch={slipByMatch}
-                    predictions={predictions}
-                    signedIn={signedIn}
-                    submittingMatchId={submittingMatchId}
-                    submittingAll={submittingAll}
-                    flashSubmittedId={flashSubmittedId}
-                    patchSlip={patchSlip}
-                    onPredict={handleSubmitOne}
-                    onLock={handleLockOne}
-                    lockingMatchId={lockingMatchId}
-                    onRequireAuth={() => setAuthModalOpen(true)}
-                    isAdmin={isAdmin}
-                    onAdminModel={setAdminModelMatch}
-                  />
-                  <PredictScoreSlipListSection
-                    title="Starting soon"
-                    titleClassName="inline-flex items-center gap-2 rounded-xl border border-red-600 bg-white px-5 py-2 text-base font-black uppercase tracking-wide text-gray-900 shadow-sm shadow-black/5"
-                    description="Kickoff within 60 minutes — you can still predict until kickoff."
-                    matches={startingSoonMatches}
-                    startsSoonIds={startsSoonIds}
-                    slipByMatch={slipByMatch}
-                    predictions={predictions}
-                    signedIn={signedIn}
-                    submittingMatchId={submittingMatchId}
-                    submittingAll={submittingAll}
-                    flashSubmittedId={flashSubmittedId}
-                    patchSlip={patchSlip}
-                    onPredict={handleSubmitOne}
-                    onLock={handleLockOne}
-                    lockingMatchId={lockingMatchId}
-                    onRequireAuth={() => setAuthModalOpen(true)}
-                    isAdmin={isAdmin}
-                    onAdminModel={setAdminModelMatch}
-                  />
-                  <PredictScoreSlipListSection
-                    title="Predictions closed"
-                    titleClassName="inline-flex items-center rounded-xl border border-gray-300 bg-gray-100 px-5 py-2 text-base font-black uppercase tracking-wide text-gray-700"
-                    description="Kickoff has passed or the match is no longer upcoming for predictions."
-                    listWrapClassName="overflow-hidden rounded-2xl border border-gray-300 bg-gray-50"
-                    headerClassName={CLOSED_SLIP_HEADER_CLASS}
-                    matches={closedMatches}
-                    startsSoonIds={startsSoonIds}
-                    slipByMatch={slipByMatch}
-                    predictions={predictions}
-                    signedIn={signedIn}
-                    submittingMatchId={submittingMatchId}
-                    submittingAll={submittingAll}
-                    flashSubmittedId={flashSubmittedId}
-                    patchSlip={patchSlip}
-                    onPredict={handleSubmitOne}
-                    onLock={handleLockOne}
-                    lockingMatchId={lockingMatchId}
-                    onRequireAuth={() => setAuthModalOpen(true)}
-                    isAdmin={isAdmin}
-                    onAdminModel={setAdminModelMatch}
-                  />
-                  </div>
-                </>
-              )}
-
-              {hasEditablePredictRows ? (
-                <div className="mt-4 flex flex-col items-end gap-3">
-                  <div className="flex flex-wrap justify-end gap-2">
-                    <button
-                      type="button"
-                      disabled={
-                        signedIn &&
-                        (submittingAll ||
-                          submittingMatchId !== null ||
-                          lockingMatchId !== null ||
-                          lockingAll)
-                      }
-                      onClick={() => {
-                        if (!signedIn) {
-                          setAuthModalOpen(true)
-                          return
-                        }
-                        void handleSubmitAll()
-                      }}
-                      className="rounded-xl border border-gray-900 bg-gray-900 px-6 py-3 text-sm font-black uppercase tracking-wide text-white hover:bg-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 disabled:opacity-40"
-                    >
-                      {submittingAll ? 'Submitting…' : 'Submit all'}
-                    </button>
-                    {signedIn && canLockAnySaved ? (
-                      <button
-                        type="button"
-                        disabled={
-                          submittingAll ||
-                          submittingMatchId !== null ||
-                          lockingMatchId !== null ||
-                          lockingAll
-                        }
-                        onClick={() => void handleLockAll()}
-                        className="rounded-xl border border-red-700 bg-white px-6 py-3 text-sm font-black uppercase tracking-wide text-red-700 hover:bg-red-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 disabled:opacity-40"
-                      >
-                        {lockingAll ? 'Locking…' : 'Lock all saved predictions'}
-                      </button>
-                    ) : null}
-                  </div>
-                  <p className="max-w-md text-right text-xs text-gray-600">
-                    {signedIn ? (
-                      <>
-                        Submit all saves open rows with a winner and margin. Lock freezes your pick
-                        for Community Picks — lock all only affects games you already saved.
-                      </>
-                    ) : (
-                      <>Log in or sign up to save predictions with Submit all.</>
-                    )}
-                  </p>
-                </div>
-              ) : null}
-            </section>
-          ) : (
-            <p className="mt-10 text-center text-sm text-gray-600">
-              No upcoming or locked fixtures. Completed results are below.
-            </p>
-          )}
-
-          {completedMatches.length > 0 ? (
-            <section className="mt-14">
-              <div className="inline-flex items-center rounded-xl border border-gray-900 bg-gray-900 px-5 py-2 text-base font-black uppercase tracking-wide text-white shadow-sm shadow-black/10">
-                Completed matches
+                  )
+                })}
               </div>
-              <p className="mt-3 text-sm text-gray-600">
-                Rankings use total points, then margin difference (lower is better).
+            </div>
+            {!signedIn ? (
+              <p className="mt-3 text-xs text-slate-500">Log in to load your pools and save predictions.</p>
+            ) : myPoolIds.length === 0 ? (
+              <p className="mt-3 text-xs text-slate-500">You are not in any pools yet.</p>
+            ) : null}
+          </div>
+        </div>
+
+        {!authReady ? (
+          <p className="text-center text-sm text-slate-500">Loading…</p>
+        ) : !signedIn ? (
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+            <p className="text-base font-bold text-slate-900">Sign in to save predictions</p>
+            <p className="mt-2 text-sm text-slate-600">Browse and filter fixtures below; log in to submit picks.</p>
+            <div className="mt-6 flex flex-wrap justify-center gap-3">
+              <Link
+                href="/signup"
+                className="rounded-xl bg-slate-900 px-6 py-3 text-sm font-bold text-white shadow-md hover:bg-black"
+              >
+                Sign up
+              </Link>
+              <Link
+                href="/login"
+                className="rounded-xl border-2 border-slate-300 bg-white px-6 py-3 text-sm font-bold text-slate-900 hover:bg-slate-50"
+              >
+                Log in
+              </Link>
+            </div>
+          </div>
+        ) : null}
+
+        {loadError ? (
+          <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">{loadError}</p>
+        ) : null}
+
+        {submitError ? (
+          <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">{submitError}</p>
+        ) : null}
+
+        {loading ? (
+          <p className="py-12 text-center text-sm text-slate-500">Loading fixtures…</p>
+        ) : matches.length === 0 ? (
+          <p className="py-12 text-center text-sm text-slate-600">No upcoming fixtures right now.</p>
+        ) : selectedPoolId && !poolFilterReady ? (
+          <p className="py-12 text-center text-sm text-slate-500">Loading pool…</p>
+        ) : filteredMatches.length === 0 ? (
+          poolHasNoConfiguredScope ? (
+            <div className="mx-auto max-w-md rounded-2xl border border-slate-200 bg-white px-5 py-6 text-center shadow-sm">
+              <p className="text-sm text-slate-700">
+                This pool has no fixtures in scope yet (groups, provinces, or teams). Configure the pool under Manage
+                pools, or choose <span className="font-semibold">All</span> to see every fixture.
               </p>
-              <ul className="mt-6 flex flex-col gap-6">
-                {completedMatches.map((match) => (
-                  <li key={match.id}>
-                    <CompletedMatchLeaderboard match={match} signedIn={signedIn} />
-                  </li>
-                ))}
-              </ul>
+              <Link
+                href="/pools/manage"
+                className="mt-4 inline-flex rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-bold text-white shadow-md hover:bg-black"
+              >
+                Manage pool
+              </Link>
+            </div>
+          ) : (
+            <p className="py-12 text-center text-sm text-slate-600">
+              No fixtures match your search, pool, or province filter.
+            </p>
+          )
+        ) : selectedProvinceCode && provinceFilterDayGroups ? (
+          <section className="space-y-4">
+            <h2 className="flex flex-wrap items-center gap-2.5 border-b border-slate-200 pb-2 text-lg font-black text-slate-900">
+              <ProvinceLogoMark
+                label={PROVINCE_PREDICT_FILTER_LABEL[selectedProvinceCode]}
+                labelOnly
+                size={32}
+                className="shadow-sm"
+              />
+              <span className="min-w-0 leading-tight">
+                {PROVINCE_PREDICT_FILTER_LABEL[selectedProvinceCode]} fixtures: {filteredMatches.length}
+              </span>
+            </h2>
+            {provinceFilterDayGroups.map((day) => (
+              <div key={day.dateKey} className="space-y-3">
+                <h3 className="text-sm font-semibold text-slate-500">{day.label}</h3>
+                <div className="mb-1 overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5">
+                  <div className="grid min-w-[640px] grid-cols-[5.25rem_minmax(0,1fr)_minmax(0,1fr)_3.25rem_4.25rem_6.5rem] items-center gap-2 text-[10px] font-black uppercase tracking-wide text-slate-500">
+                    <span>Kickoff</span>
+                    <span>Home</span>
+                    <span>Away</span>
+                    <span className="text-center">Mgn</span>
+                    <span className="text-center">Save</span>
+                    <span className="text-center">Admin</span>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  {day.matches.map((m) => {
+                    const pick = picksByMatch[m.id] ?? defaultPick()
+                    const pred = predictions.get(m.id)
+                    const closed = matchPredictionsClosed(m, atDate)
+                    const editable = canEditPredictionOnMatch(m, atDate)
+                    const rowBusy = submittingMatchId === m.id
+                    const showLock =
+                      signedIn && Boolean(pred?.id) && !pred?.is_locked && editable && !closed
+
+                    return (
+                      <div key={m.id} id={`predict-card-${m.id}`} className="scroll-mt-24">
+                        <MatchCard
+                          homeTeam={m.home_team}
+                          awayTeam={m.away_team}
+                          kickoffTime={m.kickoff_time}
+                          winner={pick.winner}
+                          marginInput={pick.margin}
+                          onSelectWinner={(side) => setPick(m.id, { winner: side })}
+                          onMarginInputChange={(value) => setPick(m.id, { margin: value })}
+                          matchId={m.id}
+                          signedIn={signedIn}
+                          predictionsClosed={closed}
+                          editable={editable}
+                          predictionRowLocked={Boolean(pred?.is_locked)}
+                          hasExistingSubmission={Boolean(pred?.id)}
+                          submitting={rowBusy}
+                          flashSubmitted={flashSubmittedId === m.id}
+                          lockingPick={lockingMatchId === m.id}
+                          onSubmit={() => void handleSubmitOne(m.id)}
+                          onLockPick={showLock ? () => void handleLockOne(m.id) : undefined}
+                          onRequireAuth={() => setAuthModalOpen(true)}
+                          isAdmin={isUserAdmin}
+                          onAdminModel={isUserAdmin ? () => setMarginModalMatch(m) : undefined}
+                        />
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
+          </section>
+        ) : (
+          groupedByProvince.map((block) => (
+            <section key={block.province} className="space-y-4">
+              <h2 className="flex items-center gap-2.5 border-b border-slate-200 pb-2 text-lg font-black text-slate-900">
+                <ProvinceLogoMark label={block.province} labelOnly size={32} className="shadow-sm" />
+                <span className="leading-tight">{block.province}</span>
+              </h2>
+              {block.dates.map((day) => (
+                <div key={day.dateKey} className="space-y-3">
+                  <h3 className="text-sm font-semibold text-slate-500">{day.label}</h3>
+                  <div className="mb-1 overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5">
+                    <div className="grid min-w-[640px] grid-cols-[5.25rem_minmax(0,1fr)_minmax(0,1fr)_3.25rem_4.25rem_6.5rem] items-center gap-2 text-[10px] font-black uppercase tracking-wide text-slate-500">
+                      <span>Kickoff</span>
+                      <span>Home</span>
+                      <span>Away</span>
+                      <span className="text-center">Mgn</span>
+                      <span className="text-center">Save</span>
+                      <span className="text-center">Admin</span>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    {day.matches.map((m) => {
+                      const pick = picksByMatch[m.id] ?? defaultPick()
+                      const pred = predictions.get(m.id)
+                      const closed = matchPredictionsClosed(m, atDate)
+                      const editable = canEditPredictionOnMatch(m, atDate)
+                      const rowBusy = submittingMatchId === m.id
+                      const showLock =
+                        signedIn &&
+                        Boolean(pred?.id) &&
+                        !pred?.is_locked &&
+                        editable &&
+                        !closed
+
+                      return (
+                        <div key={m.id} id={`predict-card-${m.id}`} className="scroll-mt-24">
+                          <MatchCard
+                            homeTeam={m.home_team}
+                            awayTeam={m.away_team}
+                            kickoffTime={m.kickoff_time}
+                            winner={pick.winner}
+                            marginInput={pick.margin}
+                            onSelectWinner={(side) => setPick(m.id, { winner: side })}
+                            onMarginInputChange={(value) => setPick(m.id, { margin: value })}
+                            matchId={m.id}
+                            signedIn={signedIn}
+                            predictionsClosed={closed}
+                            editable={editable}
+                            predictionRowLocked={Boolean(pred?.is_locked)}
+                            hasExistingSubmission={Boolean(pred?.id)}
+                            submitting={rowBusy}
+                            flashSubmitted={flashSubmittedId === m.id}
+                            lockingPick={lockingMatchId === m.id}
+                            onSubmit={() => void handleSubmitOne(m.id)}
+                            onLockPick={showLock ? () => void handleLockOne(m.id) : undefined}
+                            onRequireAuth={() => setAuthModalOpen(true)}
+                            isAdmin={isUserAdmin}
+                            onAdminModel={isUserAdmin ? () => setMarginModalMatch(m) : undefined}
+                          />
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
             </section>
-          ) : null}
-        </>
-      )}
+          ))
+        )}
+      </div>
     </main>
   )
 }

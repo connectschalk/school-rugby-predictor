@@ -1184,7 +1184,13 @@ export async function POST(request: Request) {
         const slice = matchRowUpdates.slice(bi, bi + SYNC_BATCH_SIZE)
         const i = Math.floor(bi / SYNC_BATCH_SIZE)
         console.log(`Batch ${i} matches updated`, slice.length)
-        const { error } = await supabase.from('matches').upsert(slice, { onConflict: 'id' })
+        const rowsWithExistingId = slice.map((r) => ({
+          id: r.id,
+          team_a_score: r.team_a_score,
+          team_b_score: r.team_b_score,
+          season: r.season,
+        }))
+        const { error } = await supabase.from('matches').upsert(rowsWithExistingId, { onConflict: 'id' })
         if (error) {
           errors.push(`matches batch upsert failed: ${error.message}`)
           break
@@ -1199,9 +1205,17 @@ export async function POST(request: Request) {
         const slice = matchRowInserts.slice(bi, bi + SYNC_BATCH_SIZE)
         const i = Math.floor(bi / SYNC_BATCH_SIZE)
         console.log(`Batch ${i} matches inserted`, slice.length)
+        const rowsWithoutId = slice.map((r) => ({
+          team_a_id: r.team_a_id,
+          team_b_id: r.team_b_id,
+          team_a_score: r.team_a_score,
+          team_b_score: r.team_b_score,
+          match_date: r.match_date,
+          season: r.season,
+        }))
         const { data, error } = await supabase
           .from('matches')
-          .insert(slice)
+          .insert(rowsWithoutId)
           .select('id, team_a_id, team_b_id, match_date')
         if (error) {
           errors.push(`matches batch insert failed: ${error.message}`)

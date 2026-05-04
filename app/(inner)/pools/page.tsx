@@ -6,9 +6,11 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import type { User } from '@supabase/supabase-js'
 import LetterAvatar from '@/components/LetterAvatar'
 import PoolPicksSection from '@/components/pools/PoolPicksSection'
+import PoolPredictTabSection from '@/components/pools/PoolPredictTabSection'
 import {
   fetchEffectivePoolMatches,
   fetchPoolGroups,
+  fetchPoolTeams,
   fetchMyPools,
   fetchPoolJoinRequests,
   fetchPoolLeaderboard,
@@ -21,13 +23,14 @@ import {
   type PoolLeaderboardRow,
   type PoolMemberRow,
   type PoolRow,
+  type PoolTeamRow,
 } from '@/lib/pools'
 import { buildPoolJoinPath } from '@/lib/pool-invite-path'
 import { fetchGameMatchesForCommunityHub, type GameMatch } from '@/lib/public-prediction-game'
 import { supabase } from '@/lib/supabase'
 
 type UserProfileMini = { id: string; display_name: string | null }
-type PoolDetailTab = 'leaderboard' | 'picks'
+type PoolDetailTab = 'leaderboard' | 'picks' | 'predict'
 
 function teamVs(m: GameMatch) {
   return `${m.home_team} vs ${m.away_team}`
@@ -74,13 +77,11 @@ function PoolsPageContent() {
 
   const [leaderRows, setLeaderRows] = useState<PoolLeaderboardRow[]>([])
   const [leaderLoading, setLeaderLoading] = useState(false)
+  const [poolTeamsRows, setPoolTeamsRows] = useState<PoolTeamRow[]>([])
   const [poolDetailTab, setPoolDetailTab] = useState<PoolDetailTab>('leaderboard')
+  const [poolInfoModalOpen, setPoolInfoModalOpen] = useState(false)
   const showManagement = false
   const inviteFromUrl = (searchParams.get('invite') ?? '').trim()
-
-  useEffect(() => {
-    console.log('AUTH USER SET', user?.id)
-  }, [user])
 
   const membershipByPool = useMemo(() => {
     const map = new Map<string, PoolMemberRow>()
@@ -144,10 +145,11 @@ function PoolsPageContent() {
     if (!selectedPoolId) return
     setRequestsLoading(true)
     setLeaderLoading(true)
-    const [reqRes, effRes, leaderRes] = await Promise.all([
+    const [reqRes, effRes, leaderRes, poolTeamsRes] = await Promise.all([
       fetchPoolJoinRequests(supabase, selectedPoolId),
       fetchEffectivePoolMatches(supabase, selectedPoolId),
       fetchPoolLeaderboard(supabase, selectedPoolId),
+      fetchPoolTeams(supabase, selectedPoolId),
     ])
     const poolGroupsRes = await fetchPoolGroups(supabase, selectedPoolId)
 
@@ -158,6 +160,8 @@ function PoolsPageContent() {
     }
     if (!leaderRes.error) setLeaderRows(leaderRes.rows)
     if (!poolGroupsRes.error) setSelectedPoolGroups(poolGroupsRes.rows.map((g) => ({ id: g.id, name: g.name })))
+    if (!poolTeamsRes.error) setPoolTeamsRows(poolTeamsRes.rows)
+    else setPoolTeamsRows([])
     await loadProfiles(reqRes.rows.map((r) => r.user_id).concat(leaderRes.rows.map((r) => r.user_id)))
     setRequestsLoading(false)
     setLeaderLoading(false)
@@ -193,7 +197,6 @@ function PoolsPageContent() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (cancelled) return
-      console.log('AUTH EVENT', event, !!session?.user)
       setAuthReady(true)
       setLoading(false)
       if (event === 'SIGNED_OUT') {
@@ -297,6 +300,7 @@ function PoolsPageContent() {
 
   useEffect(() => {
     setPoolDetailTab('leaderboard')
+    setPoolInfoModalOpen(false)
   }, [selectedPoolId])
 
   async function copyInviteLink() {
@@ -445,45 +449,14 @@ function PoolsPageContent() {
       {showManagement ? (
       <section className="mt-8 grid gap-4 lg:grid-cols-2">
         <div className="rounded-2xl border border-gray-200 bg-white p-4">
-          <h2 className="text-base font-black text-gray-900">Create pool</h2>
-          <div className="mt-3">
-            <input
-              type="text"
-              value={createName}
-              onChange={(e) => setCreateName(e.target.value)}
-              placeholder="Pool name (3–80 characters)"
-              className="w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
-            />
-            <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-gray-700">
-                <input
-                  type="checkbox"
-                  className="size-4 rounded border-gray-300 text-gray-900 focus:ring-red-700"
-                  checked={createPublic}
-                  onChange={(e) => setCreatePublic(e.target.checked)}
-                />
-                Public/searchable pool
-              </label>
-              <button
-                type="button"
-                onClick={() => void onCreatePool()}
-                disabled={creating || !createNameValid}
-                className="shrink-0 self-end rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:opacity-50 sm:self-auto"
-              >
-                {creating ? 'Creating...' : 'Create pool'}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-gray-200 bg-white p-4">
-          <h2 className="text-base font-black text-gray-900">Search public pools</h2>
+          <h2 className="text-base font-black uppercase tracking-wide text-gray-900">Join a pool</h2>
+          <p className="mt-1 text-xs text-gray-600">Find a pool by name or join with a code from your organiser.</p>
           <div className="mt-3 flex gap-2">
             <input
               type="search"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by name"
+              placeholder="Search pool name…"
               className="w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
             />
             <button
@@ -516,6 +489,38 @@ function PoolsPageContent() {
                 </div>
               )
             })}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-gray-200 bg-white p-4">
+          <h2 className="text-base font-black uppercase tracking-wide text-gray-900">Create your own pool</h2>
+          <div className="mt-3">
+            <input
+              type="text"
+              value={createName}
+              onChange={(e) => setCreateName(e.target.value)}
+              placeholder="Pool name (3–80 characters)"
+              className="w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
+            />
+            <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  className="size-4 rounded border-gray-300 text-gray-900 focus:ring-red-700"
+                  checked={createPublic}
+                  onChange={(e) => setCreatePublic(e.target.checked)}
+                />
+                Public/searchable pool
+              </label>
+              <button
+                type="button"
+                onClick={() => void onCreatePool()}
+                disabled={creating || !createNameValid}
+                className="shrink-0 self-end rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:opacity-50 sm:self-auto"
+              >
+                {creating ? 'Creating...' : 'Create pool'}
+              </button>
+            </div>
           </div>
         </div>
       </section>
@@ -587,50 +592,77 @@ function PoolsPageContent() {
                 </div>
               </div>
 
-              <div className="mt-5 flex flex-wrap gap-2 border-b border-gray-200 pb-1">
-                <button
-                  type="button"
-                  onClick={() => setPoolDetailTab('leaderboard')}
-                  className={`rounded-t-lg px-4 py-2 text-sm font-bold transition ${
-                    poolDetailTab === 'leaderboard'
-                      ? 'bg-gray-900 text-white'
-                      : 'text-gray-700 hover:bg-gray-100'
-                  }`}
-                >
-                  Leaderboard
-                </button>
-                {isPoolMember ? (
+              <div className="mt-5 flex flex-wrap items-end justify-between gap-2 border-b border-gray-200 pb-1">
+                <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
-                    onClick={() => setPoolDetailTab('picks')}
+                    onClick={() => setPoolDetailTab('leaderboard')}
                     className={`rounded-t-lg px-4 py-2 text-sm font-bold transition ${
-                      poolDetailTab === 'picks'
+                      poolDetailTab === 'leaderboard'
                         ? 'bg-gray-900 text-white'
                         : 'text-gray-700 hover:bg-gray-100'
                     }`}
                   >
-                    Pool Picks
+                    Leaderboard
                   </button>
-                ) : (
-                  <span className="rounded-t-lg px-4 py-2 text-sm font-semibold text-gray-400" title="Join this pool to see pool picks">
-                    Pool Picks (members only)
-                  </span>
-                )}
-              </div>
-
-              <div className="mt-6">
-                <h3 className="text-sm font-black uppercase tracking-wide text-gray-700">Included groups</h3>
-                {selectedPoolGroups.length === 0 ? (
-                  <p className="mt-2 text-sm text-gray-500">Prestige Pool fallback applies (no groups explicitly selected).</p>
-                ) : (
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {selectedPoolGroups.map((g) => (
-                      <span key={g.id} className="rounded-full border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700">
-                        {g.name}
+                  {isPoolMember ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setPoolDetailTab('picks')}
+                        className={`rounded-t-lg px-4 py-2 text-sm font-bold transition ${
+                          poolDetailTab === 'picks'
+                            ? 'bg-gray-900 text-white'
+                            : 'text-gray-700 hover:bg-gray-100'
+                        }`}
+                      >
+                        Pool Picks
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPoolDetailTab('predict')}
+                        className={`rounded-t-lg px-4 py-2 text-sm font-bold transition ${
+                          poolDetailTab === 'predict'
+                            ? 'bg-gray-900 text-white'
+                            : 'text-gray-700 hover:bg-gray-100'
+                        }`}
+                      >
+                        Predict
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="rounded-t-lg px-4 py-2 text-sm font-semibold text-gray-400" title="Join this pool to see pool picks">
+                        Pool Picks (members only)
                       </span>
-                    ))}
-                  </div>
-                )}
+                      <span className="rounded-t-lg px-4 py-2 text-sm font-semibold text-gray-400" title="Join this pool to enter predictions for this pool">
+                        Predict (members only)
+                      </span>
+                    </>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPoolInfoModalOpen(true)}
+                  aria-expanded={poolInfoModalOpen}
+                  aria-controls="pool-info-dialog"
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-800 shadow-sm transition hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    className="size-4 shrink-0 text-gray-600"
+                    aria-hidden
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  Pool info
+                </button>
               </div>
 
               {poolDetailTab === 'leaderboard' ? (
@@ -638,7 +670,8 @@ function PoolsPageContent() {
                   <div className="mt-6">
                     <h3 className="text-sm font-black uppercase tracking-wide text-gray-700">Leaderboard</h3>
                     <p className="mt-1 text-xs text-gray-500">
-                      Pool members only, scored on games linked to this pool’s fixture groups.
+                      Pool members only, scored on games in this pool&apos;s fixture scope (groups and optional team
+                      filter).
                     </p>
                     {leaderLoading ? (
                       <p className="mt-3 text-sm text-gray-500">Loading leaderboard…</p>
@@ -726,18 +759,103 @@ function PoolsPageContent() {
                     )}
                   </div>
                 </>
-              ) : isPoolMember && user ? (
-                <PoolPicksSection
-                  supabase={supabase}
-                  poolId={selectedPool.id}
-                  userId={user.id}
-                  isMember={isPoolMember}
-                />
-              ) : (
-                <p className="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                  Pool picks are only visible to pool members.
-                </p>
-              )}
+              ) : poolDetailTab === 'picks' ? (
+                isPoolMember && user ? (
+                  <PoolPicksSection
+                    supabase={supabase}
+                    poolId={selectedPool.id}
+                    userId={user.id}
+                    isMember={isPoolMember}
+                  />
+                ) : (
+                  <p className="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                    Pool picks are only visible to pool members.
+                  </p>
+                )
+              ) : poolDetailTab === 'predict' ? (
+                isPoolMember && user ? (
+                  <PoolPredictTabSection effectiveMatchIds={effectiveMatchIds} user={user} />
+                ) : (
+                  <p className="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                    Predictions for this pool are available to members only.
+                  </p>
+                )
+              ) : null}
+
+              {poolInfoModalOpen && selectedPool ? (
+                <div
+                  className="fixed inset-0 z-[70] flex items-end justify-center bg-black/50 p-4 sm:items-center"
+                  role="presentation"
+                  onClick={() => setPoolInfoModalOpen(false)}
+                >
+                  <div
+                    id="pool-info-dialog"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="pool-info-dialog-title"
+                    className="max-h-[min(85vh,560px)] w-full max-w-md overflow-x-hidden overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-2xl"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-4 py-3 sm:px-5">
+                      <h2 id="pool-info-dialog-title" className="min-w-0 pr-2 text-lg font-black text-gray-900">
+                        {selectedPool.name} info
+                      </h2>
+                      <button
+                        type="button"
+                        onClick={() => setPoolInfoModalOpen(false)}
+                        className="shrink-0 rounded-full p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+                        aria-label="Close"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <div className="space-y-6 px-4 py-4 sm:px-5 sm:py-5">
+                      <section>
+                        <h3 className="text-xs font-black uppercase tracking-wide text-gray-500">Included groups</h3>
+                        {selectedPoolGroups.length === 0 ? (
+                          <p className="mt-2 text-sm text-gray-600">No groups selected</p>
+                        ) : (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {selectedPoolGroups.map((g) => (
+                              <span
+                                key={g.id}
+                                className="max-w-full truncate rounded-full border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700"
+                                title={g.name}
+                              >
+                                {g.name}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </section>
+                      <section>
+                        <h3 className="text-xs font-black uppercase tracking-wide text-gray-500">Pool teams</h3>
+                        {poolTeamsRows.length === 0 ? (
+                          <p className="mt-2 text-sm text-gray-600">No specific teams selected</p>
+                        ) : (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {poolTeamsRows.map((r) => (
+                              <span
+                                key={r.id}
+                                className="max-w-full truncate rounded-full border border-gray-300 bg-gray-50 px-3 py-1 text-xs font-semibold text-gray-800"
+                                title={r.team_name}
+                              >
+                                {r.team_name}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </section>
+                      <section>
+                        <h3 className="text-xs font-black uppercase tracking-wide text-gray-500">How fixtures are included</h3>
+                        <p className="mt-2 text-sm leading-relaxed text-gray-600">
+                          This pool includes matches from selected groups and/or matches involving selected teams.
+                        </p>
+                      </section>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               {showManagement && isAdmin ? (
                 <div className="mt-6">

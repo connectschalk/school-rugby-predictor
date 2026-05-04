@@ -22,6 +22,15 @@ describe('normalizeProvinceLabelForGameMatches (sheet → game_matches text)', (
     expect(normalizeProvinceLabelForGameMatches('SWD')).toBe('South Western Districts')
   })
 
+  it('NC / PUM / LIM / LEO / GP / BUL map to correct province labels', () => {
+    expect(normalizeProvinceLabelForGameMatches('NC')).toBe('Northern Cape')
+    expect(normalizeProvinceLabelForGameMatches('PUM')).toBe('Pumas')
+    expect(normalizeProvinceLabelForGameMatches('LIM')).toBe('Limpopo')
+    expect(normalizeProvinceLabelForGameMatches('LEO')).toBe('Leopards')
+    expect(normalizeProvinceLabelForGameMatches('GP')).toBe('Gauteng')
+    expect(normalizeProvinceLabelForGameMatches('BUL')).toBe('Blue Bulls')
+  })
+
   it('Grey College vs Paarl Boys High: already-canonical names unchanged', () => {
     expect(normalizeProvinceLabelForGameMatches('Western Province')).toBe('Western Province')
     expect(normalizeProvinceLabelForGameMatches('Free State / Griquas')).toBe('Free State / Griquas')

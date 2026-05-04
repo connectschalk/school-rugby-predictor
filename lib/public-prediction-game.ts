@@ -25,6 +25,7 @@ export type GameMatch = {
   is_prestige_match?: boolean | null
   is_prestige?: boolean
   verification_status?: 'draft' | 'needs_review' | 'verified' | 'rejected' | null
+  prediction_cutoff_time?: string | null
 }
 
 export type UserPredictionRow = {
@@ -122,6 +123,19 @@ export async function fetchPlayableGameMatches(client: SupabaseClient) {
   return { data: sortPlayableMatchesForPredictScore(raw), error }
 }
 
+/** Predict Score hub: upcoming only, kickoff order, provinces for grouping (no pool / group filters). */
+export async function fetchUpcomingPredictScoreMatches(client: SupabaseClient) {
+  const { data, error } = await client
+    .from('game_matches')
+    .select(
+      'id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at, home_team_province, away_team_province, prediction_cutoff_time, verification_status'
+    )
+    .eq('status', 'upcoming')
+    .order('kickoff_time', { ascending: true })
+
+  return { data: (data as GameMatch[] | null) ?? [], error }
+}
+
 export async function fetchUserPredictionsForMatches(
   client: SupabaseClient,
   userId: string,
@@ -149,6 +163,26 @@ export async function fetchGameMatchesForCommunityHub(client: SupabaseClient, li
     )
     .in('status', ['upcoming', 'locked', 'completed'])
     .order('kickoff_time', { ascending: false })
+    .limit(limit)
+
+  return { data: (data as GameMatch[] | null) ?? [], error }
+}
+
+/**
+ * Chronological window of matches with province / league fields for pool creation preview.
+ * Ordered ascending by kickoff so future fixtures are not truncated when limiting.
+ */
+export async function fetchGameMatchesForPoolPreview(client: SupabaseClient, limit = 1200) {
+  const since = new Date()
+  since.setDate(since.getDate() - 2)
+  const { data, error } = await client
+    .from('game_matches')
+    .select(
+      'id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at, home_team_province, away_team_province, province_group, league_group, is_prestige_match, is_prestige, is_interprovincial, is_featured, featured_order'
+    )
+    .in('status', ['upcoming', 'locked', 'completed'])
+    .gte('kickoff_time', since.toISOString())
+    .order('kickoff_time', { ascending: true })
     .limit(limit)
 
   return { data: (data as GameMatch[] | null) ?? [], error }
@@ -395,4 +429,73 @@ export async function fetchGameMatchById(client: SupabaseClient, matchId: string
     .maybeSingle()
 
   return { match: (data as GameMatch | null) ?? null, error }
+}
+
+/** One row per user prediction with joined match and optional score row (Predict hub / My Predictions). */
+export type MyPredictionOverviewRow = {
+  prediction: UserPredictionRow
+  match: GameMatch
+  score: UserPredictionScoreRow | null
+}
+
+/**
+ * All predictions for a user with `game_matches` and `user_prediction_scores` (when scored).
+ * Does not filter by match status — split client-side into upcoming vs completed.
+ */
+export async function fetchMyPredictionsOverview(client: SupabaseClient, userId: string) {
+  const { data: preds, error: pe } = await client
+    .from('user_predictions')
+    .select('id, match_id, user_id, predicted_winner, predicted_margin, submitted_at, is_locked, locked_at')
+    .eq('user_id', userId)
+    .order('submitted_at', { ascending: false })
+
+  if (pe) {
+    return { rows: [] as MyPredictionOverviewRow[], error: pe }
+  }
+
+  const list = (preds as UserPredictionRow[] | null) ?? []
+  if (list.length === 0) {
+    return { rows: [] as MyPredictionOverviewRow[], error: null }
+  }
+
+  const matchIds = [...new Set(list.map((p) => p.match_id))]
+  const { data: matches, error: me } = await client
+    .from('game_matches')
+    .select('id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at')
+    .in('id', matchIds)
+
+  if (me) {
+    return { rows: [] as MyPredictionOverviewRow[], error: me }
+  }
+
+  const matchMap = new Map((matches as GameMatch[] | null)?.map((m) => [m.id, m]) ?? [])
+
+  const { data: scores, error: se } = await client
+    .from('user_prediction_scores')
+    .select(
+      'id, prediction_id, match_id, user_id, winner_correct, actual_winner, actual_margin, margin_difference, winner_points, margin_points, total_points, scored_at'
+    )
+    .eq('user_id', userId)
+    .in('match_id', matchIds)
+
+  if (se) {
+    return { rows: [] as MyPredictionOverviewRow[], error: se }
+  }
+
+  const scoreByPredictionId = new Map(
+    ((scores as UserPredictionScoreRow[] | null) ?? []).map((s) => [s.prediction_id, s])
+  )
+
+  const rows: MyPredictionOverviewRow[] = []
+  for (const prediction of list) {
+    const match = matchMap.get(prediction.match_id)
+    if (!match) continue
+    rows.push({
+      prediction,
+      match,
+      score: scoreByPredictionId.get(prediction.id) ?? null,
+    })
+  }
+
+  return { rows, error: null }
 }
