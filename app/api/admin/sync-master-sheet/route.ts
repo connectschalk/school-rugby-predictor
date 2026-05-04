@@ -20,6 +20,7 @@ import {
   SheetTeamsRegistry,
   teamLookupNormalize,
   type TeamsRegistryDebug,
+  type TeamsRegistryUnresolvedTeam,
 } from '@/lib/sheet-teams-registry'
 import { relinkAllCompletedMatchesToFixtureGroups } from '@/lib/repair-missing-fixture-group-links'
 import { scoreCompletedPredictionMatches } from '@/lib/score-completed-unscored-matches'
@@ -90,6 +91,19 @@ function normalizeHeader(v: string): string {
     .trim()
     .toLowerCase()
     .replace(/\s+/g, '_')
+}
+
+/** Redact spreadsheet id in Google Sheets CSV URLs for safe preview logging. */
+function maskTeamsCsvUrl(url: string): string {
+  const t = url.trim()
+  if (!t) return '(empty)'
+  const m = t.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]{6,})\//)
+  if (m?.[1]) {
+    const id = m[1]
+    const masked = id.length <= 10 ? `${id.slice(0, 2)}…` : `${id.slice(0, 4)}…${id.slice(-4)}`
+    return t.replace(id, masked)
+  }
+  return t.length > 120 ? `${t.slice(0, 55)}…${t.slice(-40)}` : t
 }
 
 function parseBool(v: string): boolean {
@@ -395,12 +409,21 @@ export async function POST(request: Request) {
   const teamsParsed = parseTeamsSheetCsv(teamsCsvText)
   errors.push(...teamsParsed.errors)
   const teamRegistry = new SheetTeamsRegistry(teamsParsed.rows)
-  const teamsRegistryDebug = dryRun
-    ? buildTeamsRegistryDebug(teamRegistry, teamsParsed.rows.length)
-    : undefined
+  let teamsRegistryDebug: TeamsRegistryDebug | undefined
+  const unresolvedTeamsDebug: TeamsRegistryUnresolvedTeam[] = []
   const parsed = parseFixturesSheetCsv(fixturesCsvText)
   errors.push(...parsed.errors)
   if (!parsed.rows.length) {
+    teamsRegistryDebug = dryRun
+      ? buildTeamsRegistryDebug(teamRegistry, {
+          teamsRowsCount: teamsParsed.rows.length,
+          teamsCsvUrlUsedMasked: maskTeamsCsvUrl(teamsCsvUrl),
+          firstFiveCanonicalNames: teamsParsed.rows
+            .slice(0, 5)
+            .map((r) => (r.canonical_name || r.team_name).trim()),
+          unresolvedTeams: [],
+        })
+      : undefined
     const validation_errors = errors.length ? errors : ['No rows found in CSV']
     const emptySummary: SyncSummary = {
       mode: dryRun ? 'dry_run' : 'run',
@@ -480,6 +503,24 @@ export async function POST(request: Request) {
     }
     const hr = teamRegistry.resolve(rawHome)
     const ar = teamRegistry.resolve(rawAway)
+    if (dryRun && !hr.ok) {
+      unresolvedTeamsDebug.push({
+        fixture_sheet_row: i + 2,
+        side: 'home',
+        raw_team_value: rawHome,
+        normalized_team_key: teamLookupNormalize(rawHome),
+        similar_lookup_keys: teamRegistry.findSimilarLookupKeys(rawHome, 10),
+      })
+    }
+    if (dryRun && !ar.ok) {
+      unresolvedTeamsDebug.push({
+        fixture_sheet_row: i + 2,
+        side: 'away',
+        raw_team_value: rawAway,
+        normalized_team_key: teamLookupNormalize(rawAway),
+        similar_lookup_keys: teamRegistry.findSimilarLookupKeys(rawAway, 10),
+      })
+    }
     if (!hr.ok) {
       const nk = teamLookupNormalize(rawHome)
       const similar = teamRegistry.findSimilarLookupKeys(rawHome, 10)
@@ -594,6 +635,17 @@ export async function POST(request: Request) {
     teamDayCounts.set(homeDay, (teamDayCounts.get(homeDay) ?? 0) + 1)
     teamDayCounts.set(awayDay, (teamDayCounts.get(awayDay) ?? 0) + 1)
   }
+
+  teamsRegistryDebug = dryRun
+    ? buildTeamsRegistryDebug(teamRegistry, {
+        teamsRowsCount: teamsParsed.rows.length,
+        teamsCsvUrlUsedMasked: maskTeamsCsvUrl(teamsCsvUrl),
+        firstFiveCanonicalNames: teamsParsed.rows
+          .slice(0, 5)
+          .map((r) => (r.canonical_name || r.team_name).trim()),
+        unresolvedTeams: unresolvedTeamsDebug,
+      })
+    : undefined
 
   for (const [pair, count] of pairKeyCounts.entries()) {
     if (count > 1) {

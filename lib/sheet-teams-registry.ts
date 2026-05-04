@@ -230,31 +230,44 @@ export class SheetTeamsRegistry {
   }
 }
 
-const TEAMS_REGISTRY_DEBUG_SAMPLE_LIMIT = 20
+export type TeamsRegistryUnresolvedTeam = {
+  fixture_sheet_row: number
+  side: 'home' | 'away'
+  raw_team_value: string
+  normalized_team_key: string
+  similar_lookup_keys: string[]
+}
 
-/** Preview-only debug payload for admin sheet sync (Teams registry lookup sanity). */
+/** Preview-only: prove which Teams CSV was used and how registry keys resolve. */
 export type TeamsRegistryDebug = {
+  teams_csv_url_used: string
   teams_rows_count: number
-  has_heidelberg_volkskool_lookup: boolean
-  has_hugenote_welkom_lookup: boolean
-  sample_lookup_keys_containing_heidelberg: string[]
-  sample_lookup_keys_containing_hugenote: string[]
+  first_5_canonical_names: string[]
+  has_lookup_heidelberg_volkskool: boolean
+  has_lookup_hugenote_welkom: boolean
+  all_lookup_keys_containing_heidelberg: string[]
+  all_lookup_keys_containing_hugenote: string[]
+  unresolved_teams: TeamsRegistryUnresolvedTeam[]
 }
 
 export function buildTeamsRegistryDebug(
   registry: SheetTeamsRegistry,
-  teamsRowsCount: number
+  params: {
+    teamsRowsCount: number
+    teamsCsvUrlUsedMasked: string
+    firstFiveCanonicalNames: string[]
+    unresolvedTeams: TeamsRegistryUnresolvedTeam[]
+  }
 ): TeamsRegistryDebug {
   const keys = registry.getAllLookupKeys()
   return {
-    teams_rows_count: teamsRowsCount,
-    has_heidelberg_volkskool_lookup: registry.resolve('Heidelberg Volkskool').ok,
-    has_hugenote_welkom_lookup: registry.resolve('Hugenote Welkom').ok,
-    sample_lookup_keys_containing_heidelberg: keys
-      .filter((k) => k.includes('heidelberg'))
-      .slice(0, TEAMS_REGISTRY_DEBUG_SAMPLE_LIMIT),
-    sample_lookup_keys_containing_hugenote: keys
-      .filter((k) => k.includes('hugenote'))
-      .slice(0, TEAMS_REGISTRY_DEBUG_SAMPLE_LIMIT),
+    teams_csv_url_used: params.teamsCsvUrlUsedMasked,
+    teams_rows_count: params.teamsRowsCount,
+    first_5_canonical_names: params.firstFiveCanonicalNames,
+    has_lookup_heidelberg_volkskool: registry.resolve('Heidelberg Volkskool').ok,
+    has_lookup_hugenote_welkom: registry.resolve('Hugenote Welkom').ok,
+    all_lookup_keys_containing_heidelberg: keys.filter((k) => k.includes('heidelberg')),
+    all_lookup_keys_containing_hugenote: keys.filter((k) => k.includes('hugenote')),
+    unresolved_teams: params.unresolvedTeams,
   }
 }

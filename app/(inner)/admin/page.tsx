@@ -13,7 +13,7 @@ import MasterSheetSyncWarningsPanel from '@/components/admin/MasterSheetSyncWarn
 import PredictionCard from '@/components/admin/PredictionCard'
 import PredictedVsActualCard from '@/components/admin/PredictedVsActualCard'
 import { normalizeSyncWarningsInput, type SyncWarningItem } from '@/lib/sync-master-warnings'
-import type { TeamsRegistryDebug } from '@/lib/sheet-teams-registry'
+import type { TeamsRegistryDebug, TeamsRegistryUnresolvedTeam } from '@/lib/sheet-teams-registry'
 import { recordMatchResultWithPrediction } from '@/lib/admin-match'
 import {
   backfillPredictionHistoryForSeason,
@@ -145,59 +145,46 @@ function teamsRegistryDebugFromRunSummary(summary: unknown): TeamsRegistryDebug 
   const raw = (summary as { teams_registry_debug?: unknown }).teams_registry_debug
   if (!raw || typeof raw !== 'object') return null
   const o = raw as Record<string, unknown>
+  if (typeof o.teams_csv_url_used !== 'string') return null
   if (typeof o.teams_rows_count !== 'number') return null
-  if (typeof o.has_heidelberg_volkskool_lookup !== 'boolean') return null
-  if (typeof o.has_hugenote_welkom_lookup !== 'boolean') return null
-  if (!Array.isArray(o.sample_lookup_keys_containing_heidelberg)) return null
-  if (!Array.isArray(o.sample_lookup_keys_containing_hugenote)) return null
-  return {
-    teams_rows_count: o.teams_rows_count,
-    has_heidelberg_volkskool_lookup: o.has_heidelberg_volkskool_lookup,
-    has_hugenote_welkom_lookup: o.has_hugenote_welkom_lookup,
-    sample_lookup_keys_containing_heidelberg: o.sample_lookup_keys_containing_heidelberg.map(String),
-    sample_lookup_keys_containing_hugenote: o.sample_lookup_keys_containing_hugenote.map(String),
-  }
-}
+  if (!Array.isArray(o.first_5_canonical_names)) return null
+  if (typeof o.has_lookup_heidelberg_volkskool !== 'boolean') return null
+  if (typeof o.has_lookup_hugenote_welkom !== 'boolean') return null
+  if (!Array.isArray(o.all_lookup_keys_containing_heidelberg)) return null
+  if (!Array.isArray(o.all_lookup_keys_containing_hugenote)) return null
+  if (!Array.isArray(o.unresolved_teams)) return null
 
-function TeamsRegistryDebugDetails({
-  debug,
-  className = 'mt-3',
-}: {
-  debug: TeamsRegistryDebug
-  className?: string
-}) {
-  return (
-    <details
-      className={`rounded-lg border border-dashed border-gray-300 bg-white px-3 py-2 text-xs text-gray-800 ${className}`}
-    >
-      <summary className="cursor-pointer font-semibold text-gray-900">Teams registry debug</summary>
-      <ul className="mt-2 list-inside list-disc space-y-1 text-gray-700">
-        <li>
-          <span className="font-medium text-gray-900">teams_rows_count:</span> {debug.teams_rows_count}
-        </li>
-        <li>
-          <span className="font-medium text-gray-900">has_heidelberg_volkskool_lookup:</span>{' '}
-          {debug.has_heidelberg_volkskool_lookup ? 'true' : 'false'}
-        </li>
-        <li>
-          <span className="font-medium text-gray-900">has_hugenote_welkom_lookup:</span>{' '}
-          {debug.has_hugenote_welkom_lookup ? 'true' : 'false'}
-        </li>
-        <li>
-          <span className="font-medium text-gray-900">sample_lookup_keys containing &quot;heidelberg&quot;:</span>{' '}
-          {debug.sample_lookup_keys_containing_heidelberg.length
-            ? debug.sample_lookup_keys_containing_heidelberg.join(', ')
-            : '—'}
-        </li>
-        <li>
-          <span className="font-medium text-gray-900">sample_lookup_keys containing &quot;hugenote&quot;:</span>{' '}
-          {debug.sample_lookup_keys_containing_hugenote.length
-            ? debug.sample_lookup_keys_containing_hugenote.join(', ')
-            : '—'}
-        </li>
-      </ul>
-    </details>
-  )
+  const unresolved: TeamsRegistryUnresolvedTeam[] = []
+  for (const u of o.unresolved_teams as unknown[]) {
+    if (!u || typeof u !== 'object') continue
+    const x = u as Record<string, unknown>
+    const row = typeof x.fixture_sheet_row === 'number' ? x.fixture_sheet_row : Number(x.fixture_sheet_row)
+    const side = x.side
+    const rawTeam = x.raw_team_value
+    const nk = x.normalized_team_key
+    const sim = x.similar_lookup_keys
+    if (!Number.isFinite(row) || (side !== 'home' && side !== 'away')) continue
+    if (typeof rawTeam !== 'string' || typeof nk !== 'string') continue
+    if (!Array.isArray(sim)) continue
+    unresolved.push({
+      fixture_sheet_row: row,
+      side,
+      raw_team_value: rawTeam,
+      normalized_team_key: nk,
+      similar_lookup_keys: sim.map(String),
+    })
+  }
+
+  return {
+    teams_csv_url_used: o.teams_csv_url_used,
+    teams_rows_count: o.teams_rows_count,
+    first_5_canonical_names: o.first_5_canonical_names.map(String),
+    has_lookup_heidelberg_volkskool: o.has_lookup_heidelberg_volkskool,
+    has_lookup_hugenote_welkom: o.has_lookup_hugenote_welkom,
+    all_lookup_keys_containing_heidelberg: o.all_lookup_keys_containing_heidelberg.map(String),
+    all_lookup_keys_containing_hugenote: o.all_lookup_keys_containing_hugenote.map(String),
+    unresolved_teams: unresolved,
+  }
 }
 
 export default function AdminPage() {
@@ -2398,9 +2385,6 @@ export default function AdminPage() {
                 {syncMasterMessage}
               </p>
             ) : null}
-            {teamsRegistryPreviewDebug ? (
-              <TeamsRegistryDebugDetails debug={teamsRegistryPreviewDebug} />
-            ) : null}
             <div className="mt-5 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-800">
               <p className="font-semibold text-gray-900">Prediction scoring &amp; pools</p>
               <p className="mt-1 text-xs text-gray-600">
@@ -2501,8 +2485,9 @@ export default function AdminPage() {
               <MasterSheetSyncWarningsPanel
                 key={`master-sync-${masterSyncPanelEpoch}`}
                 items={effectiveSyncWarnings}
-                defaultOpen={effectiveSyncWarnings.length > 0}
+                defaultOpen={effectiveSyncWarnings.length > 0 || !!teamsRegistryPreviewDebug}
                 title="Warnings / errors (latest run)"
+                teamsRegistryDebug={teamsRegistryPreviewDebug}
               />
             </div>
             <p className="mt-3 text-xs text-gray-500">
@@ -2584,18 +2569,14 @@ export default function AdminPage() {
                       </button>
                     </div>
                     <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-4 pt-2 md:px-4">
-                      {(() => {
-                        const run = syncRuns.find((x) => x.id === syncRunDetailId)
-                        const dbg = teamsRegistryDebugFromRunSummary(run?.summary)
-                        return dbg ? (
-                          <TeamsRegistryDebugDetails debug={dbg} className="mt-0 mb-3" />
-                        ) : null
-                      })()}
                       <MasterSheetSyncWarningsPanel
                         key={syncRunDetailId}
                         items={masterSyncWarningsFromRun(syncRuns.find((x) => x.id === syncRunDetailId))}
                         defaultOpen
                         title="Warnings / errors (this run)"
+                        teamsRegistryDebug={teamsRegistryDebugFromRunSummary(
+                          syncRuns.find((x) => x.id === syncRunDetailId)?.summary
+                        )}
                       />
                     </div>
                   </div>

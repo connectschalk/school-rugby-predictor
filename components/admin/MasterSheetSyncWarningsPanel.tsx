@@ -7,6 +7,7 @@ import {
   type SyncWarningFilter,
   type SyncWarningItem,
 } from '@/lib/sync-master-warnings'
+import type { TeamsRegistryDebug } from '@/lib/sheet-teams-registry'
 
 const FILTER_OPTIONS: { id: SyncWarningFilter; label: string }[] = [
   { id: 'all', label: 'All' },
@@ -30,14 +31,96 @@ function categoryLabel(c: string): string {
   return map[c] ?? c
 }
 
+function TeamsRegistryDebugBlock({ debug }: { debug: TeamsRegistryDebug }) {
+  return (
+    <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50/80 px-3 py-3 text-[11px] text-gray-900">
+      <p className="font-semibold text-sky-950">Teams registry (preview debug)</p>
+      <dl className="mt-2 space-y-1.5">
+        <div>
+          <dt className="font-medium text-gray-800">teams_csv_url_used</dt>
+          <dd className="mt-0.5 break-all font-mono text-[10px] text-gray-700">{debug.teams_csv_url_used}</dd>
+        </div>
+        <div>
+          <span className="font-medium text-gray-800">teams_rows_count:</span>{' '}
+          <span className="font-mono">{debug.teams_rows_count}</span>
+        </div>
+        <div>
+          <dt className="font-medium text-gray-800">first_5_canonical_names</dt>
+          <dd className="mt-0.5 font-mono text-[10px] text-gray-700">
+            {debug.first_5_canonical_names.length ? debug.first_5_canonical_names.join(' | ') : '—'}
+          </dd>
+        </div>
+        <div>
+          <span className="font-medium text-gray-800">has_lookup_heidelberg_volkskool:</span>{' '}
+          <span className="font-mono">{debug.has_lookup_heidelberg_volkskool ? 'true' : 'false'}</span>
+        </div>
+        <div>
+          <span className="font-medium text-gray-800">has_lookup_hugenote_welkom:</span>{' '}
+          <span className="font-mono">{debug.has_lookup_hugenote_welkom ? 'true' : 'false'}</span>
+        </div>
+        <div>
+          <dt className="font-medium text-gray-800">all_lookup_keys_containing_heidelberg</dt>
+          <dd className="mt-0.5 max-h-28 overflow-auto whitespace-pre-wrap break-words font-mono text-[10px] text-gray-700">
+            {debug.all_lookup_keys_containing_heidelberg.length
+              ? debug.all_lookup_keys_containing_heidelberg.join('\n')
+              : '—'}
+          </dd>
+        </div>
+        <div>
+          <dt className="font-medium text-gray-800">all_lookup_keys_containing_hugenote</dt>
+          <dd className="mt-0.5 max-h-28 overflow-auto whitespace-pre-wrap break-words font-mono text-[10px] text-gray-700">
+            {debug.all_lookup_keys_containing_hugenote.length
+              ? debug.all_lookup_keys_containing_hugenote.join('\n')
+              : '—'}
+          </dd>
+        </div>
+      </dl>
+
+      {debug.unresolved_teams.length > 0 ? (
+        <div className="mt-3 border-t border-sky-200 pt-3">
+          <p className="font-semibold text-sky-950">Unresolved fixture teams ({debug.unresolved_teams.length})</p>
+          <div className="mt-2 max-h-[min(320px,40vh)] overflow-auto rounded border border-sky-100 bg-white">
+            <table className="w-full min-w-[520px] border-collapse text-left text-[10px]">
+              <thead className="sticky top-0 bg-sky-100/90 text-sky-950">
+                <tr>
+                  <th className="px-2 py-1.5 font-semibold">Row</th>
+                  <th className="px-2 py-1.5 font-semibold">Side</th>
+                  <th className="px-2 py-1.5 font-semibold">raw_team_value</th>
+                  <th className="px-2 py-1.5 font-semibold">normalized_team_key</th>
+                  <th className="min-w-[180px] px-2 py-1.5 font-semibold">similar_lookup_keys</th>
+                </tr>
+              </thead>
+              <tbody>
+                {debug.unresolved_teams.map((u, idx) => (
+                  <tr key={`${u.fixture_sheet_row}-${u.side}-${idx}`} className="border-t border-gray-100 align-top">
+                    <td className="whitespace-nowrap px-2 py-1.5 font-mono">{u.fixture_sheet_row}</td>
+                    <td className="whitespace-nowrap px-2 py-1.5">{u.side}</td>
+                    <td className="px-2 py-1.5 font-mono text-gray-800">{u.raw_team_value}</td>
+                    <td className="px-2 py-1.5 font-mono text-gray-700">{u.normalized_team_key}</td>
+                    <td className="px-2 py-1.5 font-mono text-[9px] text-gray-600">
+                      {u.similar_lookup_keys.length ? u.similar_lookup_keys.join(', ') : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 export default function MasterSheetSyncWarningsPanel({
   items,
   defaultOpen,
   title = 'Warnings / errors',
+  teamsRegistryDebug = null,
 }: {
   items: SyncWarningItem[]
   defaultOpen: boolean
   title?: string
+  teamsRegistryDebug?: TeamsRegistryDebug | null
 }) {
   const [open, setOpen] = useState(defaultOpen)
   const [filter, setFilter] = useState<SyncWarningFilter>('all')
@@ -51,6 +134,7 @@ export default function MasterSheetSyncWarningsPanel({
   )
 
   const total = items.length
+  const hasTeamsDebug = teamsRegistryDebug != null
 
   return (
     <div className="mt-4 rounded-xl border border-gray-200 bg-white shadow-sm">
@@ -62,9 +146,10 @@ export default function MasterSheetSyncWarningsPanel({
       >
         <span>
           {title}
-          {total > 0 ? (
+          {total > 0 || hasTeamsDebug ? (
             <span className="ml-2 font-normal text-gray-600">
-              ({total}
+              ({total > 0 ? `${total} message${total === 1 ? '' : 's'}` : '0 messages'}
+              {hasTeamsDebug ? <span className="text-sky-800"> · Teams registry debug</span> : null}
               {errorCount > 0 ? (
                 <span className="ml-1 text-red-700">
                   · {errorCount} error{errorCount === 1 ? '' : 's'}
@@ -78,6 +163,12 @@ export default function MasterSheetSyncWarningsPanel({
         </span>
         <span className="text-gray-500">{open ? '▼' : '▶'}</span>
       </button>
+
+      {open && teamsRegistryDebug ? (
+        <div className="border-t border-gray-100 px-3 pb-0 pt-2 md:px-4">
+          <TeamsRegistryDebugBlock debug={teamsRegistryDebug} />
+        </div>
+      ) : null}
 
       {open && total > 0 ? (
         <div className="border-t border-gray-100 px-3 pb-4 pt-2 md:px-4">
@@ -179,7 +270,7 @@ export default function MasterSheetSyncWarningsPanel({
         </div>
       ) : null}
 
-      {open && total === 0 ? (
+      {open && total === 0 && !hasTeamsDebug ? (
         <p className="border-t border-gray-100 px-4 py-3 text-xs text-gray-500">No warnings for this run.</p>
       ) : null}
     </div>
