@@ -6,10 +6,37 @@ export type FixtureGroupMaps = {
   aliasToGroupId: Map<string, string>
   nameToGroupId: Map<string, string>
   slugToGroupId: Map<string, string>
+  idToSlug: Map<string, string>
+  idToName: Map<string, string>
+  idToGroupType: Map<string, string | null>
 }
 
 /** Legacy label stored on `game_matches.province_group` when explicitly set (optional). */
 export const INTERPROVINCIAL_DEFAULT_LABEL = 'Interprovincial'
+
+/**
+ * Sheet / DB short codes that must never link to ad-hoc `fixture_groups` rows (slug wp, ep, …).
+ * Each maps to the canonical province (or union) `fixture_groups.slug`.
+ */
+export const PROVINCE_CODE_TO_CANONICAL_SLUG: Record<string, string> = {
+  wp: 'western-province',
+  ep: 'eastern-cape',
+  fs: 'free-state-griquas',
+  nc: 'free-state-griquas',
+  gp: 'noordvaal',
+  kzn: 'kwazulu-natal',
+  bl: 'boland',
+  swd: 'south-western-districts',
+  bul: 'noordvaal',
+  leo: 'noordvaal',
+  lim: 'noordvaal',
+  pum: 'noordvaal',
+}
+
+const PROVINCE_CODE_KEYS = new Set(Object.keys(PROVINCE_CODE_TO_CANONICAL_SLUG))
+
+/** Slug of any row that is only a short-code duplicate (see migration 037); never use as link target. */
+const AD_HOC_PROVINCE_SHORT_SLUGS = new Set(Object.keys(PROVINCE_CODE_TO_CANONICAL_SLUG))
 
 export function slugifyGroupName(name: string): string {
   return name
@@ -19,21 +46,94 @@ export function slugifyGroupName(name: string): string {
     .replace(/^-+|-+$/g, '')
 }
 
+function logFixtureGroupResolution(
+  maps: FixtureGroupMaps,
+  inputLabel: string,
+  groupId: string | null,
+  via: string
+): void {
+  if (process.env.FIXTURE_GROUP_LINK_RESOLUTION_LOG !== '1') return
+  const slug = groupId ? maps.idToSlug.get(groupId) : undefined
+  const name = groupId ? maps.idToName.get(groupId) : undefined
+  console.info('[fixture-group-link]', {
+    inputLabel,
+    via,
+    groupId,
+    resolvedName: name,
+    resolvedSlug: slug,
+  })
+}
+
+/**
+ * Remap `fixture_groups.id` when it points at an ad-hoc short-code province row (slug wp, fs, …)
+ * to the canonical province row id. Prestige / interprovincial / WP Premium / tournaments unchanged.
+ */
+export function legalizeGroupLinkTargetId(maps: FixtureGroupMaps, groupId: string | null): string | null {
+  if (!groupId) return null
+  const slug = maps.idToSlug.get(groupId)?.toLowerCase()
+  if (!slug || !AD_HOC_PROVINCE_SHORT_SLUGS.has(slug)) return groupId
+  const canonSlug = PROVINCE_CODE_TO_CANONICAL_SLUG[slug]
+  if (!canonSlug) return null
+  const canonId = maps.slugToGroupId.get(canonSlug)
+  return canonId ?? null
+}
+
+function dedupeLegalGroupIds(maps: FixtureGroupMaps, ordered: string[]): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const raw of ordered) {
+    const id = legalizeGroupLinkTargetId(maps, raw.trim())
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    out.push(id)
+  }
+  return out
+}
+
 export async function loadFixtureGroupMaps(supabase: SupabaseClient): Promise<FixtureGroupMaps> {
-  const { data: fixtureGroupsData } = await supabase.from('fixture_groups').select('id, name, slug')
+  const { data: fixtureGroupsData } = await supabase
+    .from('fixture_groups')
+    .select('id, name, slug, group_type')
   const { data: fixtureGroupAliasesData } = await supabase.from('fixture_group_aliases').select('alias, group_id')
   const aliasToGroupId = new Map<string, string>()
   const nameToGroupId = new Map<string, string>()
   const slugToGroupId = new Map<string, string>()
-  for (const row of ((fixtureGroupsData as { id: string; name: string; slug: string }[] | null) ?? [])) {
-    nameToGroupId.set((row.name ?? '').trim().toLowerCase(), row.id)
-    if (row.slug) slugToGroupId.set(String(row.slug).trim().toLowerCase(), row.id)
+  const idToSlug = new Map<string, string>()
+  const idToName = new Map<string, string>()
+  const idToGroupType = new Map<string, string | null>()
+
+  for (const row of (
+    (fixtureGroupsData as { id: string; name: string; slug: string; group_type: string | null }[] | null) ?? []
+  )) {
+    const id = row.id
+    const name = (row.name ?? '').trim()
+    const slug = String(row.slug ?? '').trim().toLowerCase()
+    if (!id || !name || !slug) continue
+    idToSlug.set(id, slug)
+    idToName.set(id, name)
+    idToGroupType.set(id, row.group_type ?? null)
+    nameToGroupId.set(name.toLowerCase(), id)
+    slugToGroupId.set(slug, id)
   }
+
+  for (const badSlug of AD_HOC_PROVINCE_SHORT_SLUGS) {
+    slugToGroupId.delete(badSlug)
+  }
+  for (const code of PROVINCE_CODE_KEYS) {
+    nameToGroupId.delete(code)
+  }
+
   for (const row of ((fixtureGroupAliasesData as { alias: string; group_id: string }[] | null) ?? [])) {
     if (!row.alias || !row.group_id) continue
-    aliasToGroupId.set(row.alias.trim().toLowerCase(), row.group_id)
+    const key = row.alias.trim().toLowerCase()
+    const legal = legalizeGroupLinkTargetId(
+      { aliasToGroupId, nameToGroupId, slugToGroupId, idToSlug, idToName, idToGroupType },
+      row.group_id
+    )
+    if (legal) aliasToGroupId.set(key, legal)
   }
-  return { aliasToGroupId, nameToGroupId, slugToGroupId }
+
+  return { aliasToGroupId, nameToGroupId, slugToGroupId, idToSlug, idToName, idToGroupType }
 }
 
 /** Full PostgREST / Postgres error for logs and admin validation messages. */
@@ -57,6 +157,8 @@ export type GroupLinkBudget = {
 export type ReplaceMatchFixtureGroupLinksOptions = {
   budget?: GroupLinkBudget
   matchTeams?: { home: string; away: string }
+  /** When set, UUIDs are remapped off ad-hoc province short-code rows before insert. */
+  fixtureGroupMaps?: FixtureGroupMaps
 }
 
 function budgetExceeded(budget: GroupLinkBudget | undefined): boolean {
@@ -110,20 +212,41 @@ export function resolveWpPremiumPoolGroupId(maps: FixtureGroupMaps): string | nu
 }
 
 /**
- * Resolve a single label against aliases → fixture_groups.name → slug (direct or slugified).
+ * Resolve a single label: province short codes → alias or canonical slug row;
+ * then aliases → fixture_groups.name → slug (direct or slugified).
+ * Never returns ids for ad-hoc short-code `fixture_groups` rows (slug wp, ep, …).
  */
 export function resolveGroupIdFromLabel(raw: string, maps: FixtureGroupMaps): ResolvedFixtureGroup {
   const t = raw.trim()
   if (!t) return { groupId: null, sourceValue: null }
   const key = t.toLowerCase()
+
+  const finish = (id: string | null, via: string): ResolvedFixtureGroup => {
+    const legal = legalizeGroupLinkTargetId(maps, id)
+    logFixtureGroupResolution(maps, t, legal, via)
+    return { groupId: legal, sourceValue: t }
+  }
+
+  if (PROVINCE_CODE_KEYS.has(key)) {
+    const aliasHit = maps.aliasToGroupId.get(key)
+    if (aliasHit) return finish(aliasHit, 'province_code_alias')
+    const canonSlug = PROVINCE_CODE_TO_CANONICAL_SLUG[key]
+    if (canonSlug) {
+      const canonId = maps.slugToGroupId.get(canonSlug)
+      if (canonId) return finish(canonId, 'province_code_canonical_slug')
+    }
+    logFixtureGroupResolution(maps, t, null, 'province_code_unresolved')
+    return { groupId: null, sourceValue: t }
+  }
+
   const aliasHit = maps.aliasToGroupId.get(key)
-  if (aliasHit) return { groupId: aliasHit, sourceValue: t }
+  if (aliasHit) return finish(aliasHit, 'alias')
   const nameHit = maps.nameToGroupId.get(key)
-  if (nameHit) return { groupId: nameHit, sourceValue: t }
+  if (nameHit) return finish(nameHit, 'name')
   const slugDirect = maps.slugToGroupId.get(key)
-  if (slugDirect) return { groupId: slugDirect, sourceValue: t }
+  if (slugDirect) return finish(slugDirect, 'slug_direct')
   const slugHit = maps.slugToGroupId.get(slugifyGroupName(t))
-  if (slugHit) return { groupId: slugHit, sourceValue: t }
+  if (slugHit) return finish(slugHit, 'slug_slugified')
   return { groupId: null, sourceValue: t }
 }
 
@@ -138,7 +261,14 @@ export function resolveGroupIdForRow(
   nameToGroupId: Map<string, string>,
   slugToGroupId: Map<string, string>
 ): ResolvedFixtureGroup {
-  const maps: FixtureGroupMaps = { aliasToGroupId, nameToGroupId, slugToGroupId }
+  const maps: FixtureGroupMaps = {
+    aliasToGroupId,
+    nameToGroupId,
+    slugToGroupId,
+    idToSlug: new Map(),
+    idToName: new Map(),
+    idToGroupType: new Map(),
+  }
   for (const raw of [leagueGroup.trim(), provinceGroup.trim()].filter(Boolean)) {
     const r = resolveGroupIdFromLabel(raw, maps)
     if (r.groupId) return { groupId: r.groupId, sourceValue: raw }
@@ -219,7 +349,7 @@ export function computeFixtureGroupLinkIds(maps: FixtureGroupMaps, input: Fixtur
     const r = resolveGroupIdFromLabel(legacyP, maps)
     if (r.groupId) push(r.groupId)
   }
-  return ordered
+  return dedupeLegalGroupIds(maps, ordered)
 }
 
 export type GroupLinkWarningEffective = {
@@ -395,7 +525,25 @@ export async function replaceMatchFixtureGroupLinks(
     return { linked_groups, group_link_warnings }
   }
 
-  const rows = validGroupIds.map((group_id) => ({ match_id: matchId, group_id }))
+  const fgm = options?.fixtureGroupMaps
+  let insertIds = validGroupIds
+  if (fgm) {
+    insertIds = dedupeLegalGroupIds(fgm, validGroupIds)
+    if (process.env.FIXTURE_GROUP_LINK_RESOLUTION_LOG === '1' && insertIds.join() !== validGroupIds.join()) {
+      console.info('[fixture-group-link] insert remap', {
+        matchId,
+        rowLabel,
+        before: validGroupIds,
+        after: insertIds,
+      })
+    }
+  }
+
+  if (insertIds.length === 0) {
+    return { linked_groups, group_link_warnings }
+  }
+
+  const rows = insertIds.map((group_id) => ({ match_id: matchId, group_id }))
   const { error: insertErr } = await supabase.from('game_match_groups').insert(rows)
 
   if (insertErr) {
@@ -405,7 +553,7 @@ export async function replaceMatchFixtureGroupLinks(
       rowLabel,
       home_team: matchTeams?.home,
       away_team: matchTeams?.away,
-      attemptedGroupIds: validGroupIds,
+      attemptedGroupIds: insertIds,
       postgrest: {
         message: insertErr.message,
         code: insertErr.code,
@@ -419,7 +567,7 @@ export async function replaceMatchFixtureGroupLinks(
         ? ` home_team="${matchTeams.home}" away_team="${matchTeams.away}"`
         : ''
     errors.push(
-      `Warning: could not insert game_match_groups for match_id=${matchId}${teamPart} (${rowLabel}); attempted group_id=[${validGroupIds.join(', ')}]; DB error: ${full}`
+      `Warning: could not insert game_match_groups for match_id=${matchId}${teamPart} (${rowLabel}); attempted group_id=[${insertIds.join(', ')}]; DB error: ${full}`
     )
     if (registerGroupLinkDbFailure(budget)) {
       return { linked_groups, group_link_warnings, aborted: true }
@@ -427,7 +575,7 @@ export async function replaceMatchFixtureGroupLinks(
     return { linked_groups, group_link_warnings }
   }
 
-  linked_groups = validGroupIds.length
+  linked_groups = insertIds.length
   return { linked_groups, group_link_warnings }
 }
 

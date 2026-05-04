@@ -730,6 +730,10 @@ export default function AdminPage() {
       post_sync_sweep_attempted?: number
       group_link_repair_examined?: number
       group_link_repair_linked?: number
+      group_link_failures?: number
+      skipped_group_linking_count?: number
+      game_matches_inserted?: number
+      game_matches_updated?: number
       teams_registry_debug?: TeamsRegistryDebug
     }
 
@@ -770,7 +774,14 @@ export default function AdminPage() {
       const sweepAttempted = json.post_sync_sweep_attempted ?? 0
       const grpExam = json.group_link_repair_examined ?? 0
       const grpLinked = json.group_link_repair_linked ?? 0
-      let msg = `Sync complete: incoming ${json.incoming_rows ?? 0}, upcoming inserted/updated ${json.inserted_upcoming ?? 0}/${json.updated_upcoming ?? 0}, completed inserted/updated ${json.inserted_completed ?? 0}/${json.updated_completed ?? 0}, duplicates skipped ${json.skipped_duplicates ?? 0}, validation messages ${warningCount}.`
+      const glFail = json.group_link_failures ?? 0
+      const glSkip = json.skipped_group_linking_count ?? 0
+      const gmIns = json.game_matches_inserted ?? (json.inserted_upcoming ?? 0) + (json.inserted_completed ?? 0)
+      const gmUpd = json.game_matches_updated ?? (json.updated_upcoming ?? 0) + (json.updated_completed ?? 0)
+      let msg = `Sync complete: incoming ${json.incoming_rows ?? 0}, game_matches inserted/updated ${gmIns}/${gmUp}, upcoming inserted/updated ${json.inserted_upcoming ?? 0}/${json.updated_upcoming ?? 0}, completed inserted/updated ${json.inserted_completed ?? 0}/${json.updated_completed ?? 0}, duplicates skipped ${json.skipped_duplicates ?? 0}, validation messages ${warningCount}.`
+      if (glFail > 0 || glSkip > 0) {
+        msg += ` Group link failures ${glFail}, group linking skipped for ${glSkip} row(s) after budget.`
+      }
       if (nScored > 0) {
         msg += ` Completed sheet rows auto-scored: ${nScored}.`
       }

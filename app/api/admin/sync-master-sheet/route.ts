@@ -70,6 +70,14 @@ type SyncSummary = {
   would_link_groups: number
   linked_groups: number
   group_link_warnings: number
+  /** DB failures while writing `game_match_groups` (delete/insert); capped at budget max during run. */
+  group_link_failures?: number
+  /** Rows where group linking was skipped because the failure budget was reached. */
+  skipped_group_linking_count?: number
+  /** New `game_matches` rows inserted this run (upcoming + completed). */
+  game_matches_inserted?: number
+  /** Existing `game_matches` rows updated this run (upcoming + completed). */
+  game_matches_updated?: number
   /** Completed game_matches rows for which scoring RPC ran successfully during sheet row processing */
   completed_matches_scored?: number
   /** Post-sync sweep: completed + predictions + no scores — RPC successes (see `scoreCompletedPredictionMatches`) */
@@ -455,6 +463,7 @@ export async function POST(request: Request) {
   let post_sync_sweep_attempted = 0
   let group_link_repair_examined = 0
   let group_link_repair_linked = 0
+  let skipped_group_linking_count = 0
 
   const [teamsCsvRes, fixturesCsvRes] = await Promise.all([fetch(teamsCsvUrl), fetch(fixturesCsvUrl)])
   if (!teamsCsvRes.ok) {
@@ -515,6 +524,10 @@ export async function POST(request: Request) {
       post_sync_sweep_attempted: 0,
       group_link_repair_examined: 0,
       group_link_repair_linked: 0,
+      group_link_failures: 0,
+      skipped_group_linking_count: 0,
+      game_matches_inserted: 0,
+      game_matches_updated: 0,
       validation_errors,
       warnings: buildStructuredWarningsFromStrings(validation_errors),
       ...(teamsRegistryDebug ? { teams_registry_debug: teamsRegistryDebug } : {}),
@@ -853,7 +866,8 @@ export async function POST(request: Request) {
   }
 
   let groupLinkBudget: GroupLinkBudget | undefined
-  let groupLinkAborted = false
+  let groupLinkingDisabled = false
+  let groupLinkingDisabledWarningSent = false
 
   if (!dryRun) {
   groupLinkBudget = { failures: 0, maxFailures: 20 }
@@ -973,26 +987,31 @@ export async function POST(request: Request) {
       }
 
       if (touchedMatchId) {
-        const linkIdsUp = computeFixtureGroupLinkIds(fixtureGroupMaps, linkInput)
-        const gl = await replaceMatchFixtureGroupLinks(
-          supabase,
-          touchedMatchId,
-          linkIdsUp,
-          rowLabelUp,
-          errors,
-          {
-            budget: groupLinkBudget,
-            matchTeams: { home: row.home_team, away: row.away_team },
-          }
-        )
-        linked_groups += gl.linked_groups
-        group_link_warnings += gl.group_link_warnings
-        if (gl.aborted) {
-          groupLinkAborted = true
-          errors.push(
-            'Stopped fixture group linking after 20 database failures (remaining sheet rows were not processed).'
+        if (!groupLinkingDisabled) {
+          const linkIdsUp = computeFixtureGroupLinkIds(fixtureGroupMaps, linkInput)
+          const gl = await replaceMatchFixtureGroupLinks(
+            supabase,
+            touchedMatchId,
+            linkIdsUp,
+            rowLabelUp,
+            errors,
+            {
+              budget: groupLinkBudget,
+              matchTeams: { home: row.home_team, away: row.away_team },
+              fixtureGroupMaps,
+            }
           )
-          break
+          linked_groups += gl.linked_groups
+          group_link_warnings += gl.group_link_warnings
+          if (gl.aborted) {
+            groupLinkingDisabled = true
+            if (!groupLinkingDisabledWarningSent) {
+              errors.push('Warning: Group linking disabled after 20 failures; fixture import continued.')
+              groupLinkingDisabledWarningSent = true
+            }
+          }
+        } else {
+          skipped_group_linking_count += 1
         }
       }
       continue
@@ -1181,25 +1200,30 @@ export async function POST(request: Request) {
     const linkIdsCompleted = computeFixtureGroupLinkIds(fixtureGroupMaps, linkInput)
 
     if (completedGmTouchedId) {
-      const gl = await replaceMatchFixtureGroupLinks(
-        supabase,
-        completedGmTouchedId,
-        linkIdsCompleted,
-        rowLabelC,
-        errors,
-        {
-          budget: groupLinkBudget,
-          matchTeams: { home: row.home_team, away: row.away_team },
-        }
-      )
-      linked_groups += gl.linked_groups
-      group_link_warnings += gl.group_link_warnings
-      if (gl.aborted) {
-        groupLinkAborted = true
-        errors.push(
-          'Stopped fixture group linking after 20 database failures (remaining sheet rows were not processed).'
+      if (!groupLinkingDisabled) {
+        const gl = await replaceMatchFixtureGroupLinks(
+          supabase,
+          completedGmTouchedId,
+          linkIdsCompleted,
+          rowLabelC,
+          errors,
+          {
+            budget: groupLinkBudget,
+            matchTeams: { home: row.home_team, away: row.away_team },
+            fixtureGroupMaps,
+          }
         )
-        break
+        linked_groups += gl.linked_groups
+        group_link_warnings += gl.group_link_warnings
+        if (gl.aborted) {
+          groupLinkingDisabled = true
+          if (!groupLinkingDisabledWarningSent) {
+            errors.push('Warning: Group linking disabled after 20 failures; fixture import continued.')
+            groupLinkingDisabledWarningSent = true
+          }
+        }
+      } else {
+        skipped_group_linking_count += 1
       }
       const sc = await rpcScorePredictionsForMatch(supabase, completedGmTouchedId)
       if (sc.error) {
@@ -1239,22 +1263,17 @@ export async function POST(request: Request) {
   }
   }
 
-  if (!dryRun && groupLinkBudget && !groupLinkAborted) {
+  if (!dryRun && groupLinkBudget && !groupLinkingDisabled) {
     try {
       const rep = await relinkAllCompletedMatchesToFixtureGroups(supabase, groupLinkBudget)
       group_link_repair_examined = rep.processed
       group_link_repair_linked = rep.linked
       for (const w of rep.warnings) errors.push(w)
-      if (rep.group_link_aborted) {
-        groupLinkAborted = true
-      }
     } catch (e) {
       errors.push(
         `Warning: completed fixture group relink failed: ${e instanceof Error ? e.message : String(e)}`
       )
     }
-  } else if (!dryRun && groupLinkAborted) {
-    errors.push('Skipped post-sync completed fixture group repair because group linking was stopped early.')
   }
 
   if (!dryRun) {
@@ -1271,6 +1290,10 @@ export async function POST(request: Request) {
       )
     }
   }
+
+  const group_link_failures = !dryRun && groupLinkBudget ? groupLinkBudget.failures : 0
+  const game_matches_inserted = inserted_upcoming + inserted_completed
+  const game_matches_updated = updated_upcoming + updated_completed
 
   const summary: SyncSummary = {
     mode: dryRun ? 'dry_run' : 'run',
@@ -1295,6 +1318,10 @@ export async function POST(request: Request) {
     would_link_groups,
     linked_groups,
     group_link_warnings,
+    group_link_failures,
+    skipped_group_linking_count,
+    game_matches_inserted,
+    game_matches_updated,
     completed_matches_scored,
     post_sync_sweep_scored,
     post_sync_sweep_attempted,

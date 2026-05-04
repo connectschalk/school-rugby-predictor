@@ -154,6 +154,7 @@ export async function relinkAllCompletedMatchesToFixtureGroups(
       const gl = await replaceMatchFixtureGroupLinks(supabase, m.id, ids, label, warnings, {
         budget: linkBudget,
         matchTeams: { home: m.home_team, away: m.away_team },
+        fixtureGroupMaps: maps,
       })
       if (gl.linked_groups > 0) linked += 1
       if (gl.aborted) {
