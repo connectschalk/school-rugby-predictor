@@ -212,6 +212,8 @@ const PROVINCE_ALIAS_TO_CANONICAL: Record<string, string> = {
   lim: 'Limpopo',
   pum: 'Pumas',
   bor: 'Border',
+  bl: 'Boland',
+  swd: 'South Western Districts',
 }
 
 function canonicalProvinceGroup(raw: string): { value: string | null; warning?: string } {
