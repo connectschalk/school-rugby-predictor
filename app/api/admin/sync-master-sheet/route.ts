@@ -8,11 +8,9 @@ import {
   computeFixtureGroupLinkIds,
   effectiveGroupFieldsForMatchRow,
   loadFixtureGroupMaps,
-  replaceMatchFixtureGroupLinks,
   normalizeLeagueGroupForGameMatches,
   normalizeProvinceLabelForGameMatches,
   type FixtureGroupLinkInput,
-  type GroupLinkBudget,
   type FixtureGroupMaps,
   type GroupLinkWarningEffective,
   type SheetClassificationForWarnings,
@@ -25,12 +23,14 @@ import {
   type TeamsRegistryDebug,
   type TeamsRegistryUnresolvedTeam,
 } from '@/lib/sheet-teams-registry'
-import { relinkAllCompletedMatchesToFixtureGroups } from '@/lib/repair-missing-fixture-group-links'
-import { scoreCompletedPredictionMatches } from '@/lib/score-completed-unscored-matches'
-import { rpcScorePredictionsForMatch } from '@/lib/score-predictions-for-match'
 import type { TeamRow } from '@/lib/team-name-match'
 
 export const runtime = 'nodejs'
+
+const SYNC_IMPORT_MAX_MS = 45_000
+
+export const SYNC_IMPORT_FOLLOWUP_NOTICE =
+  'Sync imports fixtures only. Run group linking and scoring separately.'
 
 /** Raw row from the Fixtures tab CSV (Teams + Fixtures are the only source of truth). */
 type FixtureCsvRow = {
@@ -80,14 +80,15 @@ type SyncSummary = {
   game_matches_inserted?: number
   /** Existing `game_matches` rows updated this run (upcoming + completed). */
   game_matches_updated?: number
-  /** Completed game_matches rows for which scoring RPC ran successfully during sheet row processing */
+  matches_inserted?: number
+  matches_updated?: number
+  sync_import_notice?: string
+  last_processed_fixture_row?: string
+  /** Legacy counters — always 0 (linking/scoring removed from import). */
   completed_matches_scored?: number
-  /** Post-sync sweep: completed + predictions + no scores — RPC successes (see `scoreCompletedPredictionMatches`) */
   post_sync_sweep_scored?: number
   post_sync_sweep_attempted?: number
-  /** Completed matches processed in post-sync relink pass (`relinkAllCompletedMatchesToFixtureGroups`) */
   group_link_repair_examined?: number
-  /** Completed matches where a `game_match_groups` row was inserted after clear+resolve */
   group_link_repair_linked?: number
   validation_errors: string[]
   warnings: SyncWarningItem[]
@@ -444,12 +445,10 @@ export async function POST(request: Request) {
   let would_link_groups = 0
   let linked_groups = 0
   let group_link_warnings = 0
-  let completed_matches_scored = 0
-  let post_sync_sweep_scored = 0
-  let post_sync_sweep_attempted = 0
-  let group_link_repair_examined = 0
-  let group_link_repair_linked = 0
-  let skipped_group_linking_count = 0
+  let matches_inserted = 0
+  let matches_updated = 0
+  let syncTimedOut = false
+  let lastProcessedFixtureRow: string | undefined
 
   const [teamsCsvRes, fixturesCsvRes] = await Promise.all([fetch(teamsCsvUrl), fetch(fixturesCsvUrl)])
   if (!teamsCsvRes.ok) {
@@ -514,6 +513,9 @@ export async function POST(request: Request) {
       skipped_group_linking_count: 0,
       game_matches_inserted: 0,
       game_matches_updated: 0,
+      matches_inserted: 0,
+      matches_updated: 0,
+      sync_import_notice: dryRun ? undefined : SYNC_IMPORT_FOLLOWUP_NOTICE,
       validation_errors,
       warnings: buildStructuredWarningsFromStrings(validation_errors),
       ...(teamsRegistryDebug ? { teams_registry_debug: teamsRegistryDebug } : {}),
@@ -851,13 +853,10 @@ export async function POST(request: Request) {
     }
   }
 
-  let groupLinkBudget: GroupLinkBudget | undefined
-  let groupLinkingDisabled = false
-  let groupLinkingDisabledWarningSent = false
-
   if (!dryRun) {
-  groupLinkBudget = { failures: 0, maxFailures: 20 }
-  fixtureGroupMaps = await loadFixtureGroupMaps(supabase)
+  const syncImportStartedMs = Date.now()
+  syncTimedOut = false
+  lastProcessedFixtureRow = undefined
 
   const completedTeamIdCache = new Map<string, number>()
   for (const t of teams) {
@@ -865,11 +864,20 @@ export async function POST(request: Request) {
   }
 
   let upcomingUpsertFailed = false
-  /** Each successful upcoming or completed `game_matches` insert/update is followed by `replaceMatchFixtureGroupLinks`. */
-  for (const row of normalized) {
+  for (let ni = 0; ni < normalized.length; ni += 1) {
+    const row = normalized[ni]
+    lastProcessedFixtureRow = `${row.match_date} ${row.home_team} vs ${row.away_team} (${ni + 1}/${normalized.length})`
+    if (Date.now() - syncImportStartedMs > SYNC_IMPORT_MAX_MS) {
+      syncTimedOut = true
+      errors.push(
+        `Sheet sync exceeded ${SYNC_IMPORT_MAX_MS / 1000}s before finishing all rows (stopped at: ${lastProcessedFixtureRow}).`
+      )
+      break
+    }
+
     const pairOnDate = `${row.match_date}|${orderedPairKey(row.home_team, row.away_team)}`
     if (row.status === 'upcoming') {
-      const { eff, linkInput, warnEff, sheetWarn } = buildLinkContext(row)
+      const { warnEff, sheetWarn } = buildLinkContext(row)
       const upLeague = normalizeLeagueGroupForGameMatches(row.league_group.trim())
       const upHomeTeamProv = normalizeProvinceLabelForGameMatches(row.home_team_province.trim())
       const upAwayTeamProv = normalizeProvinceLabelForGameMatches(row.away_team_province.trim())
@@ -878,7 +886,6 @@ export async function POST(request: Request) {
       group_link_warnings += warnUp.messages.length
       for (const w of warnUp.messages) errors.push(w)
       const existingGmUp = existingGameMatchByPairOnDate.get(pairOnDate)
-      let touchedMatchId: string | null = null
       if (existingGmUp?.id) {
         const { error } = await supabase
           .from('game_matches')
@@ -924,7 +931,6 @@ export async function POST(request: Request) {
           } else {
             updated_upcoming += 1
           }
-          touchedMatchId = existingGmUp.id
         }
       } else {
         const { data: insertedRow, error } = await supabase.from('game_matches').insert({
@@ -956,7 +962,6 @@ export async function POST(request: Request) {
         } else {
           inserted_upcoming += 1
           const newId = String(insertedRow?.id ?? '')
-          touchedMatchId = newId
           if (newId) {
             existingGameMatchByPairOnDate.set(pairOnDate, {
               id: newId,
@@ -972,34 +977,6 @@ export async function POST(request: Request) {
         }
       }
 
-      if (touchedMatchId) {
-        if (!groupLinkingDisabled) {
-          const linkIdsUp = computeFixtureGroupLinkIds(fixtureGroupMaps, linkInput)
-          const gl = await replaceMatchFixtureGroupLinks(
-            supabase,
-            touchedMatchId,
-            linkIdsUp,
-            rowLabelUp,
-            errors,
-            {
-              budget: groupLinkBudget,
-              matchTeams: { home: row.home_team, away: row.away_team },
-              fixtureGroupMaps,
-            }
-          )
-          linked_groups += gl.linked_groups
-          group_link_warnings += gl.group_link_warnings
-          if (gl.aborted) {
-            groupLinkingDisabled = true
-            if (!groupLinkingDisabledWarningSent) {
-              errors.push('Warning: Group linking disabled after 20 failures; fixture import continued.')
-              groupLinkingDisabledWarningSent = true
-            }
-          }
-        } else {
-          skipped_group_linking_count += 1
-        }
-      }
       continue
     }
 
@@ -1026,7 +1003,7 @@ export async function POST(request: Request) {
       continue
     }
 
-    const { eff, linkInput, warnEff, sheetWarn } = buildLinkContext(row)
+    const { warnEff, sheetWarn } = buildLinkContext(row)
     const dbLeague = normalizeLeagueGroupForGameMatches(row.league_group.trim()) || null
     const dbHomeTeamProv = normalizeProvinceLabelForGameMatches(row.home_team_province.trim())
     const dbAwayTeamProv = normalizeProvinceLabelForGameMatches(row.away_team_province.trim())
@@ -1051,6 +1028,8 @@ export async function POST(request: Request) {
         .eq('id', duplicateMatch.id)
       if (matchesUpdateErr) {
         errors.push(`Completed update in matches failed (${row.home_team} vs ${row.away_team}): ${matchesUpdateErr.message}`)
+      } else {
+        matches_updated += 1
       }
     } else {
       const { data: insertedMatch, error: matchInsertErr } = await supabase
@@ -1068,6 +1047,7 @@ export async function POST(request: Request) {
       if (matchInsertErr) {
         errors.push(`Completed insert into matches failed (${row.home_team} vs ${row.away_team}): ${matchInsertErr.message}`)
       } else if (insertedMatch) {
+        matches_inserted += 1
         if (!existingMatchesByDate.has(row.match_date)) existingMatchesByDate.set(row.match_date, [])
         existingMatchesByDate.get(row.match_date)?.push({
           id: insertedMatch.id as number,
@@ -1078,8 +1058,6 @@ export async function POST(request: Request) {
     }
 
     const existingGmCompleted = existingGameMatchByPairOnDate.get(pairOnDate) ?? null
-
-    let completedGmTouchedId: string | null = null
 
     if (existingGmCompleted) {
       const { error: gmUpdateErr } = await supabase
@@ -1124,7 +1102,6 @@ export async function POST(request: Request) {
           verification_status: 'verified',
         })
         existingCurrentUpcomingIdsByKey.delete(pairOnDate)
-        completedGmTouchedId = existingGmCompleted.id
       }
     } else {
       const { data: insertedGm, error: gmInsertErr } = await supabase
@@ -1172,7 +1149,6 @@ export async function POST(request: Request) {
             verification_status: 'verified',
             admin_notes: null,
           })
-          completedGmTouchedId = newGmId
         }
         existingCurrentUpcomingIdsByKey.delete(pairOnDate)
       }
@@ -1182,47 +1158,9 @@ export async function POST(request: Request) {
     const warnC = collectGroupLinkResolutionWarnings(fixtureGroupMaps, warnEff, sheetWarn, rowLabelC)
     group_link_warnings += warnC.messages.length
     for (const w of warnC.messages) errors.push(w)
-
-    const linkIdsCompleted = computeFixtureGroupLinkIds(fixtureGroupMaps, linkInput)
-
-    if (completedGmTouchedId) {
-      if (!groupLinkingDisabled) {
-        const gl = await replaceMatchFixtureGroupLinks(
-          supabase,
-          completedGmTouchedId,
-          linkIdsCompleted,
-          rowLabelC,
-          errors,
-          {
-            budget: groupLinkBudget,
-            matchTeams: { home: row.home_team, away: row.away_team },
-            fixtureGroupMaps,
-          }
-        )
-        linked_groups += gl.linked_groups
-        group_link_warnings += gl.group_link_warnings
-        if (gl.aborted) {
-          groupLinkingDisabled = true
-          if (!groupLinkingDisabledWarningSent) {
-            errors.push('Warning: Group linking disabled after 20 failures; fixture import continued.')
-            groupLinkingDisabledWarningSent = true
-          }
-        }
-      } else {
-        skipped_group_linking_count += 1
-      }
-      const sc = await rpcScorePredictionsForMatch(supabase, completedGmTouchedId)
-      if (sc.error) {
-        errors.push(
-          `Warning: scoring failed for completed match ${completedGmTouchedId}: ${sc.error.message}`
-        )
-      } else {
-        completed_matches_scored += 1
-      }
-    }
   }
 
-  if (replaceUpcoming && !upcomingUpsertFailed) {
+  if (replaceUpcoming && !upcomingUpsertFailed && !syncTimedOut) {
     const note = 'Replaced by Google Sheet sync (Teams + Fixtures)'
     for (const [key] of snapshotUpcomingKeyToId.entries()) {
       if (sheetUpcomingKeys.has(key)) continue
@@ -1249,35 +1187,7 @@ export async function POST(request: Request) {
   }
   }
 
-  if (!dryRun && groupLinkBudget && !groupLinkingDisabled) {
-    try {
-      const rep = await relinkAllCompletedMatchesToFixtureGroups(supabase, groupLinkBudget)
-      group_link_repair_examined = rep.processed
-      group_link_repair_linked = rep.linked
-      for (const w of rep.warnings) errors.push(w)
-    } catch (e) {
-      errors.push(
-        `Warning: completed fixture group relink failed: ${e instanceof Error ? e.message : String(e)}`
-      )
-    }
-  }
-
-  if (!dryRun) {
-    try {
-      const sweep = await scoreCompletedPredictionMatches(supabase, { onlyWithoutScores: true })
-      post_sync_sweep_scored = sweep.matchesScoredOk
-      post_sync_sweep_attempted = sweep.matchIdsAttempted
-      for (const err of sweep.scoringErrors) {
-        errors.push(`Warning: post-sync scoring sweep: ${err}`)
-      }
-    } catch (e) {
-      errors.push(
-        `Warning: post-sync scoring sweep failed: ${e instanceof Error ? e.message : String(e)}`
-      )
-    }
-  }
-
-  const group_link_failures = !dryRun && groupLinkBudget ? groupLinkBudget.failures : 0
+  const group_link_failures = 0
   const game_matches_inserted = inserted_upcoming + inserted_completed
   const game_matches_updated = updated_upcoming + updated_completed
 
@@ -1302,17 +1212,23 @@ export async function POST(request: Request) {
     skipped_duplicates,
     province_group_warnings,
     would_link_groups,
-    linked_groups,
+    linked_groups: 0,
     group_link_warnings,
     group_link_failures,
-    skipped_group_linking_count,
+    skipped_group_linking_count: 0,
     game_matches_inserted,
     game_matches_updated,
-    completed_matches_scored,
-    post_sync_sweep_scored,
-    post_sync_sweep_attempted,
-    group_link_repair_examined,
-    group_link_repair_linked,
+    matches_inserted,
+    matches_updated,
+    completed_matches_scored: 0,
+    post_sync_sweep_scored: 0,
+    post_sync_sweep_attempted: 0,
+    group_link_repair_examined: 0,
+    group_link_repair_linked: 0,
+    ...(!dryRun && !syncTimedOut ? { sync_import_notice: SYNC_IMPORT_FOLLOWUP_NOTICE } : {}),
+    ...(syncTimedOut && !dryRun && lastProcessedFixtureRow
+      ? { last_processed_fixture_row: lastProcessedFixtureRow }
+      : {}),
     validation_errors: errors,
     warnings: buildStructuredWarningsFromStrings(errors),
     ...(teamsRegistryDebug ? { teams_registry_debug: teamsRegistryDebug } : {}),
@@ -1345,6 +1261,17 @@ export async function POST(request: Request) {
     ...summary,
     validation_errors: errors,
     warnings,
+  }
+
+  if (!dryRun && syncTimedOut) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: `Sheet sync exceeded ${SYNC_IMPORT_MAX_MS / 1000}s before finishing all rows.`,
+        ...responseSummary,
+      },
+      { status: 408 }
+    )
   }
 
   return NextResponse.json({
