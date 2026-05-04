@@ -175,7 +175,7 @@ function teamsRegistryDebugFromRunSummary(summary: unknown): TeamsRegistryDebug 
     })
   }
 
-  return {
+  const out: TeamsRegistryDebug = {
     teams_csv_url_used: o.teams_csv_url_used,
     teams_rows_count: o.teams_rows_count,
     first_5_canonical_names: o.first_5_canonical_names.map(String),
@@ -185,6 +185,10 @@ function teamsRegistryDebugFromRunSummary(summary: unknown): TeamsRegistryDebug 
     all_lookup_keys_containing_hugenote: o.all_lookup_keys_containing_hugenote.map(String),
     unresolved_teams: unresolved,
   }
+  if (o.completed_used_registry_canonical === true) {
+    out.completed_used_registry_canonical = true
+  }
+  return out
 }
 
 export default function AdminPage() {

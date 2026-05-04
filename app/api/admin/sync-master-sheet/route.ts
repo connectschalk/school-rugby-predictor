@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { fetchUserIsAdmin } from '@/lib/admin-access'
 import { buildStructuredWarningsFromStrings, type SyncWarningItem } from '@/lib/sync-master-warnings'
@@ -25,8 +25,7 @@ import {
 import { relinkAllCompletedMatchesToFixtureGroups } from '@/lib/repair-missing-fixture-group-links'
 import { scoreCompletedPredictionMatches } from '@/lib/score-completed-unscored-matches'
 import { rpcScorePredictionsForMatch } from '@/lib/score-predictions-for-match'
-import { buildTeamAliasResolverMap } from '@/lib/team-aliases-db'
-import { matchTeamName, type TeamRow } from '@/lib/team-name-match'
+import type { TeamRow } from '@/lib/team-name-match'
 
 export const runtime = 'nodejs'
 
@@ -104,6 +103,68 @@ function maskTeamsCsvUrl(url: string): string {
     return t.replace(id, masked)
   }
   return t.length > 120 ? `${t.slice(0, 55)}…${t.slice(-40)}` : t
+}
+
+/**
+ * Resolve `public.teams.id` for a Teams-tab canonical name: match by trim+lowercase, else insert `name` as given.
+ * Used for completed `matches` rows (game_matches already store canonical text from the sheet registry).
+ */
+async function ensureTeamIdForCanonical(
+  supabase: SupabaseClient,
+  canonicalName: string,
+  cache: Map<string, number>,
+  teams: TeamRow[]
+): Promise<{ ok: true; id: number } | { ok: false; message: string }> {
+  const key = teamLookupNormalize(canonicalName)
+  if (!key) return { ok: false, message: 'empty canonical name' }
+  const cached = cache.get(key)
+  if (cached !== undefined) return { ok: true, id: cached }
+
+  for (const t of teams) {
+    if (teamLookupNormalize(t.name) === key) {
+      cache.set(key, t.id)
+      return { ok: true, id: t.id }
+    }
+  }
+
+  const name = canonicalName.trim()
+  const { data: inserted, error: insErr } = await supabase.from('teams').insert({ name }).select('id').single()
+  if (!insErr && inserted && inserted.id != null) {
+    const id = Number(inserted.id)
+    if (Number.isFinite(id)) {
+      teams.push({ id, name })
+      cache.set(key, id)
+      return { ok: true, id }
+    }
+  }
+
+  const { data: row, error: selErr } = await supabase.from('teams').select('id, name').eq('name', name).maybeSingle()
+  if (!selErr && row?.id != null) {
+    const id = Number(row.id)
+    if (Number.isFinite(id)) {
+      cache.set(key, id)
+      if (!teams.some((t) => t.id === id)) teams.push({ id, name: row.name ?? name })
+      return { ok: true, id }
+    }
+  }
+
+  const { data: scan, error: scanErr } = await supabase.from('teams').select('id, name')
+  if (!scanErr && scan?.length) {
+    const hit = scan.find((r) => teamLookupNormalize(String(r.name ?? '')) === key)
+    if (hit?.id != null) {
+      const id = Number(hit.id)
+      if (Number.isFinite(id)) {
+        cache.set(key, id)
+        if (!teams.some((t) => t.id === id)) teams.push({ id, name: String(hit.name ?? name) })
+        return { ok: true, id }
+      }
+    }
+  }
+
+  return {
+    ok: false,
+    message: insErr?.message ?? selErr?.message ?? scanErr?.message ?? 'could not resolve or create team',
+  }
 }
 
 function parseBool(v: string): boolean {
@@ -644,6 +705,7 @@ export async function POST(request: Request) {
           .slice(0, 5)
           .map((r) => (r.canonical_name || r.team_name).trim()),
         unresolvedTeams: unresolvedTeamsDebug,
+        completedUsedRegistryCanonical: normalized.some((r) => r.status === 'completed'),
       })
     : undefined
 
@@ -665,12 +727,10 @@ export async function POST(request: Request) {
   )
 
   const { data: teamsData, error: teamsErr } = await supabase.from('teams').select('id, name')
-  const { data: aliasData } = await supabase.from('team_aliases').select('*')
   if (teamsErr) {
     return NextResponse.json({ ok: false, error: `Could not load teams for completed rows: ${teamsErr.message}` }, { status: 500 })
   }
   const teams = (teamsData as TeamRow[] | null) ?? []
-  const aliasMap = buildTeamAliasResolverMap((aliasData as Record<string, unknown>[] | null) ?? [], teams)
 
   let fixtureGroupMaps: FixtureGroupMaps = await loadFixtureGroupMaps(supabase)
 
@@ -770,14 +830,8 @@ export async function POST(request: Request) {
       continue
     }
 
-    const homeMatch = matchTeamName(row.home_team, teams, aliasMap)
-    const awayMatch = matchTeamName(row.away_team, teams, aliasMap)
-    if (!homeMatch.matchedTeamId || !awayMatch.matchedTeamId) {
-      errors.push(`Completed row team resolution failed (${row.home_team} vs ${row.away_team})`)
-      continue
-    }
-    if (homeMatch.matchedTeamId === awayMatch.matchedTeamId) {
-      errors.push(`Completed row has same team IDs (${row.home_team} vs ${row.away_team})`)
+    if (teamLookupNormalize(row.home_team) === teamLookupNormalize(row.away_team)) {
+      errors.push(`Completed row has same home and away canonical team (${row.home_team})`)
       continue
     }
     if (row.home_score == null || row.away_score == null) {
@@ -799,6 +853,11 @@ export async function POST(request: Request) {
 
   if (!dryRun) {
   fixtureGroupMaps = await loadFixtureGroupMaps(supabase)
+
+  const completedTeamIdCache = new Map<string, number>()
+  for (const t of teams) {
+    completedTeamIdCache.set(teamLookupNormalize(t.name), t.id)
+  }
 
   let upcomingUpsertFailed = false
   /** Each successful upcoming or completed `game_matches` insert/update is followed by `replaceMatchFixtureGroupLinks`. */
@@ -927,15 +986,18 @@ export async function POST(request: Request) {
       continue
     }
 
-    // completed — group fields always come from the sheet row; DB is updated before linking (see game_matches update/insert below).
-    const homeMatch = matchTeamName(row.home_team, teams, aliasMap)
-    const awayMatch = matchTeamName(row.away_team, teams, aliasMap)
-    if (!homeMatch.matchedTeamId || !awayMatch.matchedTeamId) {
-      errors.push(`Completed row team resolution failed (${row.home_team} vs ${row.away_team})`)
+    // completed — `row.home_team` / `row.away_team` are Teams-tab canonical names (not DB alias resolution).
+    const homeIdRes = await ensureTeamIdForCanonical(supabase, row.home_team, completedTeamIdCache, teams)
+    const awayIdRes = await ensureTeamIdForCanonical(supabase, row.away_team, completedTeamIdCache, teams)
+    if (!homeIdRes.ok || !awayIdRes.ok) {
+      const detail = !homeIdRes.ok ? homeIdRes.message : !awayIdRes.ok ? awayIdRes.message : 'unknown'
+      errors.push(`Completed row team id ensure failed (${row.home_team} vs ${row.away_team}): ${detail}`)
       continue
     }
-    if (homeMatch.matchedTeamId === awayMatch.matchedTeamId) {
-      errors.push(`Completed row has same team IDs (${row.home_team} vs ${row.away_team})`)
+    const homeTeamId = homeIdRes.id
+    const awayTeamId = awayIdRes.id
+    if (homeTeamId === awayTeamId) {
+      errors.push(`Completed row resolved to same team id (${row.home_team} vs ${row.away_team})`)
       continue
     }
     if (row.home_score == null || row.away_score == null) {
@@ -953,8 +1015,8 @@ export async function POST(request: Request) {
       const a = m.team_a_id
       const b = m.team_b_id
       return (
-        (a === homeMatch.matchedTeamId && b === awayMatch.matchedTeamId) ||
-        (a === awayMatch.matchedTeamId && b === homeMatch.matchedTeamId)
+        (a === homeTeamId && b === awayTeamId) ||
+        (a === awayTeamId && b === homeTeamId)
       )
     })
     if (duplicateMatch) {
@@ -973,8 +1035,8 @@ export async function POST(request: Request) {
       const { data: insertedMatch, error: matchInsertErr } = await supabase
         .from('matches')
         .insert({
-          team_a_id: homeMatch.matchedTeamId,
-          team_b_id: awayMatch.matchedTeamId,
+          team_a_id: homeTeamId,
+          team_b_id: awayTeamId,
           team_a_score: row.home_score,
           team_b_score: row.away_score,
           match_date: row.match_date,

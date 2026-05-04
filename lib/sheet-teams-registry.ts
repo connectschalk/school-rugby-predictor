@@ -248,6 +248,8 @@ export type TeamsRegistryDebug = {
   all_lookup_keys_containing_heidelberg: string[]
   all_lookup_keys_containing_hugenote: string[]
   unresolved_teams: TeamsRegistryUnresolvedTeam[]
+  /** True when preview included completed fixtures using Teams-tab canonical names for DB team IDs. */
+  completed_used_registry_canonical?: boolean
 }
 
 export function buildTeamsRegistryDebug(
@@ -257,6 +259,7 @@ export function buildTeamsRegistryDebug(
     teamsCsvUrlUsedMasked: string
     firstFiveCanonicalNames: string[]
     unresolvedTeams: TeamsRegistryUnresolvedTeam[]
+    completedUsedRegistryCanonical?: boolean
   }
 ): TeamsRegistryDebug {
   const keys = registry.getAllLookupKeys()
@@ -269,5 +272,8 @@ export function buildTeamsRegistryDebug(
     all_lookup_keys_containing_heidelberg: keys.filter((k) => k.includes('heidelberg')),
     all_lookup_keys_containing_hugenote: keys.filter((k) => k.includes('hugenote')),
     unresolved_teams: params.unresolvedTeams,
+    ...(params.completedUsedRegistryCanonical
+      ? { completed_used_registry_canonical: true as const }
+      : {}),
   }
 }

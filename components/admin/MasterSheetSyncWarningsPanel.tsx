@@ -58,6 +58,12 @@ function TeamsRegistryDebugBlock({ debug }: { debug: TeamsRegistryDebug }) {
           <span className="font-medium text-gray-800">has_lookup_hugenote_welkom:</span>{' '}
           <span className="font-mono">{debug.has_lookup_hugenote_welkom ? 'true' : 'false'}</span>
         </div>
+        {debug.completed_used_registry_canonical ? (
+          <div>
+            <span className="font-medium text-gray-800">completed_used_registry_canonical:</span>{' '}
+            <span className="font-mono">true</span>
+          </div>
+        ) : null}
         <div>
           <dt className="font-medium text-gray-800">all_lookup_keys_containing_heidelberg</dt>
           <dd className="mt-0.5 max-h-28 overflow-auto whitespace-pre-wrap break-words font-mono text-[10px] text-gray-700">
