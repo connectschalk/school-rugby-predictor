@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { fetchUserIsAdmin } from '@/lib/admin-access'
 
-type GroupType = 'province' | 'league' | 'festival' | 'prestige' | 'custom'
+type GroupType = 'province' | 'league' | 'festival' | 'prestige' | 'custom' | 'tournament'
 
 type FixtureGroupRow = {
   id: string
@@ -18,7 +18,7 @@ type FixtureGroupRow = {
   created_at: string
 }
 
-const GROUP_TYPE_OPTIONS: GroupType[] = ['province', 'league', 'festival', 'prestige', 'custom']
+const GROUP_TYPE_OPTIONS: GroupType[] = ['province', 'league', 'festival', 'prestige', 'custom', 'tournament']
 
 export default function AdminFixtureGroupsPage() {
   const router = useRouter()
@@ -177,7 +177,10 @@ export default function AdminFixtureGroupsPage() {
         <div className="flex items-center justify-between gap-3">
           <div>
             <h1 className="text-3xl font-bold">Fixture groups / leagues</h1>
-            <p className="mt-1 text-sm text-gray-600">Create and maintain province, league, festival, prestige, and custom groups.</p>
+            <p className="mt-1 text-sm text-gray-600">
+              Create and maintain province, league, festival, prestige, tournament, and custom groups. Master sheet sync
+              auto-creates tournament groups from the <code className="rounded bg-gray-100 px-1">tournament</code> column.
+            </p>
           </div>
           <Link href="/admin" className="text-sm text-gray-700 underline hover:text-black">
             Back to Admin

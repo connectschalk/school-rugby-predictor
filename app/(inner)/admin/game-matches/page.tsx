@@ -418,6 +418,8 @@ export default function AdminGameMatchesPage() {
         status: GameMatchStatus
         provinceGroup: string
         leagueGroup: string
+        homeTeamProvince: string
+        awayTeamProvince: string
         isPrestige: boolean
       }
     >
@@ -512,7 +514,7 @@ export default function AdminGameMatchesPage() {
     const { data, error } = await supabase
       .from('game_matches')
       .select(
-        'id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at, is_featured, featured_order, province_group, league_group, is_prestige'
+        'id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at, is_featured, featured_order, province_group, league_group, home_team_province, away_team_province, is_prestige'
       )
       .order('kickoff_time', { ascending: false })
 
@@ -582,6 +584,8 @@ export default function AdminGameMatchesPage() {
           status: m.status,
           provinceGroup: m.province_group ?? '',
           leagueGroup: m.league_group ?? '',
+          homeTeamProvince: m.home_team_province ?? '',
+          awayTeamProvince: m.away_team_province ?? '',
           isPrestige: !!m.is_prestige,
         }
       }
@@ -1362,6 +1366,8 @@ async function resolveFixtureGroupForPreview(rawInput: string): Promise<GroupRes
       status: d.status,
       province_group: d.provinceGroup.trim() || null,
       league_group: d.leagueGroup.trim() || null,
+      home_team_province: d.homeTeamProvince.trim() || null,
+      away_team_province: d.awayTeamProvince.trim() || null,
       is_prestige: d.isPrestige,
     }
     if (d.status === 'completed') {
@@ -1424,6 +1430,8 @@ async function resolveFixtureGroupForPreview(rawInput: string): Promise<GroupRes
       status: GameMatchStatus
       provinceGroup: string
       leagueGroup: string
+      homeTeamProvince: string
+      awayTeamProvince: string
       isPrestige: boolean
     }>
   ) {
@@ -1954,11 +1962,27 @@ async function resolveFixtureGroupForPreview(rawInput: string): Promise<GroupRes
                             <div className="flex flex-col gap-1">
                               <input
                                 type="text"
-                                placeholder="Province/group"
+                                placeholder="province_group (match)"
                                 className="w-36 rounded border border-gray-300 px-1 py-0.5 text-xs"
                                 disabled={busy}
                                 value={fd.provinceGroup}
                                 onChange={(e) => patchFixtureField(m.id, { provinceGroup: e.target.value })}
+                              />
+                              <input
+                                type="text"
+                                placeholder="home_team_province"
+                                className="w-36 rounded border border-gray-300 px-1 py-0.5 text-xs"
+                                disabled={busy}
+                                value={fd.homeTeamProvince}
+                                onChange={(e) => patchFixtureField(m.id, { homeTeamProvince: e.target.value })}
+                              />
+                              <input
+                                type="text"
+                                placeholder="away_team_province"
+                                className="w-36 rounded border border-gray-300 px-1 py-0.5 text-xs"
+                                disabled={busy}
+                                value={fd.awayTeamProvince}
+                                onChange={(e) => patchFixtureField(m.id, { awayTeamProvince: e.target.value })}
                               />
                               <input
                                 type="text"

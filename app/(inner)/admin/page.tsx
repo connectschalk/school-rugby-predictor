@@ -220,7 +220,7 @@ export default function AdminPage() {
   const [repairGroupLinksBusy, setRepairGroupLinksBusy] = useState(false)
   const [repairGroupLinksMessage, setRepairGroupLinksMessage] = useState('')
   const [repairGroupLinkExamples, setRepairGroupLinkExamples] = useState<{
-    skipped: string[]
+    interprovincialDefaults: string[]
     unresolved: string[]
   } | null>(null)
 
@@ -536,8 +536,9 @@ export default function AdminPage() {
       processed?: number
       linked?: number
       skippedNoGroupFields?: number
+      interprovincialDefaultsApplied?: number
       unresolvedWithFields?: number
-      skippedNoGroupFieldsExamples?: string[]
+      interprovincialDefaultsExamples?: string[]
       unresolvedWithFieldsExamples?: string[]
       warnings?: string[]
     }
@@ -548,13 +549,16 @@ export default function AdminPage() {
     }
     const warnList = Array.isArray(json.warnings) ? json.warnings : []
     const wn = warnList.length
-    let detail = `Completed matches processed: ${json.processed ?? 0}; group row inserted for ${json.linked ?? 0}. Skipped ${json.skippedNoGroupFields ?? 0} with no league/province fields; ${json.unresolvedWithFields ?? 0} had fields but no matching fixture group.`
+    const interDef = json.interprovincialDefaultsApplied ?? 0
+    let detail = `Completed matches processed: ${json.processed ?? 0}; group links written for ${json.linked ?? 0}. Interprovincial default applied on ${interDef} match(es) with blank league/province/tournament and not prestige; ${json.unresolvedWithFields ?? 0} still have resolution warnings (bad text or missing Prestige/Interprovincial group).`
     if (wn > 0) {
       detail += ` ${wn} repair message(s) — see panel below and sync warnings if listed.`
     }
     setRepairGroupLinksMessage(detail)
     setRepairGroupLinkExamples({
-      skipped: Array.isArray(json.skippedNoGroupFieldsExamples) ? json.skippedNoGroupFieldsExamples : [],
+      interprovincialDefaults: Array.isArray(json.interprovincialDefaultsExamples)
+        ? json.interprovincialDefaultsExamples
+        : [],
       unresolved: Array.isArray(json.unresolvedWithFieldsExamples) ? json.unresolvedWithFieldsExamples : [],
     })
     if (warnList.length > 0) {
@@ -2251,7 +2255,17 @@ export default function AdminPage() {
           </h2>
           <div className="mt-3 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm md:p-6">
             <ol className="list-decimal space-y-1 pl-5 text-sm text-gray-600">
-              <li>Update the master sheet or fixture data.</li>
+              <li>
+                Configure two Google Sheet CSV exports: <code className="rounded bg-gray-100 px-1">GOOGLE_SHEET_TEAMS_CSV_URL</code>{' '}
+                (Teams tab: team_name, canonical_name, province, is_prestige_team, is_wp_elite, aliases) and{' '}
+                <code className="rounded bg-gray-100 px-1">GOOGLE_SHEET_FIXTURES_CSV_URL</code> or{' '}
+                <code className="rounded bg-gray-100 px-1">GOOGLE_FIXTURE_MASTER_CSV_URL</code> (Fixtures tab: date, time,
+                home_team, away_team, scores, league_group, tournament, is_prestige_match, status). Sync resolves fixture team
+                names against the Teams tab, derives <code className="rounded bg-gray-100 px-1">home_team_province</code> /{' '}
+                <code className="rounded bg-gray-100 px-1">away_team_province</code>, sets cross-province and prestige flags,
+                and links fixture groups in order: league, tournament, Interprovincial (when provinces differ), Prestige Pool,
+                WP Elite, team provinces, then optional legacy <code className="rounded bg-gray-100 px-1">province_group</code>.
+              </li>
               <li>
                 <strong className="text-gray-900">Preview</strong> sync — check counts and messages.
               </li>
@@ -2352,12 +2366,11 @@ export default function AdminPage() {
               <div className="mt-4 border-t border-gray-200 pt-4">
                 <p className="font-semibold text-gray-900">Fixture group links</p>
                 <p className="mt-1 text-xs text-gray-600">
-                  Every <strong className="font-medium text-gray-800">completed</strong> match is relinked from{' '}
-                  <code className="rounded bg-gray-200 px-1">league_group</code> (first) and{' '}
-                  <code className="rounded bg-gray-200 px-1">province_group</code> to{' '}
-                  <code className="rounded bg-gray-200 px-1">game_match_groups</code> (old links removed, then correct row
-                  inserted). Same matching as master sheet sync. Runs automatically after each sync; use the button to
-                  repair pool visibility without re-running the full sheet.
+                  Every <strong className="font-medium text-gray-800">completed</strong> match gets{' '}
+                  <code className="rounded bg-gray-200 px-1">game_match_groups</code> cleared and rebuilt from stored context:
+                  league, tournament, Interprovincial (when flagged or inferred from team provinces), Prestige Pool, WP Elite,
+                  team province links, and optional legacy <code className="rounded bg-gray-200 px-1">province_group</code>.
+                  Runs automatically after each sync; use the button to repair pool visibility without re-running the sheet.
                 </p>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <button
@@ -2373,16 +2386,15 @@ export default function AdminPage() {
                   <p className="mt-2 text-xs text-gray-700">{repairGroupLinksMessage}</p>
                 ) : null}
                 {repairGroupLinkExamples &&
-                (repairGroupLinkExamples.skipped.length > 0 || repairGroupLinkExamples.unresolved.length > 0) ? (
+                (repairGroupLinkExamples.interprovincialDefaults.length > 0 ||
+                  repairGroupLinkExamples.unresolved.length > 0) ? (
                   <div className="mt-3 space-y-3 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs text-amber-950">
-                    {repairGroupLinkExamples.skipped.length > 0 ? (
+                    {repairGroupLinkExamples.interprovincialDefaults.length > 0 ? (
                       <div>
-                        <p className="font-semibold">
-                          Examples — no league_group, province_group, and not prestige (fix sheet or /admin/game-matches)
-                        </p>
+                        <p className="font-semibold">Examples — Interprovincial defaults (legacy repair; usually empty)</p>
                         <ul className="mt-1 list-inside list-disc space-y-0.5 font-mono text-[11px]">
-                          {repairGroupLinkExamples.skipped.map((line, i) => (
-                            <li key={`skip-${i}`}>{line}</li>
+                          {repairGroupLinkExamples.interprovincialDefaults.map((line, i) => (
+                            <li key={`inter-${i}`}>{line}</li>
                           ))}
                         </ul>
                       </div>

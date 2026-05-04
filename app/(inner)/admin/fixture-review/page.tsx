@@ -17,6 +17,8 @@ type ReviewRow = {
   status: string
   province_group: string | null
   league_group: string | null
+  home_team_province: string | null
+  away_team_province: string | null
   is_prestige: boolean | null
   source_name: string | null
   source_url: string | null
@@ -84,13 +86,13 @@ export default function FixtureReviewPage() {
       supabase
         .from('game_matches')
         .select(
-          'id, home_team, away_team, kickoff_time, status, province_group, league_group, is_prestige, source_name, source_url, created_at, verification_status, rejected_reason, admin_notes, imported_batch_id'
+          'id, home_team, away_team, kickoff_time, status, province_group, league_group, home_team_province, away_team_province, is_prestige, source_name, source_url, created_at, verification_status, rejected_reason, admin_notes, imported_batch_id'
         )
         .in('verification_status', ['draft', 'needs_review'])
         .order('kickoff_time', { ascending: true }),
       supabase
         .from('game_matches')
-        .select('id, home_team, away_team, kickoff_time, status, province_group, league_group, is_prestige, source_name, source_url, created_at, verification_status, rejected_reason, admin_notes, imported_batch_id')
+        .select('id, home_team, away_team, kickoff_time, status, province_group, league_group, home_team_province, away_team_province, is_prestige, source_name, source_url, created_at, verification_status, rejected_reason, admin_notes, imported_batch_id')
         .order('kickoff_time', { ascending: true }),
       supabase.from('teams').select('id, name').order('name', { ascending: true }),
       supabase.from('team_aliases').select('*'),

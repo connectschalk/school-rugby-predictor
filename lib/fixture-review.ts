@@ -7,6 +7,8 @@ export type FixtureReviewRow = {
   home_team: string
   away_team: string
   kickoff_time: string
+  home_team_province?: string | null
+  away_team_province?: string | null
 }
 
 export type FixtureWarningType =
@@ -15,6 +17,7 @@ export type FixtureWarningType =
   | 'reversed_duplicate'
   | 'unknown_team'
   | 'same_team_both_sides'
+  | 'missing_team_provinces'
 
 export type FixtureWarning = {
   type: FixtureWarningType
@@ -86,6 +89,15 @@ export function detectFixtureWarnings(
       out.push({
         type: 'unknown_team',
         message: 'One or both teams do not match teams/aliases.',
+      })
+    }
+
+    const hp = (f.home_team_province ?? '').trim()
+    const ap = (f.away_team_province ?? '').trim()
+    if (!hp && !ap) {
+      out.push({
+        type: 'missing_team_provinces',
+        message: 'home_team_province and away_team_province are both empty — sync from Teams + Fixtures tabs.',
       })
     }
 

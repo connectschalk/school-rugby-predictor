@@ -4,6 +4,9 @@ export type ParsedMasterPasteRow = {
   away_team: string
   province_group: string
   league_group: string
+  tournament: string
+  home_team_province: string
+  away_team_province: string
   is_prestige: boolean
 }
 
@@ -71,6 +74,21 @@ export function parseMasterSheetPaste(text: string): { rows: ParsedMasterPasteRo
     away: first.findIndex((h) => h === 'away_team' || h === 'away'),
     province: first.findIndex((h) => h === 'province_group' || h === 'province'),
     league: first.findIndex((h) => h === 'league_group' || h === 'league'),
+    tournament: first.findIndex((h) => h === 'tournament' || h === 'tournament_name' || h === 'cup'),
+    home_prov: first.findIndex(
+      (h) =>
+        h === 'home_team_province' ||
+        h === 'home_province' ||
+        h === 'home_prov' ||
+        h === 'home_team_prov'
+    ),
+    away_prov: first.findIndex(
+      (h) =>
+        h === 'away_team_province' ||
+        h === 'away_province' ||
+        h === 'away_prov' ||
+        h === 'away_team_prov'
+    ),
     prestige: first.findIndex((h) => h === 'is_prestige' || h === 'prestige'),
   }
   const hasHeader = idx.home >= 0 && idx.away >= 0 && idx.date >= 0
@@ -89,6 +107,9 @@ export function parseMasterSheetPaste(text: string): { rows: ParsedMasterPasteRo
     const away = hasHeader ? readCell(cells, idx.away) : (cells[3] ?? '').trim()
     const province = hasHeader ? readCell(cells, idx.province) : (cells[4] ?? '').trim()
     const league = hasHeader ? readCell(cells, idx.league) : (cells[5] ?? '').trim()
+    const tournament = hasHeader ? readCell(cells, idx.tournament) : ''
+    const homeProv = hasHeader ? readCell(cells, idx.home_prov) : (cells[7] ?? '').trim()
+    const awayProv = hasHeader ? readCell(cells, idx.away_prov) : (cells[8] ?? '').trim()
     const prestigeRaw = hasHeader ? readCell(cells, idx.prestige) : (cells[6] ?? '').trim()
 
     const d = parseDate(dateRaw)
@@ -105,6 +126,9 @@ export function parseMasterSheetPaste(text: string): { rows: ParsedMasterPasteRo
       away_team: away,
       province_group: province,
       league_group: league,
+      tournament,
+      home_team_province: homeProv,
+      away_team_province: awayProv,
       is_prestige: parseBool(prestigeRaw),
     })
   }

@@ -16,6 +16,13 @@ export type GameMatch = {
   featured_order?: number | null
   province_group?: string | null
   league_group?: string | null
+  tournament?: string | null
+  /** Team-level province labels (sheet); separate from match `province_group`. */
+  home_team_province?: string | null
+  away_team_province?: string | null
+  is_interprovincial?: boolean
+  has_wp_elite_team?: boolean
+  is_prestige_match?: boolean | null
   is_prestige?: boolean
   verification_status?: 'draft' | 'needs_review' | 'verified' | 'rejected' | null
 }

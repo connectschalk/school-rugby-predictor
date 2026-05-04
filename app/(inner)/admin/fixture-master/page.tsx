@@ -20,6 +20,9 @@ type SheetRow = {
   away_team: string
   province_group: string
   league_group: string
+  tournament: string
+  home_team_province: string
+  away_team_province: string
   is_prestige: boolean
   status: MatchStatus
   verification_status: VerificationStatus
@@ -67,6 +70,9 @@ function newLocalRow(): SheetRow {
     away_team: '',
     province_group: '',
     league_group: '',
+    tournament: '',
+    home_team_province: '',
+    away_team_province: '',
     is_prestige: false,
     status: 'upcoming',
     verification_status: 'verified',
@@ -122,7 +128,7 @@ export default function FixtureMasterPage() {
       supabase
         .from('game_matches')
         .select(
-          'id, kickoff_time, home_team, away_team, province_group, league_group, is_prestige, status, verification_status, prediction_cutoff_time, is_featured, featured_order, admin_notes'
+          'id, kickoff_time, home_team, away_team, province_group, league_group, tournament, home_team_province, away_team_province, is_prestige, status, verification_status, prediction_cutoff_time, is_featured, featured_order, admin_notes'
         )
         .eq('status', 'upcoming')
         .order('kickoff_time', { ascending: true }),
@@ -144,6 +150,9 @@ export default function FixtureMasterPage() {
       away_team: String(r.away_team ?? ''),
       province_group: String(r.province_group ?? ''),
       league_group: String(r.league_group ?? ''),
+      tournament: String(r.tournament ?? ''),
+      home_team_province: String(r.home_team_province ?? ''),
+      away_team_province: String(r.away_team_province ?? ''),
       is_prestige: !!r.is_prestige,
       status: (String(r.status ?? 'upcoming') as MatchStatus) ?? 'upcoming',
       verification_status: (String(r.verification_status ?? 'needs_review') as VerificationStatus) ?? 'needs_review',
@@ -262,7 +271,16 @@ export default function FixtureMasterPage() {
     let changed = 0
     for (const r of rows) {
       if (!r.id) {
-        if (r.home_team || r.away_team || r.province_group || r.league_group) changed += 1
+        if (
+          r.home_team ||
+          r.away_team ||
+          r.province_group ||
+          r.league_group ||
+          r.tournament ||
+          r.home_team_province ||
+          r.away_team_province
+        )
+          changed += 1
         continue
       }
       const orig = originalById.get(r.local_id)
@@ -317,6 +335,9 @@ export default function FixtureMasterPage() {
       away_team: p.away_team,
       province_group: p.province_group,
       league_group: p.league_group,
+      tournament: p.tournament,
+      home_team_province: p.home_team_province,
+      away_team_province: p.away_team_province,
       is_prestige: p.is_prestige,
       status: 'upcoming',
       verification_status: 'verified',
@@ -389,6 +410,9 @@ export default function FixtureMasterPage() {
           away_team: r.away_team.trim(),
           province_group: r.province_group.trim() || null,
           league_group: r.league_group.trim() || null,
+          tournament: r.tournament.trim() || null,
+          home_team_province: r.home_team_province.trim() || null,
+          away_team_province: r.away_team_province.trim() || null,
           is_prestige: r.is_prestige,
           status: r.status,
           verification_status: r.verification_status || 'verified',
@@ -414,6 +438,9 @@ export default function FixtureMasterPage() {
         away_team: r.away_team.trim(),
         province_group: r.province_group.trim() || null,
         league_group: r.league_group.trim() || null,
+        tournament: r.tournament.trim() || null,
+        home_team_province: r.home_team_province.trim() || null,
+        away_team_province: r.away_team_province.trim() || null,
         is_prestige: r.is_prestige,
         status: r.status || 'upcoming',
         verification_status: r.verification_status || 'verified',
@@ -462,7 +489,10 @@ export default function FixtureMasterPage() {
           <div>
             <h1 className="text-3xl font-bold">Fixture Master Sheet</h1>
             <p className="mt-1 text-sm text-gray-600">
-              Fast source-of-truth editor for upcoming fixtures in `game_matches`.
+              Fast source-of-truth editor for upcoming fixtures in `game_matches`. Use league for competitions, province
+              for match context (e.g. Interprovincial), tournament for cups/festivals, prestige for big fixtures; use
+              home_team_province / away_team_province for team origin. If league, province_group, tournament are empty and not
+              prestige, sync assigns Interprovincial on province_group.
             </p>
           </div>
           <Link href="/admin" className="rounded border border-gray-300 bg-white px-3 py-2 text-xs font-semibold hover:bg-gray-50">
@@ -518,15 +548,18 @@ export default function FixtureMasterPage() {
           <p className="text-sm text-gray-600">Loading fixtures...</p>
         ) : (
           <div className="overflow-x-auto rounded-xl border border-gray-200">
-            <table className="w-full min-w-[1800px] border-collapse text-left text-xs">
+            <table className="w-full min-w-[2200px] border-collapse text-left text-xs">
               <thead className="bg-gray-50 text-gray-600">
                 <tr>
                   <th className="px-2 py-2">Sel</th>
                   <th className="px-2 py-2">Kickoff</th>
                   <th className="px-2 py-2">Home</th>
                   <th className="px-2 py-2">Away</th>
-                  <th className="px-2 py-2">Province</th>
+                  <th className="px-2 py-2">province_group</th>
+                  <th className="px-2 py-2">Home prov</th>
+                  <th className="px-2 py-2">Away prov</th>
                   <th className="px-2 py-2">League</th>
+                  <th className="px-2 py-2">Tournament</th>
                   <th className="px-2 py-2">Prestige</th>
                   <th className="px-2 py-2">Status</th>
                   <th className="px-2 py-2">Verification</th>
@@ -550,7 +583,10 @@ export default function FixtureMasterPage() {
                       <td className="px-2 py-1"><input className="w-40 rounded border border-gray-300 px-1 py-1" value={r.home_team} onChange={(e) => patchRow(r.local_id, { home_team: e.target.value })} /></td>
                       <td className="px-2 py-1"><input className="w-40 rounded border border-gray-300 px-1 py-1" value={r.away_team} onChange={(e) => patchRow(r.local_id, { away_team: e.target.value })} /></td>
                       <td className="px-2 py-1"><input className="w-36 rounded border border-gray-300 px-1 py-1" value={r.province_group} onChange={(e) => patchRow(r.local_id, { province_group: e.target.value })} /></td>
+                      <td className="px-2 py-1"><input className="w-36 rounded border border-gray-300 px-1 py-1" value={r.home_team_province} onChange={(e) => patchRow(r.local_id, { home_team_province: e.target.value })} /></td>
+                      <td className="px-2 py-1"><input className="w-36 rounded border border-gray-300 px-1 py-1" value={r.away_team_province} onChange={(e) => patchRow(r.local_id, { away_team_province: e.target.value })} /></td>
                       <td className="px-2 py-1"><input className="w-36 rounded border border-gray-300 px-1 py-1" value={r.league_group} onChange={(e) => patchRow(r.local_id, { league_group: e.target.value })} /></td>
+                      <td className="px-2 py-1"><input className="w-36 rounded border border-gray-300 px-1 py-1" value={r.tournament} onChange={(e) => patchRow(r.local_id, { tournament: e.target.value })} /></td>
                       <td className="px-2 py-1"><input type="checkbox" checked={r.is_prestige} onChange={(e) => patchRow(r.local_id, { is_prestige: e.target.checked })} /></td>
                       <td className="px-2 py-1">
                         <select className="rounded border border-gray-300 px-1 py-1" value={r.status} onChange={(e) => patchRow(r.local_id, { status: e.target.value as MatchStatus })}>
