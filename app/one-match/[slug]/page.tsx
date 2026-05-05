@@ -8,7 +8,6 @@ import { getTeamLogo, RugbyBallIcon } from '@/components/export/team-logo'
 import {
   actualPointMargin,
   actualWinnerFromScores,
-  browserTokenStorageKey,
   getOrCreateBrowserToken,
   rankPredictionsForResults,
   type OneMatchPredictionRow,
@@ -153,10 +152,7 @@ export default function OneMatchChallengePage() {
     const row = ch as ChallengeRow
     setChallenge(row)
 
-    const browserToken =
-      typeof window !== 'undefined' ? window.localStorage.getItem(browserTokenStorageKey(slug))?.trim() ?? '' : ''
-    const tokenForRpc =
-      browserToken.length >= 8 ? browserToken : typeof window !== 'undefined' ? getOrCreateBrowserToken(slug) : ''
+    const tokenForRpc = typeof window !== 'undefined' ? getOrCreateBrowserToken(slug) : ''
     if (tokenForRpc) setMyBrowserToken(tokenForRpc)
 
     const { data: preds, error: pErr } = await supabase.rpc('get_one_match_predictions_visible', {
@@ -200,18 +196,12 @@ export default function OneMatchChallengePage() {
 
   useEffect(() => {
     if (!slug || typeof window === 'undefined') return
-    const raw = window.localStorage.getItem(browserTokenStorageKey(slug))?.trim() ?? ''
-    if (raw.length >= 8) {
-      setMyBrowserToken(raw)
-    } else {
-      getOrCreateBrowserToken(slug)
-      setMyBrowserToken(window.localStorage.getItem(browserTokenStorageKey(slug)) ?? '')
-    }
+    setMyBrowserToken(getOrCreateBrowserToken(slug))
   }, [slug, predictions])
 
   useEffect(() => {
     if (!match || !slug) return
-    const token = (typeof window !== 'undefined' ? window.localStorage.getItem(browserTokenStorageKey(slug)) : '') ?? ''
+    const token = typeof window !== 'undefined' ? getOrCreateBrowserToken(slug) : ''
     if (token.length < 8) return
     const mine = predictions.find((p) => p.browser_token === token)
     if (mine) {
@@ -281,15 +271,42 @@ export default function OneMatchChallengePage() {
 
   const podium = useMemo(() => podiumGroups(ranked), [ranked])
 
+  async function upsertWithToken(browserToken: string): Promise<{ ok: boolean; error?: string; id?: string | null }> {
+    const m = Number(margin)
+    if (!name.trim()) return { ok: false, error: 'Please enter your name.' }
+    if (winner !== 'home' && winner !== 'away') return { ok: false, error: 'Choose the team you think will win.' }
+    if (!Number.isFinite(m) || m < 1 || m > 200) return { ok: false, error: 'Enter a winning margin between 1 and 200.' }
+
+    const res = await fetch('/api/one-match/upsert-prediction', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        challenge_slug: slug,
+        browser_token: browserToken,
+        display_name: name.trim(),
+        predicted_winner: winner,
+        predicted_margin: m,
+      }),
+    })
+    const json = (await res.json()) as { id?: string | null; error?: string; duplicate_name_ip_hint?: boolean }
+    console.info('[one-match-save] response', {
+      slug,
+      browser_token: browserToken,
+      save_response: json,
+    })
+    if (!res.ok) return { ok: false, error: json.error ?? 'Could not save.' }
+    if (json.id) setSavedPredictionId(json.id)
+    setLastSavedBrowserToken(browserToken)
+    setMyBrowserToken(browserToken)
+    if (json.duplicate_name_ip_hint) setDuplicateHint(true)
+    else setDuplicateHint(false)
+    return { ok: true, id: json.id ?? null }
+  }
+
   async function onLock() {
     setLockError('')
     if (!slug || !predictionsOpen) return
-    const browserToken =
-      lastSavedBrowserToken.trim().length >= 8
-        ? lastSavedBrowserToken.trim()
-        : myBrowserToken.trim().length >= 8
-          ? myBrowserToken.trim()
-          : getOrCreateBrowserToken(slug)
+    const browserToken = getOrCreateBrowserToken(slug)
     setMyBrowserToken(browserToken)
 
     console.info('[one-match-lock] request', { slug, browser_token: browserToken, saved_prediction_id: savedPredictionId })
@@ -304,8 +321,11 @@ export default function OneMatchChallengePage() {
       return
     }
     if (!exists) {
-      setLockError('Save your prediction first.')
-      return
+      const saveResult = await upsertWithToken(browserToken)
+      if (!saveResult.ok) {
+        setLockError(saveResult.error ?? 'Save your prediction first.')
+        return
+      }
     }
 
     setLocking(true)
@@ -343,51 +363,15 @@ export default function OneMatchChallengePage() {
       setSubmitError('Your prediction is locked and cannot be changed.')
       return
     }
-    const m = Number(margin)
-    if (!name.trim()) {
-      setSubmitError('Please enter your name.')
-      return
-    }
-    if (winner !== 'home' && winner !== 'away') {
-      setSubmitError('Choose the team you think will win.')
-      return
-    }
-    if (!Number.isFinite(m) || m < 1 || m > 200) {
-      setSubmitError('Enter a winning margin between 1 and 200.')
-      return
-    }
     const browserToken = getOrCreateBrowserToken(slug)
     setMyBrowserToken(browserToken)
     setSubmitting(true)
     try {
-      const res = await fetch('/api/one-match/upsert-prediction', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          challenge_slug: slug,
-          browser_token: browserToken,
-          display_name: name.trim(),
-          predicted_winner: winner,
-          predicted_margin: m,
-        }),
-      })
-      const json = (await res.json()) as { id?: string | null; error?: string; duplicate_name_ip_hint?: boolean }
-      console.info('[one-match-save] response', {
-        slug,
-        browser_token: browserToken,
-        save_response: json,
-      })
-      if (!res.ok) {
-        setSubmitError(json.error ?? 'Could not save.')
+      const saveResult = await upsertWithToken(browserToken)
+      if (!saveResult.ok) {
+        setSubmitError(saveResult.error ?? 'Could not save.')
         setSubmitting(false)
         return
-      }
-      if (json.id) setSavedPredictionId(json.id)
-      setLastSavedBrowserToken(browserToken)
-      if (json.duplicate_name_ip_hint) {
-        setDuplicateHint(true)
-      } else {
-        setDuplicateHint(false)
       }
       await loadAll()
     } catch {
@@ -415,7 +399,9 @@ export default function OneMatchChallengePage() {
   }
 
   const hasSavedPrediction =
-    myBrowserToken.length >= 8 && predictions.some((p) => p.browser_token === myBrowserToken)
+    Boolean(savedPredictionId) ||
+    lastSavedBrowserToken.trim().length >= 8 ||
+    (myBrowserToken.length >= 8 && predictions.some((p) => p.browser_token === myBrowserToken))
   const predictLabel = iLocked ? '🔒 Prediction locked' : hasSavedPrediction ? 'Update' : 'Predict'
   const formDisabled = !predictionsOpen || iLocked
 
@@ -590,7 +576,7 @@ export default function OneMatchChallengePage() {
             </button>
             <button
               type="button"
-              disabled={!predictionsOpen || !hasSavedPrediction || iLocked || locking || submitting}
+              disabled={!predictionsOpen || iLocked || locking || submitting}
               onClick={() => void onLock()}
               className="w-full rounded-xl border border-gray-200 bg-white py-3.5 text-sm font-semibold text-gray-800 shadow-sm transition-all duration-150 hover:scale-[1.01] hover:bg-gray-50 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 disabled:hover:scale-100"
             >
@@ -602,7 +588,30 @@ export default function OneMatchChallengePage() {
         {panel === 'preview' ? (
           <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
             {!iLocked && predictionsOpen ? (
-              <p className="py-6 text-center text-sm text-gray-500">Lock in your prediction to see what others picked.</p>
+              <div className="space-y-3 py-6 text-center">
+                <p className="text-sm text-gray-600">Lock in your prediction to view what others picked.</p>
+                {!hasSavedPrediction ? (
+                  <p className="text-sm text-gray-500">Save your prediction first, then lock it to reveal the preview.</p>
+                ) : null}
+                {lockError ? <p className="text-sm text-red-700">{lockError}</p> : null}
+                <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
+                  <button
+                    type="button"
+                    disabled={locking || submitting}
+                    onClick={() => void onLock()}
+                    className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 shadow-sm transition-all duration-150 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    {locking ? 'Locking…' : '🔒 Lock in prediction'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPanel('predict')}
+                    className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition-all duration-150 hover:bg-gray-50"
+                  >
+                    Back to Predict
+                  </button>
+                </div>
+              </div>
             ) : null}
             {!iLocked && !predictionsOpen ? (
               <p className="py-6 text-center text-sm font-medium text-amber-900">Predictions closed</p>
