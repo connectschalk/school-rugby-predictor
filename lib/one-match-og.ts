@@ -1,5 +1,4 @@
 import { createClient } from '@supabase/supabase-js'
-import { getSchoolTeamLogoPath } from '@/lib/school-team-logos'
 
 export type OneMatchOgMatch = {
   home_team: string
@@ -14,33 +13,24 @@ function unwrapGm(row: { game_matches: unknown }): OneMatchOgMatch | null {
   return g
 }
 
-/** e.g. Saturday 9 May • 12:30 */
+/** e.g. Saturday, 09 May • 12:30 (South Africa local) */
 export function formatOneMatchKickoffOg(iso: string): string {
   try {
     const d = new Date(iso)
-    const day = d.toLocaleDateString('en-ZA', {
-      weekday: 'long',
-      day: 'numeric',
-      month: 'long',
-    })
-    const time = d.toLocaleTimeString('en-ZA', {
+    const tz = 'Africa/Johannesburg'
+    const weekday = new Intl.DateTimeFormat('en-ZA', { timeZone: tz, weekday: 'long' }).format(d)
+    const day = new Intl.DateTimeFormat('en-ZA', { timeZone: tz, day: '2-digit' }).format(d)
+    const month = new Intl.DateTimeFormat('en-ZA', { timeZone: tz, month: 'long' }).format(d)
+    const time = new Intl.DateTimeFormat('en-ZA', {
+      timeZone: tz,
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,
-    })
-    return `${day} • ${time}`
+    }).format(d)
+    return `${weekday}, ${day} ${month} • ${time}`
   } catch {
     return iso
   }
-}
-
-/** Absolute URL for team crest under `public/`. */
-export function absoluteTeamLogoUrl(teamName: string, siteOrigin: string): string {
-  const origin = siteOrigin.replace(/\/+$/, '')
-  const rel =
-    getSchoolTeamLogoPath(teamName) ??
-    `/team-logos/${teamName.trim().toLowerCase().replace(/\s+/g, '-')}.png`
-  return `${origin}${rel.startsWith('/') ? rel : `/${rel}`}`
 }
 
 export async function fetchOneMatchOgBySlug(slug: string): Promise<OneMatchOgMatch | null> {
