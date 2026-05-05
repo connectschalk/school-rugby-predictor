@@ -367,13 +367,15 @@ export default function OneMatchChallengePage() {
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-[#f6f7f9] text-gray-900">
-      <div className="mx-auto min-w-0 max-w-lg space-y-6 px-4 py-8 pb-16">
-        <div className="flex flex-col items-center text-center">
-          <Image src="/nextplay-predictor.png" alt="School Rugby Predictor" width={200} height={60} priority className="h-auto w-48" />
-          <p className="mt-3 text-xs font-semibold uppercase tracking-widest text-gray-400">One match challenge</p>
+      <div className="mx-auto min-w-0 max-w-lg space-y-4 px-4 py-8 pb-16">
+        <div className="mx-auto flex w-full max-w-xl flex-col items-center justify-center gap-2 pt-6 pb-4 text-center">
+          <div className="rounded-lg bg-white px-4 py-2">
+            <Image src="/nextplay-predictor.png" alt="School Rugby Predictor" width={200} height={60} priority className="h-10 w-auto object-contain sm:h-12" />
+          </div>
+          <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">One match challenge</p>
         </div>
 
-        <div className="rounded-2xl border border-gray-200/80 bg-gradient-to-b from-white to-gray-50 p-5 shadow-md">
+        <div className="mt-4 rounded-2xl border border-gray-200/80 bg-gradient-to-b from-white to-gray-50 p-5 shadow-md">
           <div className="flex items-start justify-center gap-2 sm:gap-4">
             <div className="flex min-w-0 flex-1 flex-col items-center gap-3">
               <div className="flex h-[5.125rem] w-[5.125rem] items-center justify-center rounded-full border border-gray-200 bg-white/80 sm:h-[5.75rem] sm:w-[5.75rem]">
