@@ -115,6 +115,44 @@ export default function OneMatchChallengePage() {
 
   const match = challenge ? unwrapGm(challenge) : null
 
+  const loadVisiblePredictions = useCallback(
+    async (tokenForRpc: string) => {
+      const { data: preds, error: pErr } = await supabase.rpc('get_one_match_predictions_visible', {
+        p_challenge_slug: slug,
+        p_browser_token: tokenForRpc,
+      })
+
+      if (pErr) {
+        setPredictionsLoadError(pErr.message)
+        setPredictions([])
+        return { list: [] as OneMatchPredictionRow[], error: pErr.message }
+      }
+
+      const list = (preds as OneMatchPredictionRow[]) ?? []
+      setPredictions(list)
+      setPredictionsLoadError('')
+      const mine = tokenForRpc.length >= 8 ? list.find((p) => p.browser_token === tokenForRpc) : undefined
+      const currentUserLocked = !!mine?.is_locked
+
+      console.info('[one-match-preview] visible predictions', {
+        browser_token: tokenForRpc,
+        predictions_returned: list,
+        currentUserLocked,
+      })
+
+      if (mine) {
+        setSavedPredictionId(mine.id)
+        setLastSavedBrowserToken(tokenForRpc)
+        setName(mine.display_name)
+        setWinner(mine.predicted_winner === 'away' ? 'away' : 'home')
+        setMargin(String(mine.predicted_margin))
+        setDuplicateHint(false)
+      }
+      return { list, error: null as string | null }
+    },
+    [slug]
+  )
+
   const loadAll = useCallback(async () => {
     if (!slug) {
       setChallenge(null)
@@ -154,32 +192,11 @@ export default function OneMatchChallengePage() {
 
     const tokenForRpc = typeof window !== 'undefined' ? getOrCreateBrowserToken(slug) : ''
     if (tokenForRpc) setMyBrowserToken(tokenForRpc)
-
-    const { data: preds, error: pErr } = await supabase.rpc('get_one_match_predictions_visible', {
-      p_challenge_slug: slug,
-      p_browser_token: tokenForRpc,
-    })
-
-    if (pErr) {
-      setPredictionsLoadError(pErr.message)
-      setPredictions([])
-    } else {
-      const list = (preds as OneMatchPredictionRow[]) ?? []
-      setPredictions(list)
-      setPredictionsLoadError('')
-      const mine = tokenForRpc.length >= 8 ? list.find((p) => p.browser_token === tokenForRpc) : undefined
-      if (mine) {
-        setSavedPredictionId(mine.id)
-        setLastSavedBrowserToken(tokenForRpc)
-        setName(mine.display_name)
-        setWinner(mine.predicted_winner === 'away' ? 'away' : 'home')
-        setMargin(String(mine.predicted_margin))
-        setDuplicateHint(false)
-        if (mine.is_locked) setPanel('preview')
-      }
-    }
+    const { list } = await loadVisiblePredictions(tokenForRpc)
+    const mine = tokenForRpc.length >= 8 ? list.find((p) => p.browser_token === tokenForRpc) : undefined
+    if (mine?.is_locked) setPanel('preview')
     setBusy(false)
-  }, [slug])
+  }, [slug, loadVisiblePredictions])
 
   useEffect(() => {
     void loadAll()
@@ -230,7 +247,11 @@ export default function OneMatchChallengePage() {
     return predictions.find((p) => p.browser_token === myBrowserToken)
   }, [predictions, myBrowserToken])
 
-  const iLocked = myPrediction?.is_locked === true
+  const currentUserLocked = useMemo(
+    () => predictions.some((p) => p.browser_token === myBrowserToken && p.is_locked),
+    [predictions, myBrowserToken]
+  )
+  const iLocked = currentUserLocked
 
   const lockedPreviewPredictions = useMemo(
     () => predictions.filter((p) => p.is_locked),
@@ -344,7 +365,12 @@ export default function OneMatchChallengePage() {
       setPredictions((prev) =>
         prev.map((p) => (p.browser_token === browserToken ? { ...p, is_locked: true } : p))
       )
-      await loadAll()
+      const visible = await loadVisiblePredictions(browserToken)
+      if (visible.error) {
+        setLockError(visible.error)
+        setLocking(false)
+        return
+      }
       setPanel('preview')
     } catch {
       console.error('[one-match-lock] network error', { slug, browser_token: browserToken })
