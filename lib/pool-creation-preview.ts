@@ -1,5 +1,6 @@
-import type { FixtureGroupRow, PoolGroupsPreview } from '@/lib/pools'
-import { slugifyGroupName } from '@/lib/fixture-group-resolve'
+import type { FixtureGroupRow, PoolGroupsPreview } from './pools'
+import { slugifyGroupName } from './fixture-group-resolve'
+import { normalizeProvinceCode, provinceCodesForFixtureGroupSlug } from './teams-sheet-province'
 
 /** Minimal match row for pool preview (client-side). */
 export type PoolPreviewMatch = {
@@ -35,6 +36,10 @@ function isProvinceStyleGroup(fg: FixtureGroupRow): boolean {
   return true
 }
 
+/**
+ * Pool previews follow the same rule as Predict: normalize `game_matches` province labels to
+ * Teams sheet codes (BUL, PUM, …) before comparing to the fixture group’s province codes.
+ */
 function fieldMatchesProvinceGroup(
   label: string | null | undefined,
   fg: FixtureGroupRow,
@@ -42,12 +47,24 @@ function fieldMatchesProvinceGroup(
 ): boolean {
   const v = (label ?? '').trim()
   if (!v) return false
+  const slug = (fg.slug ?? '').trim().toLowerCase()
+  const groupCodes = provinceCodesForFixtureGroupSlug(slug)
+  const codeSet = new Set(groupCodes)
+
+  const fieldCode = normalizeProvinceCode(v)
+  if (fieldCode && codeSet.size > 0 && codeSet.has(fieldCode)) return true
+
   const low = v.toLowerCase()
   const fgName = (fg.name ?? '').trim().toLowerCase()
   if (low === fgName) return true
-  const slug = (fg.slug ?? '').trim().toLowerCase()
   if (slug && slugifyGroupName(v) === slug) return true
   if (aliasLower.has(low)) return true
+
+  if (codeSet.size === 0 && fieldCode) {
+    const nameCode = normalizeProvinceCode(fg.name ?? '')
+    if (nameCode && fieldCode === nameCode) return true
+  }
+
   return false
 }
 

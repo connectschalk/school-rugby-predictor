@@ -1,29 +1,25 @@
 /**
  * Province / union branding logos under `public/province-logos/{CODE}.png`.
- * Matching is name + optional fixture_group slug only (no DB reads).
+ * Code normalization and display names come from `teams-sheet-province.ts` (Teams tab is master).
  */
 
-import { normalizeProvinceLabelForGameMatches } from './fixture-group-resolve'
+import {
+  getProvinceLogo,
+  matchBelongsToProvinceCode,
+  normalizeProvinceCode,
+  provinceCodesForFixtureGroupSlug,
+  resolveProvinceCodeFromLabel,
+  TEAMS_SHEET_CODE_TO_DISPLAY_NAME,
+  TEAMS_SHEET_PROVINCE_CODES,
+  type TeamsSheetProvinceCode,
+} from './teams-sheet-province'
 
-export const PROVINCE_LOGO_CODES = [
-  'WP',
-  'KZN',
-  'EP',
-  'FS',
-  'NC',
-  'GP',
-  'BUL',
-  'LEO',
-  'LIM',
-  'PUM',
-  'BL',
-  'SWD',
-] as const
+export const PROVINCE_LOGO_CODES = TEAMS_SHEET_PROVINCE_CODES
 
-export type ProvinceLogoCode = (typeof PROVINCE_LOGO_CODES)[number]
+export type ProvinceLogoCode = TeamsSheetProvinceCode
 
 /**
- * Province crest row on Predict (and similar UIs). NC remains in `PROVINCE_LOGO_CODES` for DB / mapping only.
+ * Province crest row on Predict (and similar UIs). NC remains in codes for DB / mapping only.
  * NC temporarily hidden until sufficient team coverage
  */
 export const PROVINCE_LOGO_CODES_UI_ORDER = [
@@ -43,36 +39,10 @@ export const PROVINCE_LOGO_CODES_UI_ORDER = [
 export type ProvinceLogoCodeUi = (typeof PROVINCE_LOGO_CODES_UI_ORDER)[number]
 
 /** Tooltip / `title` text for quick province filters on Predict. */
-export const PROVINCE_LOGO_TITLES: Record<ProvinceLogoCode, string> = {
-  WP: 'Western Province',
-  KZN: 'KwaZulu-Natal',
-  EP: 'Eastern Cape',
-  FS: 'Free State / Griquas',
-  NC: 'Northern Cape',
-  GP: 'Gauteng',
-  BUL: 'Blue Bulls',
-  LEO: 'Leopards',
-  LIM: 'Limpopo',
-  PUM: 'Pumas',
-  BL: 'Boland',
-  SWD: 'South Western Districts',
-}
+export const PROVINCE_LOGO_TITLES: Record<ProvinceLogoCode, string> = TEAMS_SHEET_CODE_TO_DISPLAY_NAME
 
-/** Canonical heading for province-filtered list (matches sheet → `game_matches` province labels). */
-export const PROVINCE_PREDICT_FILTER_LABEL: Record<ProvinceLogoCode, string> = {
-  WP: 'Western Province',
-  KZN: 'KwaZulu-Natal',
-  EP: 'Eastern Cape',
-  FS: 'Free State / Griquas',
-  NC: 'Northern Cape',
-  GP: 'Gauteng',
-  BUL: 'Blue Bulls',
-  PUM: 'Pumas',
-  LIM: 'Limpopo',
-  LEO: 'Leopards',
-  BL: 'Boland',
-  SWD: 'South Western Districts',
-}
+/** Canonical heading for province-filtered list (Teams sheet → `game_matches` province labels). */
+export const PROVINCE_PREDICT_FILTER_LABEL: Record<ProvinceLogoCode, string> = TEAMS_SHEET_CODE_TO_DISPLAY_NAME
 
 function norm(s: string): string {
   return s
@@ -81,25 +51,6 @@ function norm(s: string): string {
     .replace(/[/]+/g, ' ')
     .replace(/\s+/g, ' ')
 }
-
-/** norm(lower) → logo code for Predict filters (`home_team_province` / `away_team_province` only). */
-const DISPLAY_KEY_TO_CODE: Map<string, ProvinceLogoCode> = (() => {
-  const m = new Map<string, ProvinceLogoCode>()
-  const add = (s: string, code: ProvinceLogoCode) => {
-    m.set(norm(s), code)
-  }
-  for (const code of PROVINCE_LOGO_CODES) {
-    const label = PROVINCE_PREDICT_FILTER_LABEL[code]
-    add(label, code)
-    const viaNormalize = normalizeProvinceLabelForGameMatches(label)
-    if (viaNormalize) add(viaNormalize, code)
-  }
-  add('Western Cape', 'WP')
-  add('Eastern Province', 'EP')
-  add('KwaZulu Natal', 'KZN')
-  add('South Western Districts', 'SWD')
-  return m
-})()
 
 const SLUG_TO_CODE: Record<string, ProvinceLogoCode> = {
   wp: 'WP',
@@ -132,30 +83,8 @@ const SLUG_TO_CODE: Record<string, ProvinceLogoCode> = {
   'south-western-districts': 'SWD',
 }
 
-/** Multi-word and sensitive phrases first (longer / more specific). */
-const NAME_RULES: { test: (n: string) => boolean; code: ProvinceLogoCode }[] = [
-  { test: (n) => /south[-\s]western[-\s]districts?/.test(n), code: 'SWD' },
-  {
-    test: (n) =>
-      n.includes('western province') ||
-      n.includes('western cape') ||
-      /\bwp\b/.test(n),
-    code: 'WP',
-  },
-  { test: (n) => /\bkwa[-\s]?zulu[-\s]?natal\b/.test(n), code: 'KZN' },
-  { test: (n) => n.includes('eastern province') || n.includes('eastern cape'), code: 'EP' },
-  { test: (n) => n.includes('free state') || /\bgriquas\b/.test(n), code: 'FS' },
-  { test: (n) => /\bnorthern cape\b/.test(n), code: 'NC' },
-  { test: (n) => /\bgauteng\b/.test(n), code: 'GP' },
-  { test: (n) => n.includes('blue bulls'), code: 'BUL' },
-  { test: (n) => /\bleopard/.test(n), code: 'LEO' },
-  { test: (n) => /\blimpopo\b/.test(n), code: 'LIM' },
-  { test: (n) => /\bpumas\b/.test(n), code: 'PUM' },
-  { test: (n) => /\bboland\b/.test(n), code: 'BL' },
-]
-
 export function getProvinceLogoPath(code: ProvinceLogoCode): string {
-  return `/province-logos/${code}.png`
+  return getProvinceLogo(code)
 }
 
 export function isKnownProvinceLogoCode(s: string): s is ProvinceLogoCode {
@@ -164,47 +93,15 @@ export function isKnownProvinceLogoCode(s: string): s is ProvinceLogoCode {
 
 /** Resolve logo code from a section heading or fixture group display name. */
 export function resolveProvinceLogoCodeFromLabel(label: string): ProvinceLogoCode | null {
-  const n = norm(label)
-  if (!n) return null
-  for (const { test, code } of NAME_RULES) {
-    if (test(n)) return code
-  }
-  return null
+  return resolveProvinceCodeFromLabel(label)
 }
 
 /**
- * Map a single `game_matches.home_team_province` / `away_team_province` value to a logo code.
- * Uses short codes (WP, BL, …), `normalizeProvinceLabelForGameMatches`, and display-name synonyms.
- * Does not use `game_match_groups` / fixture groups.
+ * Map a single `game_matches.home_team_province` / `away_team_province` to a filter code.
+ * Normalizes sheet short codes and display names per Teams sheet master mapping.
  */
 export function matchProvinceFieldToCode(raw: string | null | undefined): ProvinceLogoCode | null {
-  const t = (raw ?? '').trim()
-  if (!t) return null
-
-  if (/^[A-Za-z]{2,4}$/.test(t)) {
-    const lower = t.toLowerCase()
-    if (lower === 'bol') return 'BL'
-    const upper = t.toUpperCase()
-    if (isKnownProvinceLogoCode(upper)) return upper
-    const normalizedShort = normalizeProvinceLabelForGameMatches(t)
-    if (normalizedShort) {
-      const fromNorm = DISPLAY_KEY_TO_CODE.get(norm(normalizedShort))
-      if (fromNorm) return fromNorm
-    }
-    return null
-  }
-
-  const viaCode = normalizeProvinceLabelForGameMatches(t)
-  const c1 = DISPLAY_KEY_TO_CODE.get(norm(viaCode))
-  if (c1) return c1
-  const c2 = DISPLAY_KEY_TO_CODE.get(norm(t))
-  if (c2) return c2
-
-  const hyphenSlug = norm(t).replace(/\s+/g, '-')
-  const c3 = SLUG_TO_CODE[hyphenSlug]
-  if (c3) return c3
-
-  return resolveProvinceLogoCodeFromLabel(t)
+  return normalizeProvinceCode(raw)
 }
 
 /** True if either team province field resolves to the same logo `code` (Predict quick filter). */
@@ -213,7 +110,7 @@ export function matchBelongsToProvinceLogoCode(
   awayTeamProvince: string | null | undefined,
   code: ProvinceLogoCode
 ): boolean {
-  return matchProvinceFieldToCode(homeTeamProvince) === code || matchProvinceFieldToCode(awayTeamProvince) === code
+  return matchBelongsToProvinceCode(homeTeamProvince, awayTeamProvince, code)
 }
 
 /**
@@ -222,13 +119,24 @@ export function matchBelongsToProvinceLogoCode(
  */
 export function resolveProvinceLogoCodeFromFixtureGroup(name: string, slug?: string | null): ProvinceLogoCode | null {
   if (slug) {
+    const fromCanon = provinceCodesForFixtureGroupSlug(slug)
+    if (fromCanon.length > 0) return fromCanon[0]!
     const s = norm(slug).replace(/\s+/g, '-')
     if (SLUG_TO_CODE[s]) return SLUG_TO_CODE[s]
     const slugSpaces = norm(slug)
     if (SLUG_TO_CODE[slugSpaces]) return SLUG_TO_CODE[slugSpaces]
   }
-  return resolveProvinceLogoCodeFromLabel(name)
+  return resolveProvinceCodeFromLabel(name)
 }
+
+/** Re-export shared Teams-sheet helpers (canonical_name + province is master). */
+export {
+  getProvinceDisplayName,
+  getProvinceLogo,
+  getTeamsForProvince,
+  normalizeProvinceCode,
+  provinceCodesForFixtureGroupSlug,
+} from './teams-sheet-province'
 
 /** Two-letter (or shorter) initials for circular fallback when no asset / image error. */
 export function provinceDisplayInitials(label: string): string {

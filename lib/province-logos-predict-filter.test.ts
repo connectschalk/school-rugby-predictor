@@ -23,6 +23,18 @@ describe('matchProvinceFieldToCode', () => {
     expect(matchProvinceFieldToCode('Free State / Griquas')).toBe('FS')
   })
 
+  it('maps BUL / PUM / LIM / LEO sheet codes and display names (Leopards ≠ Lions)', () => {
+    expect(matchProvinceFieldToCode('BUL')).toBe('BUL')
+    expect(matchProvinceFieldToCode('Blue Bulls')).toBe('BUL')
+    expect(matchProvinceFieldToCode('PUM')).toBe('PUM')
+    expect(matchProvinceFieldToCode('Pumas')).toBe('PUM')
+    expect(matchProvinceFieldToCode('LIM')).toBe('LIM')
+    expect(matchProvinceFieldToCode('Limpopo')).toBe('LIM')
+    expect(matchProvinceFieldToCode('LEO')).toBe('LEO')
+    expect(matchProvinceFieldToCode('Leopards')).toBe('LEO')
+    expect(matchProvinceFieldToCode('Lions')).toBe('GP')
+  })
+
   it('matchBelongsToProvinceLogoCode uses home/away fields only', () => {
     const code: ProvinceLogoCode = 'WP'
     expect(matchBelongsToProvinceLogoCode('WP', 'KZN', code)).toBe(true)

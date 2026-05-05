@@ -75,6 +75,9 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     const msg = error.message.toLowerCase()
+    if (msg.includes('prediction locked')) {
+      return NextResponse.json({ error: 'Your prediction is locked and cannot be changed.' }, { status: 409 })
+    }
     if (msg.includes('predictions closed') || msg.includes('challenge not found')) {
       return NextResponse.json({ error: 'Predictions are closed for this match.' }, { status: 409 })
     }

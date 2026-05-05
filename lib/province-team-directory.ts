@@ -1,22 +1,34 @@
 import { normalizeProvinceLabelForGameMatches } from './fixture-group-resolve'
+import { normalizeProvinceCode, provinceCodesForFixtureGroupSlug } from './teams-sheet-province'
 
 /**
- * Primary `teams.province` short codes (case-insensitive) for each province fixture group slug.
- * Keep aligned with `PROVINCE_CODE_TO_CANONICAL_SLUG` / sheet codes.
+ * Whether a Teams-tab `province` value belongs to this province fixture group.
+ * Prefers normalized sheet codes (BUL, PUM, …); falls back to display-name matching for legacy rows.
+ * Teams Google Sheet is the master: `teams.province` should use these short codes.
  */
-const SLUG_TO_TEAM_PROVINCE_CODES: Record<string, string[]> = {
-  'western-province': ['WP'],
-  boland: ['BL'],
-  'south-western-districts': ['SWD'],
-  'kwazulu-natal': ['KZN'],
-  'eastern-cape': ['EP'],
-  'free-state-griquas': ['FS'],
-  'northern-cape': ['NC'],
-  pumas: ['PUM'],
-  limpopo: ['LIM'],
-  leopards: ['LEO'],
-  gauteng: ['GP'],
-  'blue-bulls': ['BUL'],
+export function teamProvinceMatchesFixtureGroup(
+  teamProvinceRaw: string | null | undefined,
+  groupSlug: string,
+  groupName: string
+): boolean {
+  const raw = (teamProvinceRaw ?? '').trim()
+  if (!raw) return false
+
+  const teamCode = normalizeProvinceCode(raw)
+  const groupCodes = provinceCodesForFixtureGroupSlug(groupSlug.trim().toLowerCase())
+  if (teamCode && groupCodes.includes(teamCode)) return true
+
+  // Legacy: normalized full names vs group display name / extras
+  const slug = groupSlug.trim().toLowerCase()
+  const normalized = normalizeProvinceLabelForGameMatches(raw)
+  const labels = displayLabelsForGroup(slug, groupName)
+  if (normalized && labels.has(normFold(normalized))) return true
+  if (labels.has(normFold(raw))) return true
+  return false
+}
+
+function normFold(s: string): string {
+  return s.trim().toLowerCase().replace(/\s+/g, ' ')
 }
 
 /** Extra display strings (after `normalizeProvinceLabelForGameMatches`) that should match a slug. */
@@ -29,20 +41,8 @@ const SLUG_TO_EXTRA_DISPLAYS: Record<string, string[]> = {
   leopards: ['Leopards'],
   pumas: ['Pumas'],
   limpopo: ['Limpopo'],
+  'blue-bulls': ['Blue Bulls'],
   'northern-cape': ['Northern Cape'],
-}
-
-function normFold(s: string): string {
-  return s.trim().toLowerCase().replace(/\s+/g, ' ')
-}
-
-/**
- * Short codes accepted on `teams.province` for this fixture group (lowercase).
- */
-export function teamProvinceCodesForFixtureGroupSlug(slug: string): Set<string> {
-  const key = slug.trim().toLowerCase()
-  const list = SLUG_TO_TEAM_PROVINCE_CODES[key] ?? []
-  return new Set(list.map((c) => c.trim().toLowerCase()).filter(Boolean))
 }
 
 function displayLabelsForGroup(slug: string, groupName: string): Set<string> {
@@ -60,24 +60,8 @@ function displayLabelsForGroup(slug: string, groupName: string): Set<string> {
 }
 
 /**
- * Whether a Teams-tab `province` value belongs to this province fixture group.
- * Matches short codes (BL, WP, …) or full names normalized the same way as `game_matches` province labels.
+ * @deprecated Use `provinceCodesForFixtureGroupSlug` from `teams-sheet-province`.
  */
-export function teamProvinceMatchesFixtureGroup(
-  teamProvinceRaw: string | null | undefined,
-  groupSlug: string,
-  groupName: string
-): boolean {
-  const raw = (teamProvinceRaw ?? '').trim()
-  if (!raw) return false
-  const slug = groupSlug.trim().toLowerCase()
-  const codes = teamProvinceCodesForFixtureGroupSlug(slug)
-  const lower = raw.toLowerCase()
-  if (/^[a-z]{2,4}$/.test(lower) && codes.has(lower)) return true
-
-  const normalized = normalizeProvinceLabelForGameMatches(raw)
-  const labels = displayLabelsForGroup(slug, groupName)
-  if (normalized && labels.has(normFold(normalized))) return true
-  if (labels.has(normFold(raw))) return true
-  return false
+export function teamProvinceCodesForFixtureGroupSlug(slug: string): Set<string> {
+  return new Set(provinceCodesForFixtureGroupSlug(slug).map((c) => c.toLowerCase()))
 }

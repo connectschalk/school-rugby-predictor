@@ -155,7 +155,7 @@ export default function AdminOneMatchChallengesPage() {
   const loadPredictions = useCallback(async (challengeId: string) => {
     const { data, error } = await supabase
       .from('one_match_predictions')
-      .select('id, challenge_id, display_name, predicted_winner, predicted_margin, created_at, updated_at')
+      .select('id, challenge_id, display_name, predicted_winner, predicted_margin, is_locked, created_at, updated_at')
       .eq('challenge_id', challengeId)
       .order('created_at', { ascending: true })
     if (error) {
@@ -405,6 +405,7 @@ export default function AdminOneMatchChallengesPage() {
                               <th className="py-2 pr-4 font-medium">Name</th>
                               <th className="py-2 pr-4 font-medium">Winner</th>
                               <th className="py-2 pr-4 font-medium">Margin</th>
+                              <th className="py-2 pr-4 font-medium">Locked</th>
                               <th className="py-2 font-medium">Submitted</th>
                             </tr>
                           </thead>
@@ -416,6 +417,7 @@ export default function AdminOneMatchChallengesPage() {
                                   {gm ? (p.predicted_winner === 'home' ? gm.home_team : gm.away_team) : p.predicted_winner}
                                 </td>
                                 <td className="py-2 pr-4">{p.predicted_margin}</td>
+                                <td className="py-2 pr-4 text-gray-700">{p.is_locked ? 'Yes' : 'No'}</td>
                                 <td className="py-2 text-gray-600">
                                   {new Date(p.created_at).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })}
                                 </td>

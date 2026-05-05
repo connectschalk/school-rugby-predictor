@@ -100,6 +100,8 @@ export default function OneMatchChallengePage() {
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
   const [duplicateHint, setDuplicateHint] = useState(false)
+  const [locking, setLocking] = useState(false)
+  const [lockError, setLockError] = useState('')
   const [panel, setPanel] = useState<Panel>('predict')
   const [nowTick, setNowTick] = useState(() => Date.now())
 
@@ -146,17 +148,21 @@ export default function OneMatchChallengePage() {
     const row = ch as ChallengeRow
     setChallenge(row)
 
-    const { data: preds, error: pErr } = await supabase
-      .from('one_match_predictions')
-      .select('id, challenge_id, display_name, predicted_winner, predicted_margin, browser_token, ip_hash, created_at, updated_at')
-      .eq('challenge_id', row.id)
-      .order('created_at', { ascending: true })
+    const browserToken = typeof window !== 'undefined' ? getOrCreateBrowserToken(slug) : ''
+    if (browserToken) setMyBrowserToken(browserToken)
+    const { data: preds, error: pErr } = await supabase.rpc('get_one_match_predictions_visible', {
+      p_challenge_slug: slug,
+      p_browser_token: browserToken,
+    })
 
     if (pErr) {
       setLoadError(pErr.message)
       setPredictions([])
     } else {
-      setPredictions((preds as OneMatchPredictionRow[]) ?? [])
+      const list = (preds as OneMatchPredictionRow[]) ?? []
+      setPredictions(list)
+      const mine = list.find((p) => p.browser_token === browserToken)
+      if (mine?.is_locked) setPanel('preview')
     }
     setBusy(false)
   }, [slug])
@@ -202,21 +208,73 @@ export default function OneMatchChallengePage() {
     return true
   }, [match])
 
+  const myPrediction = useMemo(() => {
+    if (myBrowserToken.length < 8) return undefined
+    return predictions.find((p) => p.browser_token === myBrowserToken)
+  }, [predictions, myBrowserToken])
+
+  const iLocked = myPrediction?.is_locked === true
+
+  const lockedPreviewPredictions = useMemo(
+    () => predictions.filter((p) => p.is_locked),
+    [predictions]
+  )
+
   const ranked = useMemo(() => {
     if (!match || !resultsAvailable) return []
     const w = actualWinnerFromScores(match.home_score, match.away_score)
     if (!w) return []
     const actualM = actualPointMargin(match.home_score!, match.away_score!, w)
-    return rankPredictionsForResults(predictions, w, actualM)
+    const committed = predictions.filter((p) => p.is_locked)
+    return rankPredictionsForResults(committed, w, actualM)
   }, [match, predictions, resultsAvailable])
 
   const podium = useMemo(() => podiumGroups(ranked), [ranked])
+
+  async function onLock() {
+    setLockError('')
+    if (!slug || !predictionsOpen) return
+    const browserToken = getOrCreateBrowserToken(slug)
+    if (!predictions.some((p) => p.browser_token === browserToken)) {
+      setLockError('Save your prediction first.')
+      return
+    }
+    setLocking(true)
+    try {
+      const { error } = await supabase.rpc('lock_one_match_prediction', {
+        p_challenge_slug: slug,
+        p_browser_token: browserToken,
+      })
+      if (error) {
+        const m = error.message.toLowerCase()
+        if (m.includes('predictions closed') || m.includes('challenge not found')) {
+          setLockError('Predictions closed')
+        } else if (m.includes('no prediction')) {
+          setLockError('Save your prediction first.')
+        } else {
+          setLockError(error.message)
+        }
+        setLocking(false)
+        return
+      }
+      await loadAll()
+      setPanel('preview')
+    } catch {
+      setLockError('Network error. Try again.')
+    }
+    setLocking(false)
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSubmitError('')
     setDuplicateHint(false)
+    setLockError('')
     if (!slug) return
+    if (iLocked) {
+      setSubmitError('Your prediction is locked and cannot be changed.')
+      return
+    }
     const m = Number(margin)
     if (!name.trim()) {
       setSubmitError('Please enter your name.')
@@ -280,7 +338,8 @@ export default function OneMatchChallengePage() {
 
   const hasSavedPrediction =
     myBrowserToken.length >= 8 && predictions.some((p) => p.browser_token === myBrowserToken)
-  const predictLabel = hasSavedPrediction ? 'Update' : 'Predict'
+  const predictLabel = iLocked ? 'Locked in' : hasSavedPrediction ? 'Update' : 'Predict'
+  const formDisabled = !predictionsOpen || iLocked
 
   return (
     <div className="min-h-screen bg-[#f6f7f9] text-gray-900">
@@ -310,7 +369,7 @@ export default function OneMatchChallengePage() {
           </div>
           <p className="mt-4 text-center text-sm text-gray-600">{formatKickoff(match.kickoff_time)}</p>
           {!predictionsOpen ? (
-            <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-center text-xs text-amber-900">Predictions are closed.</p>
+            <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-center text-xs text-amber-900">Predictions closed</p>
           ) : null}
         </div>
 
@@ -348,6 +407,12 @@ export default function OneMatchChallengePage() {
         {panel === 'predict' ? (
           <form onSubmit={onSubmit} className="mt-8 space-y-5 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
             {submitError ? <p className="text-sm text-red-700">{submitError}</p> : null}
+            {lockError ? <p className="text-sm text-red-700">{lockError}</p> : null}
+            {iLocked && predictionsOpen ? (
+              <p className="rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-700">
+                You’ve locked in. Open Preview predictions to see what others picked.
+              </p>
+            ) : null}
             {duplicateHint ? (
               <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-950">
                 You may already have predicted. Update your existing prediction if this is you.
@@ -361,7 +426,7 @@ export default function OneMatchChallengePage() {
                 onChange={(e) => setName(e.target.value)}
                 maxLength={120}
                 autoComplete="name"
-                disabled={!predictionsOpen}
+                disabled={formDisabled}
               />
             </div>
             <div>
@@ -369,7 +434,7 @@ export default function OneMatchChallengePage() {
               <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <button
                   type="button"
-                  disabled={!predictionsOpen}
+                  disabled={formDisabled}
                   onClick={() => setWinner('home')}
                   className={`flex items-center gap-3 rounded-xl border-2 px-3 py-3 text-left text-sm font-semibold transition ${
                     winner === 'home' ? 'border-black bg-gray-50' : 'border-gray-200 bg-white'
@@ -382,7 +447,7 @@ export default function OneMatchChallengePage() {
                 </button>
                 <button
                   type="button"
-                  disabled={!predictionsOpen}
+                  disabled={formDisabled}
                   onClick={() => setWinner('away')}
                   className={`flex items-center gap-3 rounded-xl border-2 px-3 py-3 text-left text-sm font-semibold transition ${
                     winner === 'away' ? 'border-black bg-gray-50' : 'border-gray-200 bg-white'
@@ -404,49 +469,73 @@ export default function OneMatchChallengePage() {
                 className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-base"
                 value={margin}
                 onChange={(e) => setMargin(e.target.value)}
-                disabled={!predictionsOpen}
+                disabled={formDisabled}
               />
             </div>
             <button
               type="submit"
-              disabled={!predictionsOpen || submitting}
+              disabled={formDisabled || submitting}
               className="w-full rounded-xl bg-red-700 py-3.5 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-50"
             >
               {submitting ? 'Saving…' : predictLabel}
+            </button>
+            <button
+              type="button"
+              disabled={!predictionsOpen || !hasSavedPrediction || iLocked || locking || submitting}
+              onClick={() => void onLock()}
+              className="w-full rounded-xl border border-gray-300 bg-white py-3 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+            >
+              {locking ? 'Locking…' : '🔒 Lock in prediction'}
             </button>
           </form>
         ) : null}
 
         {panel === 'preview' ? (
           <div className="mt-8 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b border-gray-200 bg-gray-50 text-gray-600">
-                    <th className="px-4 py-3 font-semibold">Name</th>
-                    <th className="px-4 py-3 font-semibold">Winner</th>
-                    <th className="px-4 py-3 font-semibold">Margin</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {predictions.length === 0 ? (
-                    <tr>
-                      <td colSpan={3} className="px-4 py-8 text-center text-gray-500">
-                        No predictions yet.
-                      </td>
+            {!iLocked && predictionsOpen ? (
+              <p className="px-4 py-8 text-center text-sm text-gray-600">
+                Lock in your prediction to see what others picked.
+              </p>
+            ) : null}
+            {!iLocked && !predictionsOpen ? (
+              <p className="px-4 py-8 text-center text-sm text-amber-900">Predictions closed</p>
+            ) : null}
+            {iLocked ? (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 bg-gray-50 text-gray-600">
+                      <th className="px-4 py-3 font-semibold">Name</th>
+                      <th className="px-4 py-3 font-semibold">Winner</th>
+                      <th className="px-4 py-3 font-semibold">Margin</th>
                     </tr>
-                  ) : (
-                    predictions.map((p) => (
-                      <tr key={p.id} className="border-b border-gray-100">
-                        <td className="px-4 py-2.5">{p.display_name}</td>
-                        <td className="px-4 py-2.5">{winnerLabel(match, p.predicted_winner)}</td>
-                        <td className="px-4 py-2.5">{p.predicted_margin}</td>
+                  </thead>
+                  <tbody>
+                    {lockedPreviewPredictions.length === 0 ? (
+                      <tr>
+                        <td colSpan={3} className="px-4 py-8 text-center text-gray-500">
+                          No locked predictions yet.
+                        </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                    ) : (
+                      lockedPreviewPredictions.map((p) => {
+                        const isMe = p.browser_token === myBrowserToken
+                        return (
+                          <tr
+                            key={p.id}
+                            className={`border-b border-gray-100 ${isMe ? 'bg-red-50/90' : ''}`}
+                          >
+                            <td className="px-4 py-2.5">{p.display_name}</td>
+                            <td className="px-4 py-2.5">{winnerLabel(match, p.predicted_winner)}</td>
+                            <td className="px-4 py-2.5">{p.predicted_margin}</td>
+                          </tr>
+                        )
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
           </div>
         ) : null}
 

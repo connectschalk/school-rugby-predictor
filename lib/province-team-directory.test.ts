@@ -19,4 +19,10 @@ describe('teamProvinceMatchesFixtureGroup', () => {
   it('does not treat Lions as Leopards (LEO code is Leopards only)', () => {
     expect(teamProvinceMatchesFixtureGroup('Lions', 'leopards', 'Leopards')).toBe(false)
   })
+
+  it('matches BUL / PUM / LIM / LEO to their fixture group slugs', () => {
+    expect(teamProvinceMatchesFixtureGroup('BUL', 'blue-bulls', 'Blue Bulls')).toBe(true)
+    expect(teamProvinceMatchesFixtureGroup('PUM', 'pumas', 'Pumas')).toBe(true)
+    expect(teamProvinceMatchesFixtureGroup('LIM', 'limpopo', 'Limpopo')).toBe(true)
+  })
 })

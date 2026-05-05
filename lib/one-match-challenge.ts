@@ -15,6 +15,7 @@ export type OneMatchPredictionRow = {
   predicted_margin: number
   browser_token: string
   ip_hash: string | null
+  is_locked: boolean
   created_at: string
   updated_at: string
 }

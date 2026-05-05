@@ -18,6 +18,7 @@ import {
   type TeamDbRowForPicker,
 } from '@/lib/pool-picker-teams'
 import { teamProvinceMatchesFixtureGroup } from '@/lib/province-team-directory'
+import { getTeamsForProvince, provinceCodesForFixtureGroupSlug } from '@/lib/teams-sheet-province'
 import {
   deletePool,
   fetchFixtureGroups,
@@ -242,11 +243,21 @@ export default function ManagePoolsPage() {
           if (trimmed) merged.add(trimmed)
         }
         const gt = (g.group_type ?? '').toLowerCase()
+        // Teams Google Sheet (`teams.province`) is the master; prefer normalized codes over fixture_group_teams alone.
         if (gt === 'province') {
-          for (const row of teamRows) {
-            const display = pickTeamsTabDisplayCanonical(row)
-            if (!display) continue
-            if (teamProvinceMatchesFixtureGroup(row.province, g.slug, g.name)) merged.add(display)
+          const codes = provinceCodesForFixtureGroupSlug(g.slug ?? '')
+          if (codes.length > 0) {
+            for (const code of codes) {
+              for (const name of getTeamsForProvince(code, teamRows, pickTeamsTabDisplayCanonical)) {
+                merged.add(name)
+              }
+            }
+          } else {
+            for (const row of teamRows) {
+              const display = pickTeamsTabDisplayCanonical(row)
+              if (!display) continue
+              if (teamProvinceMatchesFixtureGroup(row.province, g.slug, g.name)) merged.add(display)
+            }
           }
         }
         const names = [...merged]
