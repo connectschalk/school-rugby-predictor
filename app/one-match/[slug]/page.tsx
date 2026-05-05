@@ -15,6 +15,7 @@ import {
 } from '@/lib/one-match-challenge'
 import { getSchoolTeamLogoPath } from '@/lib/school-team-logos'
 import { supabase } from '@/lib/supabase'
+import { getLightTint, getTeamColor } from '@/lib/teamColors'
 
 type GameMatchEmbed = {
   id: string
@@ -370,7 +371,9 @@ export default function OneMatchChallengePage() {
       <div className="mx-auto min-w-0 max-w-lg space-y-4 px-4 py-8 pb-16">
         <div className="mx-auto flex w-full max-w-xl flex-col items-center justify-center gap-2 pt-6 pb-4 text-center">
           <div className="rounded-lg bg-white px-4 py-2">
-            <Image src="/nextplay-predictor.png" alt="School Rugby Predictor" width={200} height={60} priority className="h-10 w-auto object-contain sm:h-12" />
+            <Link href="/" className="cursor-pointer transition hover:opacity-80">
+              <Image src="/nextplay-predictor.png" alt="School Rugby Predictor" width={200} height={60} priority className="h-10 w-auto object-contain sm:h-12" />
+            </Link>
           </div>
           <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">One match challenge</p>
         </div>
@@ -558,12 +561,22 @@ export default function OneMatchChallengePage() {
                 ) : (
                   lockedPreviewPredictions.map((p) => {
                     const isMe = p.browser_token === myBrowserToken
+                    const selectedTeamName = p.predicted_winner === 'home' ? match.home_team : match.away_team
+                    const selectedTeamColor = isMe ? getTeamColor(selectedTeamName) : undefined
                     return (
                       <div
                         key={p.id}
                         className={`flex min-w-0 items-center justify-between gap-3 rounded-xl px-4 py-3 text-sm shadow-sm transition-all duration-150 ${
                           isMe ? 'border border-red-200 bg-red-50' : 'border border-gray-100 bg-white'
                         }`}
+                        style={
+                          isMe && selectedTeamColor
+                            ? {
+                                backgroundColor: getLightTint(selectedTeamColor),
+                                borderColor: `${selectedTeamColor}40`,
+                              }
+                            : undefined
+                        }
                       >
                         <span className="min-w-0 truncate font-semibold text-gray-900">{p.display_name}</span>
                         <span className="shrink-0 text-right text-gray-600">
