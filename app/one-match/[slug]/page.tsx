@@ -342,42 +342,42 @@ export default function OneMatchChallengePage() {
   const formDisabled = !predictionsOpen || iLocked
 
   return (
-    <div className="min-h-screen bg-[#f6f7f9] text-gray-900">
-      <div className="mx-auto max-w-lg px-4 py-8 pb-16">
-        <div className="mb-8 flex flex-col items-center text-center">
+    <div className="min-h-screen overflow-x-hidden bg-[#f6f7f9] text-gray-900">
+      <div className="mx-auto min-w-0 max-w-lg space-y-6 px-4 py-8 pb-16">
+        <div className="flex flex-col items-center text-center">
           <Image src="/nextplay-predictor.png" alt="School Rugby Predictor" width={200} height={60} priority className="h-auto w-48" />
-          <p className="mt-3 text-xs font-medium uppercase tracking-wide text-gray-500">One match challenge</p>
+          <p className="mt-3 text-xs font-semibold uppercase tracking-widest text-gray-400">One match challenge</p>
         </div>
 
-        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-          <div className="flex items-start justify-center gap-3 sm:gap-5">
-            <div className="flex min-w-0 flex-1 flex-col items-center gap-2">
-              <div className="flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-full border border-gray-200 bg-gray-50 sm:h-20 sm:w-20">
-                <TeamCrestImg teamName={match.home_team} className="h-[3.25rem] w-[3.25rem] sm:h-14 sm:w-14" />
+        <div className="rounded-2xl border border-gray-200/80 bg-gradient-to-b from-white to-gray-50 p-5 shadow-md">
+          <div className="flex items-start justify-center gap-2 sm:gap-4">
+            <div className="flex min-w-0 flex-1 flex-col items-center gap-3">
+              <div className="flex h-[5.125rem] w-[5.125rem] items-center justify-center rounded-full border border-gray-200 bg-white/80 sm:h-[5.75rem] sm:w-[5.75rem]">
+                <TeamCrestImg teamName={match.home_team} className="h-[3.6rem] w-[3.6rem] sm:h-16 sm:w-16" />
               </div>
               <p className="w-full text-center text-xs font-bold leading-tight text-gray-900 sm:text-sm">{match.home_team}</p>
             </div>
-            <div className="flex shrink-0 flex-col items-center justify-center pt-8 sm:pt-10">
-              <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">vs</span>
+            <div className="flex shrink-0 flex-col items-center justify-center self-center pt-2 sm:pt-4">
+              <span className="text-[10px] font-medium uppercase tracking-tight text-gray-400 sm:text-[11px]">vs</span>
             </div>
-            <div className="flex min-w-0 flex-1 flex-col items-center gap-2">
-              <div className="flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-full border border-gray-200 bg-gray-50 sm:h-20 sm:w-20">
-                <TeamCrestImg teamName={match.away_team} className="h-[3.25rem] w-[3.25rem] sm:h-14 sm:w-14" />
+            <div className="flex min-w-0 flex-1 flex-col items-center gap-3">
+              <div className="flex h-[5.125rem] w-[5.125rem] items-center justify-center rounded-full border border-gray-200 bg-white/80 sm:h-[5.75rem] sm:w-[5.75rem]">
+                <TeamCrestImg teamName={match.away_team} className="h-[3.6rem] w-[3.6rem] sm:h-16 sm:w-16" />
               </div>
               <p className="w-full text-center text-xs font-bold leading-tight text-gray-900 sm:text-sm">{match.away_team}</p>
             </div>
           </div>
-          <p className="mt-4 text-center text-sm text-gray-600">{formatKickoff(match.kickoff_time)}</p>
+          <p className="mt-5 text-center text-sm font-medium text-gray-500">{formatKickoff(match.kickoff_time)}</p>
           {!predictionsOpen ? (
-            <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-center text-xs text-amber-900">Predictions closed</p>
+            <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-center text-xs font-medium text-amber-900">Predictions closed</p>
           ) : null}
         </div>
 
-        <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+        <div className="inline-flex w-full min-w-0 rounded-xl bg-gray-100 p-1">
           <button
             type="button"
-            className={`flex-1 rounded-xl px-4 py-3 text-sm font-semibold sm:flex-none ${
-              panel === 'predict' ? 'bg-black text-white shadow-sm' : 'border border-gray-300 bg-white text-gray-800'
+            className={`min-w-0 flex-1 rounded-lg px-2 py-2.5 text-sm font-semibold transition-all duration-150 sm:px-3 ${
+              panel === 'predict' ? 'bg-black text-white shadow-sm' : 'bg-transparent text-gray-600'
             }`}
             onClick={() => setPanel('predict')}
           >
@@ -385,8 +385,8 @@ export default function OneMatchChallengePage() {
           </button>
           <button
             type="button"
-            className={`flex-1 rounded-xl px-4 py-3 text-sm font-semibold sm:flex-none ${
-              panel === 'preview' ? 'bg-black text-white shadow-sm' : 'border border-gray-300 bg-white text-gray-800'
+            className={`min-w-0 flex-1 rounded-lg px-2 py-2.5 text-sm font-semibold transition-all duration-150 sm:px-3 ${
+              panel === 'preview' ? 'bg-black text-white shadow-sm' : 'bg-transparent text-gray-600'
             }`}
             onClick={() => setPanel('preview')}
           >
@@ -395,8 +395,8 @@ export default function OneMatchChallengePage() {
           <button
             type="button"
             disabled={!resultsAvailable}
-            className={`flex-1 rounded-xl px-4 py-3 text-sm font-semibold sm:flex-none ${
-              panel === 'results' ? 'bg-black text-white shadow-sm' : 'border border-gray-300 bg-white text-gray-800'
+            className={`min-w-0 flex-1 rounded-lg px-2 py-2.5 text-sm font-semibold transition-all duration-150 sm:px-3 ${
+              panel === 'results' ? 'bg-black text-white shadow-sm' : 'bg-transparent text-gray-600'
             } disabled:cursor-not-allowed disabled:opacity-40`}
             onClick={() => resultsAvailable && setPanel('results')}
           >
@@ -405,23 +405,32 @@ export default function OneMatchChallengePage() {
         </div>
 
         {panel === 'predict' ? (
-          <form onSubmit={onSubmit} className="mt-8 space-y-5 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-            {submitError ? <p className="text-sm text-red-700">{submitError}</p> : null}
-            {lockError ? <p className="text-sm text-red-700">{lockError}</p> : null}
-            {iLocked && predictionsOpen ? (
-              <p className="rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-700">
-                You’ve locked in. Open Preview predictions to see what others picked.
-              </p>
+          <form onSubmit={onSubmit} className="space-y-5 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            {submitError ? <p className="text-sm font-medium text-red-700">{submitError}</p> : null}
+            {lockError ? <p className="text-sm font-medium text-red-700">{lockError}</p> : null}
+            {iLocked && myPrediction ? (
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                <p className="text-sm font-semibold text-gray-900">🔒 Prediction locked</p>
+                <p className="mt-2 text-sm text-gray-600">
+                  You picked:{' '}
+                  <span className="font-semibold text-gray-900">
+                    {winnerLabel(match, myPrediction.predicted_winner)} by {myPrediction.predicted_margin}
+                  </span>
+                </p>
+                {predictionsOpen ? (
+                  <p className="mt-2 text-xs text-gray-500">Open Preview to see what others picked.</p>
+                ) : null}
+              </div>
             ) : null}
             {duplicateHint ? (
-              <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-950">
+              <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-950">
                 You may already have predicted. Update your existing prediction if this is you.
               </p>
             ) : null}
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Your name</label>
+            <div className={iLocked ? 'pointer-events-none opacity-60' : ''}>
+              <label className="block text-sm font-semibold text-gray-800">Your name</label>
               <input
-                className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-base"
+                className="mt-1.5 w-full rounded-xl border-0 bg-gray-50 px-4 py-3 text-base transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-black"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 maxLength={120}
@@ -429,18 +438,24 @@ export default function OneMatchChallengePage() {
                 disabled={formDisabled}
               />
             </div>
-            <div>
-              <p className="text-sm font-medium text-gray-700">Winning team</p>
-              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className={iLocked ? 'pointer-events-none opacity-60' : ''}>
+              <p className="text-sm font-semibold text-gray-800">Winning team</p>
+              <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <button
                   type="button"
                   disabled={formDisabled}
                   onClick={() => setWinner('home')}
-                  className={`flex items-center gap-3 rounded-xl border-2 px-3 py-3 text-left text-sm font-semibold transition ${
-                    winner === 'home' ? 'border-black bg-gray-50' : 'border-gray-200 bg-white'
+                  className={`flex items-center gap-3 rounded-xl border px-4 py-4 text-left text-sm font-semibold transition-all duration-150 ${
+                    winner === 'home'
+                      ? 'scale-[1.02] border-black bg-black text-white shadow-md'
+                      : 'border-gray-200 bg-white'
                   } disabled:opacity-50`}
                 >
-                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white">
+                  <span
+                    className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full border bg-white ${
+                      winner === 'home' ? 'border-white/30 bg-white/15' : 'border-gray-200'
+                    }`}
+                  >
                     <TeamCrestImg teamName={match.home_team} className="h-9 w-9" />
                   </span>
                   <span className="min-w-0 flex-1 leading-snug">{match.home_team}</span>
@@ -449,24 +464,30 @@ export default function OneMatchChallengePage() {
                   type="button"
                   disabled={formDisabled}
                   onClick={() => setWinner('away')}
-                  className={`flex items-center gap-3 rounded-xl border-2 px-3 py-3 text-left text-sm font-semibold transition ${
-                    winner === 'away' ? 'border-black bg-gray-50' : 'border-gray-200 bg-white'
+                  className={`flex items-center gap-3 rounded-xl border px-4 py-4 text-left text-sm font-semibold transition-all duration-150 ${
+                    winner === 'away'
+                      ? 'scale-[1.02] border-black bg-black text-white shadow-md'
+                      : 'border-gray-200 bg-white'
                   } disabled:opacity-50`}
                 >
-                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white">
+                  <span
+                    className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full border bg-white ${
+                      winner === 'away' ? 'border-white/30 bg-white/15' : 'border-gray-200'
+                    }`}
+                  >
                     <TeamCrestImg teamName={match.away_team} className="h-9 w-9" />
                   </span>
                   <span className="min-w-0 flex-1 leading-snug">{match.away_team}</span>
                 </button>
               </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Winning margin (points)</label>
+            <div className={iLocked ? 'pointer-events-none opacity-60' : ''}>
+              <label className="block text-sm font-semibold text-gray-800">Winning margin (points)</label>
               <input
                 type="number"
                 min={1}
                 max={200}
-                className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2.5 text-base"
+                className="mt-1.5 w-full rounded-xl border-0 bg-gray-50 py-4 text-center text-2xl font-semibold tabular-nums transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-black"
                 value={margin}
                 onChange={(e) => setMargin(e.target.value)}
                 disabled={formDisabled}
@@ -475,7 +496,7 @@ export default function OneMatchChallengePage() {
             <button
               type="submit"
               disabled={formDisabled || submitting}
-              className="w-full rounded-xl bg-red-700 py-3.5 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-50"
+              className="w-full rounded-xl bg-black py-4 text-sm font-semibold text-white shadow-md transition-all duration-150 hover:scale-[1.01] active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 disabled:hover:scale-100"
             >
               {submitting ? 'Saving…' : predictLabel}
             </button>
@@ -483,7 +504,7 @@ export default function OneMatchChallengePage() {
               type="button"
               disabled={!predictionsOpen || !hasSavedPrediction || iLocked || locking || submitting}
               onClick={() => void onLock()}
-              className="w-full rounded-xl border border-gray-300 bg-white py-3 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+              className="w-full rounded-xl border border-gray-200 bg-white py-3.5 text-sm font-semibold text-gray-800 shadow-sm transition-all duration-150 hover:scale-[1.01] hover:bg-gray-50 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 disabled:hover:scale-100"
             >
               {locking ? 'Locking…' : '🔒 Lock in prediction'}
             </button>
@@ -491,79 +512,82 @@ export default function OneMatchChallengePage() {
         ) : null}
 
         {panel === 'preview' ? (
-          <div className="mt-8 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
             {!iLocked && predictionsOpen ? (
-              <p className="px-4 py-8 text-center text-sm text-gray-600">
-                Lock in your prediction to see what others picked.
-              </p>
+              <p className="py-6 text-center text-sm text-gray-500">Lock in your prediction to see what others picked.</p>
             ) : null}
             {!iLocked && !predictionsOpen ? (
-              <p className="px-4 py-8 text-center text-sm text-amber-900">Predictions closed</p>
+              <p className="py-6 text-center text-sm font-medium text-amber-900">Predictions closed</p>
             ) : null}
             {iLocked ? (
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-200 bg-gray-50 text-gray-600">
-                      <th className="px-4 py-3 font-semibold">Name</th>
-                      <th className="px-4 py-3 font-semibold">Winner</th>
-                      <th className="px-4 py-3 font-semibold">Margin</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {lockedPreviewPredictions.length === 0 ? (
-                      <tr>
-                        <td colSpan={3} className="px-4 py-8 text-center text-gray-500">
-                          No locked predictions yet.
-                        </td>
-                      </tr>
-                    ) : (
-                      lockedPreviewPredictions.map((p) => {
-                        const isMe = p.browser_token === myBrowserToken
-                        return (
-                          <tr
-                            key={p.id}
-                            className={`border-b border-gray-100 ${isMe ? 'bg-red-50/90' : ''}`}
-                          >
-                            <td className="px-4 py-2.5">{p.display_name}</td>
-                            <td className="px-4 py-2.5">{winnerLabel(match, p.predicted_winner)}</td>
-                            <td className="px-4 py-2.5">{p.predicted_margin}</td>
-                          </tr>
-                        )
-                      })
-                    )}
-                  </tbody>
-                </table>
+              <div className="space-y-3">
+                {lockedPreviewPredictions.length === 0 ? (
+                  <p className="py-6 text-center text-sm text-gray-500">No locked predictions yet.</p>
+                ) : (
+                  lockedPreviewPredictions.map((p) => {
+                    const isMe = p.browser_token === myBrowserToken
+                    return (
+                      <div
+                        key={p.id}
+                        className={`flex min-w-0 items-center justify-between gap-3 rounded-xl px-4 py-3 text-sm shadow-sm transition-all duration-150 ${
+                          isMe ? 'border border-red-200 bg-red-50' : 'border border-gray-100 bg-white'
+                        }`}
+                      >
+                        <span className="min-w-0 truncate font-semibold text-gray-900">{p.display_name}</span>
+                        <span className="shrink-0 text-right text-gray-600">
+                          <span className="font-medium text-gray-800">{winnerLabel(match, p.predicted_winner)}</span>
+                          <span className="text-gray-400"> · </span>
+                          <span className="tabular-nums text-gray-800">{p.predicted_margin}</span>
+                        </span>
+                      </div>
+                    )
+                  })
+                )}
               </div>
             ) : null}
           </div>
         ) : null}
 
         {panel === 'results' && resultsAvailable ? (
-          <div className="mt-8 space-y-6">
+          <div className="space-y-6">
             {actualWinnerFromScores(match.home_score, match.away_score) === null ? (
-              <p className="rounded-2xl border border-gray-200 bg-white p-5 text-center text-sm text-gray-700">
-                This match ended in a draw. There is no winner ranking.
-              </p>
+              <div className="rounded-2xl bg-gradient-to-b from-gray-50 to-white p-6 text-center shadow-md">
+                <p className="text-sm font-medium text-gray-600">
+                  This match ended in a draw. There is no winner ranking.
+                </p>
+              </div>
             ) : (
-              <>
+              <div className="rounded-2xl bg-gradient-to-b from-gray-50 to-white p-6 text-center shadow-md">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-center sm:gap-3">
                   {(podium.length === 3 ? [podium[1], podium[0], podium[2]] : podium).map((tier, idx) => {
                     const labelOrder = podium.length === 3 ? ['2nd', '1st', '3rd'] : ['1st', '2nd', '3rd']
                     const heights = podium.length === 3 ? ['h-28', 'h-40', 'h-24'] : ['h-32', 'h-36', 'h-28']
                     const h = heights[idx] ?? 'h-28'
                     const label = labelOrder[idx] ?? `${idx + 1}`
+                    const isFirst = label === '1st'
                     return (
                       <div
                         key={`${tier.rank}-${label}`}
-                        className="flex min-w-0 flex-1 flex-col rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"
+                        className="flex min-w-0 flex-1 flex-col rounded-2xl border border-gray-200/80 bg-white/90 p-4 shadow-sm"
                       >
-                        <p className="text-center text-xs font-bold uppercase tracking-wide text-gray-500">{label}</p>
-                        <div className={`mt-3 flex flex-col justify-end rounded-lg bg-gradient-to-b from-red-50 to-white ${h}`}>
+                        <p
+                          className={`text-center font-bold uppercase tracking-wide text-gray-500 ${
+                            isFirst ? 'text-sm' : 'text-xs'
+                          }`}
+                        >
+                          {label}
+                        </p>
+                        <div className={`mt-3 flex flex-col justify-end rounded-xl bg-gradient-to-b from-red-50/80 to-white ${h}`}>
                           {tier.rows.map((r) => (
                             <div key={r.id} className="border-t border-gray-100 px-2 py-2 text-center first:border-t-0">
-                              <p className="font-semibold text-gray-900">{r.display_name}</p>
-                              <p className="text-xs text-gray-600">
+                              <p
+                                className={`font-semibold text-gray-900 ${
+                                  isFirst ? 'text-base sm:text-lg' : 'text-sm'
+                                }`}
+                              >
+                                {r.display_name}
+                              </p>
+                              <p className={`text-gray-500 ${isFirst ? 'text-sm' : 'text-xs'}`}>
                                 {winnerLabel(match, r.predicted_winner)} by {r.predicted_margin}
                               </p>
                             </div>
@@ -574,39 +598,39 @@ export default function OneMatchChallengePage() {
                   })}
                 </div>
                 {podium.length === 0 ? (
-                  <p className="text-center text-sm text-gray-600">No one picked the winning team.</p>
+                  <p className="mt-4 text-sm text-gray-500">No one picked the winning team.</p>
                 ) : null}
-                <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-                  <p className="border-b border-gray-100 bg-gray-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-gray-600">
+                <div className="mt-6 overflow-hidden rounded-2xl border border-gray-200/80 bg-white text-left shadow-sm">
+                  <p className="border-b border-gray-100 bg-gray-50/80 px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-gray-500">
                     Full ranking
                   </p>
                   <div className="overflow-x-auto">
                     <table className="min-w-full text-left text-sm">
                       <thead>
-                        <tr className="border-b border-gray-200 text-gray-600">
-                          <th className="px-4 py-2 font-medium">#</th>
-                          <th className="px-4 py-2 font-medium">Name</th>
-                          <th className="px-4 py-2 font-medium">Pick</th>
-                          <th className="px-4 py-2 font-medium">Margin</th>
+                        <tr className="border-b border-gray-200 text-gray-500">
+                          <th className="px-4 py-2.5 font-semibold">#</th>
+                          <th className="px-4 py-2.5 font-semibold">Name</th>
+                          <th className="px-4 py-2.5 font-semibold">Pick</th>
+                          <th className="px-4 py-2.5 font-semibold">Margin</th>
                         </tr>
                       </thead>
                       <tbody>
                         {ranked.map((r) => (
-                          <tr key={r.id} className="border-b border-gray-100">
-                            <td className="px-4 py-2">{r.rank}</td>
-                            <td className="px-4 py-2">{r.display_name}</td>
-                            <td className="px-4 py-2">
+                          <tr key={r.id} className="border-b border-gray-100 transition-colors duration-150">
+                            <td className="px-4 py-2.5 tabular-nums text-gray-600">{r.rank}</td>
+                            <td className="px-4 py-2.5 font-medium text-gray-900">{r.display_name}</td>
+                            <td className="px-4 py-2.5 text-gray-600">
                               {winnerLabel(match, r.predicted_winner)}
                               {!r.correct ? <span className="ml-1 text-xs text-gray-400">(wrong)</span> : null}
                             </td>
-                            <td className="px-4 py-2">{r.predicted_margin}</td>
+                            <td className="px-4 py-2.5 tabular-nums text-gray-700">{r.predicted_margin}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
                 </div>
-              </>
+              </div>
             )}
           </div>
         ) : null}
