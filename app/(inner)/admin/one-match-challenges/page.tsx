@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { fetchUserIsAdmin } from '@/lib/admin-access'
 import type { OneMatchChallengeRow, OneMatchPredictionRow } from '@/lib/one-match-challenge'
+import { absoluteOneMatchChallengeUrl } from '@/lib/site-url'
 
 /** Strip ILIKE wildcards so user input cannot broaden the pattern. */
 function sanitizeSearchTerm(raw: string): string {
@@ -227,7 +228,7 @@ export default function AdminOneMatchChallengesPage() {
   }
 
   function copyLink(slug: string) {
-    const url = `${window.location.origin}/one-match/${slug}`
+    const url = absoluteOneMatchChallengeUrl(slug)
     void navigator.clipboard.writeText(url)
     setMessage('Link copied to clipboard.')
   }
@@ -365,7 +366,7 @@ export default function AdminOneMatchChallengesPage() {
                         {gm ? formatKickoff(gm.kickoff_time) : ''} · {c.is_active ? 'Active' : 'Inactive'}
                       </p>
                       <p className="mt-1 break-all font-mono text-xs text-gray-600">
-                        {typeof window !== 'undefined' ? `${window.location.origin}/one-match/${c.slug}` : `/one-match/${c.slug}`}
+                        {absoluteOneMatchChallengeUrl(c.slug)}
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">

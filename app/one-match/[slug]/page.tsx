@@ -96,6 +96,7 @@ export default function OneMatchChallengePage() {
   const [challenge, setChallenge] = useState<ChallengeRow | null>(null)
   const [predictions, setPredictions] = useState<OneMatchPredictionRow[]>([])
   const [loadError, setLoadError] = useState('')
+  const [predictionsLoadError, setPredictionsLoadError] = useState('')
   const [busy, setBusy] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
@@ -121,6 +122,7 @@ export default function OneMatchChallengePage() {
     }
     setBusy(true)
     setLoadError('')
+    setPredictionsLoadError('')
     const { data: ch, error: chErr } = await supabase
       .from('one_match_challenges')
       .select(
@@ -148,21 +150,32 @@ export default function OneMatchChallengePage() {
     const row = ch as ChallengeRow
     setChallenge(row)
 
-    const browserToken = typeof window !== 'undefined' ? getOrCreateBrowserToken(slug) : ''
-    if (browserToken) setMyBrowserToken(browserToken)
+    const browserToken =
+      typeof window !== 'undefined' ? window.localStorage.getItem(browserTokenStorageKey(slug))?.trim() ?? '' : ''
+    const tokenForRpc =
+      browserToken.length >= 8 ? browserToken : typeof window !== 'undefined' ? getOrCreateBrowserToken(slug) : ''
+    if (tokenForRpc) setMyBrowserToken(tokenForRpc)
+
     const { data: preds, error: pErr } = await supabase.rpc('get_one_match_predictions_visible', {
       p_challenge_slug: slug,
-      p_browser_token: browserToken,
+      p_browser_token: tokenForRpc,
     })
 
     if (pErr) {
-      setLoadError(pErr.message)
+      setPredictionsLoadError(pErr.message)
       setPredictions([])
     } else {
       const list = (preds as OneMatchPredictionRow[]) ?? []
       setPredictions(list)
-      const mine = list.find((p) => p.browser_token === browserToken)
-      if (mine?.is_locked) setPanel('preview')
+      setPredictionsLoadError('')
+      const mine = tokenForRpc.length >= 8 ? list.find((p) => p.browser_token === tokenForRpc) : undefined
+      if (mine) {
+        setName(mine.display_name)
+        setWinner(mine.predicted_winner === 'away' ? 'away' : 'home')
+        setMargin(String(mine.predicted_margin))
+        setDuplicateHint(false)
+        if (mine.is_locked) setPanel('preview')
+      }
     }
     setBusy(false)
   }, [slug])
@@ -172,14 +185,23 @@ export default function OneMatchChallengePage() {
   }, [loadAll])
 
   useEffect(() => {
+    setDuplicateHint(false)
+  }, [slug])
+
+  useEffect(() => {
     const t = window.setInterval(() => setNowTick(Date.now()), 30_000)
     return () => window.clearInterval(t)
   }, [])
 
   useEffect(() => {
     if (!slug || typeof window === 'undefined') return
-    getOrCreateBrowserToken(slug)
-    setMyBrowserToken(window.localStorage.getItem(browserTokenStorageKey(slug)) ?? '')
+    const raw = window.localStorage.getItem(browserTokenStorageKey(slug))?.trim() ?? ''
+    if (raw.length >= 8) {
+      setMyBrowserToken(raw)
+    } else {
+      getOrCreateBrowserToken(slug)
+      setMyBrowserToken(window.localStorage.getItem(browserTokenStorageKey(slug)) ?? '')
+    }
   }, [slug, predictions])
 
   useEffect(() => {
@@ -310,6 +332,8 @@ export default function OneMatchChallengePage() {
       }
       if (json.duplicate_name_ip_hint) {
         setDuplicateHint(true)
+      } else {
+        setDuplicateHint(false)
       }
       await loadAll()
     } catch {
@@ -338,7 +362,7 @@ export default function OneMatchChallengePage() {
 
   const hasSavedPrediction =
     myBrowserToken.length >= 8 && predictions.some((p) => p.browser_token === myBrowserToken)
-  const predictLabel = iLocked ? 'Locked in' : hasSavedPrediction ? 'Update' : 'Predict'
+  const predictLabel = iLocked ? '🔒 Prediction locked' : hasSavedPrediction ? 'Update' : 'Predict'
   const formDisabled = !predictionsOpen || iLocked
 
   return (
@@ -372,6 +396,12 @@ export default function OneMatchChallengePage() {
             <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-center text-xs font-medium text-amber-900">Predictions closed</p>
           ) : null}
         </div>
+
+        {predictionsLoadError ? (
+          <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-sm text-amber-900">
+            Could not load predictions: {predictionsLoadError}
+          </p>
+        ) : null}
 
         <div className="inline-flex w-full min-w-0 rounded-xl bg-gray-100 p-1">
           <button
@@ -422,7 +452,7 @@ export default function OneMatchChallengePage() {
                 ) : null}
               </div>
             ) : null}
-            {duplicateHint ? (
+            {duplicateHint && !myPrediction ? (
               <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-950">
                 You may already have predicted. Update your existing prediction if this is you.
               </p>
@@ -496,7 +526,7 @@ export default function OneMatchChallengePage() {
             <button
               type="submit"
               disabled={formDisabled || submitting}
-              className="w-full rounded-xl bg-black py-4 text-sm font-semibold text-white shadow-md transition-all duration-150 hover:scale-[1.01] active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 disabled:hover:scale-100"
+              className="w-full rounded-xl bg-red-600 py-4 text-sm font-semibold text-white shadow-md transition-all duration-150 hover:scale-[1.01] hover:bg-red-700 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 disabled:hover:scale-100"
             >
               {submitting ? 'Saving…' : predictLabel}
             </button>
