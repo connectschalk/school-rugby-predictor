@@ -242,6 +242,29 @@ export default function OneMatchChallengePage() {
     () => predictions.filter((p) => p.is_locked),
     [predictions]
   )
+  const sortedLockedPreviewPredictions = useMemo(
+    () =>
+      [...lockedPreviewPredictions].sort((a, b) => {
+        const av = a.predicted_winner === 'home' ? -a.predicted_margin : a.predicted_margin
+        const bv = b.predicted_winner === 'home' ? -b.predicted_margin : b.predicted_margin
+        if (av !== bv) return av - bv
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      }),
+    [lockedPreviewPredictions]
+  )
+  const homeLockedPredictions = useMemo(
+    () => sortedLockedPreviewPredictions.filter((p) => p.predicted_winner === 'home'),
+    [sortedLockedPreviewPredictions]
+  )
+  const awayLockedPredictions = useMemo(
+    () => sortedLockedPreviewPredictions.filter((p) => p.predicted_winner === 'away'),
+    [sortedLockedPreviewPredictions]
+  )
+  const previewTotal = sortedLockedPreviewPredictions.length
+  const homePercent = previewTotal > 0 ? Math.round((homeLockedPredictions.length / previewTotal) * 100) : 0
+  const awayPercent = previewTotal > 0 ? 100 - homePercent : 0
+  const homeTint = getLightTint(getTeamColor(match?.home_team ?? '') ?? '#9ca3af')
+  const awayTint = getLightTint(getTeamColor(match?.away_team ?? '') ?? '#9ca3af')
 
   const ranked = useMemo(() => {
     if (!match || !resultsAvailable) return []
@@ -556,37 +579,96 @@ export default function OneMatchChallengePage() {
             ) : null}
             {iLocked ? (
               <div className="space-y-3">
-                {lockedPreviewPredictions.length === 0 ? (
+                {sortedLockedPreviewPredictions.length === 0 ? (
                   <p className="py-6 text-center text-sm text-gray-500">No locked predictions yet.</p>
                 ) : (
-                  lockedPreviewPredictions.map((p) => {
-                    const isMe = p.browser_token === myBrowserToken
-                    const selectedTeamName = p.predicted_winner === 'home' ? match.home_team : match.away_team
-                    const selectedTeamColor = isMe ? getTeamColor(selectedTeamName) : undefined
-                    return (
-                      <div
-                        key={p.id}
-                        className={`flex min-w-0 items-center justify-between gap-3 rounded-xl px-4 py-3 text-sm shadow-sm transition-all duration-150 ${
-                          isMe ? 'border border-red-200 bg-red-50' : 'border border-gray-100 bg-white'
-                        }`}
-                        style={
-                          isMe && selectedTeamColor
-                            ? {
-                                backgroundColor: getLightTint(selectedTeamColor),
-                                borderColor: `${selectedTeamColor}40`,
-                              }
-                            : undefined
-                        }
-                      >
-                        <span className="min-w-0 truncate font-semibold text-gray-900">{p.display_name}</span>
-                        <span className="shrink-0 text-right text-gray-600">
-                          <span className="font-medium text-gray-800">{winnerLabel(match, p.predicted_winner)}</span>
-                          <span className="text-gray-400"> · </span>
-                          <span className="tabular-nums text-gray-800">{p.predicted_margin}</span>
-                        </span>
+                  <>
+                    <div className="space-y-2">
+                      <p className="text-center text-sm font-semibold text-gray-700">
+                        {match.home_team} {homePercent}% <span className="text-gray-400">|</span> {match.away_team} {awayPercent}%
+                      </p>
+                      <div className="flex h-3 overflow-hidden rounded-full border border-gray-200 bg-gray-100">
+                        <div style={{ width: `${homePercent}%`, backgroundColor: homeTint }} />
+                        <div style={{ width: `${awayPercent}%`, backgroundColor: awayTint }} />
                       </div>
-                    )
-                  })
+                    </div>
+
+                    {homeLockedPredictions.length > 0 ? (
+                      <div className="space-y-2">
+                        <p className="px-1 text-xs font-semibold uppercase tracking-wide text-gray-500">{match.home_team} picks</p>
+                        {homeLockedPredictions.map((p) => {
+                          const isMe = p.browser_token === myBrowserToken
+                          const selectedTeamColor = isMe ? getTeamColor(match.home_team) : undefined
+                          return (
+                            <div
+                              key={p.id}
+                              className={`flex min-w-0 items-center justify-between gap-3 rounded-xl px-4 py-3 text-sm shadow-sm transition-all duration-150 ${
+                                isMe ? 'border border-red-200 bg-red-50' : 'border border-gray-100 bg-white'
+                              }`}
+                              style={
+                                isMe && selectedTeamColor
+                                  ? {
+                                      backgroundColor: getLightTint(selectedTeamColor),
+                                      borderColor: `${selectedTeamColor}40`,
+                                    }
+                                  : undefined
+                              }
+                            >
+                              <span className="min-w-0 truncate font-semibold text-gray-900">{p.display_name}</span>
+                              <span className="shrink-0 text-right text-gray-600">
+                                <span className="font-medium text-gray-800">{match.home_team}</span>
+                                <span className="text-gray-400"> · </span>
+                                <span className="tabular-nums text-gray-800">{p.predicted_margin}</span>
+                              </span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    ) : null}
+
+                    {homeLockedPredictions.length > 0 && awayLockedPredictions.length > 0 ? (
+                      <p className="overflow-hidden text-center text-xs font-semibold uppercase tracking-wide text-gray-400">
+                        <span className="before:mr-2 before:text-gray-300 before:content-['────────'] after:ml-2 after:text-gray-300 after:content-['────────']">
+                          {match.away_team} picks
+                        </span>
+                      </p>
+                    ) : null}
+
+                    {awayLockedPredictions.length > 0 ? (
+                      <div className="space-y-2">
+                        {homeLockedPredictions.length === 0 ? (
+                          <p className="px-1 text-xs font-semibold uppercase tracking-wide text-gray-500">{match.away_team} picks</p>
+                        ) : null}
+                        {awayLockedPredictions.map((p) => {
+                          const isMe = p.browser_token === myBrowserToken
+                          const selectedTeamColor = isMe ? getTeamColor(match.away_team) : undefined
+                          return (
+                            <div
+                              key={p.id}
+                              className={`flex min-w-0 items-center justify-between gap-3 rounded-xl px-4 py-3 text-sm shadow-sm transition-all duration-150 ${
+                                isMe ? 'border border-red-200 bg-red-50' : 'border border-gray-100 bg-white'
+                              }`}
+                              style={
+                                isMe && selectedTeamColor
+                                  ? {
+                                      backgroundColor: getLightTint(selectedTeamColor),
+                                      borderColor: `${selectedTeamColor}40`,
+                                    }
+                                  : undefined
+                              }
+                            >
+                              <span className="min-w-0 truncate font-semibold text-gray-900">{p.display_name}</span>
+                              <span className="shrink-0 text-right text-gray-600">
+                                <span className="font-medium text-gray-800">{match.away_team}</span>
+                                <span className="text-gray-400"> · </span>
+                                <span className="tabular-nums text-gray-800">{p.predicted_margin}</span>
+                              </span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    ) : null}
+                  </>
                 )}
               </div>
             ) : null}
