@@ -111,6 +111,8 @@ export default function OneMatchChallengePage() {
   const [winner, setWinner] = useState<'home' | 'away' | ''>('')
   const [margin, setMargin] = useState('')
   const [myBrowserToken, setMyBrowserToken] = useState('')
+  const [savedPredictionId, setSavedPredictionId] = useState<string | null>(null)
+  const [lastSavedBrowserToken, setLastSavedBrowserToken] = useState('')
 
   const match = challenge ? unwrapGm(challenge) : null
 
@@ -171,6 +173,8 @@ export default function OneMatchChallengePage() {
       setPredictionsLoadError('')
       const mine = tokenForRpc.length >= 8 ? list.find((p) => p.browser_token === tokenForRpc) : undefined
       if (mine) {
+        setSavedPredictionId(mine.id)
+        setLastSavedBrowserToken(tokenForRpc)
         setName(mine.display_name)
         setWinner(mine.predicted_winner === 'away' ? 'away' : 'home')
         setMargin(String(mine.predicted_margin))
@@ -280,32 +284,50 @@ export default function OneMatchChallengePage() {
   async function onLock() {
     setLockError('')
     if (!slug || !predictionsOpen) return
-    const browserToken = getOrCreateBrowserToken(slug)
-    if (!predictions.some((p) => p.browser_token === browserToken)) {
+    const browserToken =
+      lastSavedBrowserToken.trim().length >= 8
+        ? lastSavedBrowserToken.trim()
+        : myBrowserToken.trim().length >= 8
+          ? myBrowserToken.trim()
+          : getOrCreateBrowserToken(slug)
+    setMyBrowserToken(browserToken)
+
+    console.info('[one-match-lock] request', { slug, browser_token: browserToken, saved_prediction_id: savedPredictionId })
+
+    const { data: exists, error: existsErr } = await supabase.rpc('one_match_prediction_exists', {
+      p_challenge_slug: slug,
+      p_browser_token: browserToken,
+    })
+    if (existsErr) {
+      console.error('[one-match-lock] exists error', existsErr)
+      setLockError(existsErr.message)
+      return
+    }
+    if (!exists) {
       setLockError('Save your prediction first.')
       return
     }
+
     setLocking(true)
     try {
-      const { error } = await supabase.rpc('lock_one_match_prediction', {
+      const { data: lockRes, error } = await supabase.rpc('lock_one_match_prediction', {
         p_challenge_slug: slug,
         p_browser_token: browserToken,
       })
+      console.info('[one-match-lock] response', { slug, browser_token: browserToken, lock_response: lockRes, error })
       if (error) {
-        const m = error.message.toLowerCase()
-        if (m.includes('predictions closed') || m.includes('challenge not found')) {
-          setLockError('Predictions closed')
-        } else if (m.includes('no prediction')) {
-          setLockError('Save your prediction first.')
-        } else {
-          setLockError(error.message)
-        }
+        console.error('[one-match-lock] rpc error', error)
+        setLockError(error.message)
         setLocking(false)
         return
       }
+      setPredictions((prev) =>
+        prev.map((p) => (p.browser_token === browserToken ? { ...p, is_locked: true } : p))
+      )
       await loadAll()
       setPanel('preview')
     } catch {
+      console.error('[one-match-lock] network error', { slug, browser_token: browserToken })
       setLockError('Network error. Try again.')
     }
     setLocking(false)
@@ -335,6 +357,7 @@ export default function OneMatchChallengePage() {
       return
     }
     const browserToken = getOrCreateBrowserToken(slug)
+    setMyBrowserToken(browserToken)
     setSubmitting(true)
     try {
       const res = await fetch('/api/one-match/upsert-prediction', {
@@ -348,12 +371,19 @@ export default function OneMatchChallengePage() {
           predicted_margin: m,
         }),
       })
-      const json = (await res.json()) as { error?: string; duplicate_name_ip_hint?: boolean }
+      const json = (await res.json()) as { id?: string | null; error?: string; duplicate_name_ip_hint?: boolean }
+      console.info('[one-match-save] response', {
+        slug,
+        browser_token: browserToken,
+        save_response: json,
+      })
       if (!res.ok) {
         setSubmitError(json.error ?? 'Could not save.')
         setSubmitting(false)
         return
       }
+      if (json.id) setSavedPredictionId(json.id)
+      setLastSavedBrowserToken(browserToken)
       if (json.duplicate_name_ip_hint) {
         setDuplicateHint(true)
       } else {
