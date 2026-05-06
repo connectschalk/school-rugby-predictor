@@ -59,6 +59,8 @@ export default function AdminOneMatchChallengesPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [message, setMessage] = useState('')
+  const [copyFeedback, setCopyFeedback] = useState<{ challengeId: string; status: 'copied' | 'failed' } | null>(null)
+  const copyTimeoutsRef = useRef<Record<string, number>>({})
 
   useEffect(() => {
     let cancelled = false
@@ -179,6 +181,14 @@ export default function AdminOneMatchChallengesPage() {
     void loadPredictions(expandedId)
   }, [expandedId, loadPredictions, predictionsByChallenge])
 
+  useEffect(() => {
+    return () => {
+      for (const t of Object.values(copyTimeoutsRef.current)) {
+        window.clearTimeout(t)
+      }
+    }
+  }, [])
+
   async function createChallenge() {
     if (!selectedMatchId) {
       setMessage('Select a match first.')
@@ -227,10 +237,35 @@ export default function AdminOneMatchChallengesPage() {
     await loadChallenges()
   }
 
-  function copyLink(slug: string) {
+  async function copyLink(challengeId: string, slug: string) {
     const url = absoluteOneMatchChallengeUrl(slug)
-    void navigator.clipboard.writeText(url)
-    setMessage('Link copied to clipboard.')
+    const prevT = copyTimeoutsRef.current[challengeId]
+    if (prevT) window.clearTimeout(prevT)
+
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url)
+      } else {
+        const ta = document.createElement('textarea')
+        ta.value = url
+        ta.style.position = 'fixed'
+        ta.style.left = '-9999px'
+        document.body.appendChild(ta)
+        ta.focus()
+        ta.select()
+        const ok = document.execCommand('copy')
+        document.body.removeChild(ta)
+        if (!ok) throw new Error('copy failed')
+      }
+      setCopyFeedback({ challengeId, status: 'copied' })
+    } catch {
+      setCopyFeedback({ challengeId, status: 'failed' })
+    }
+
+    copyTimeoutsRef.current[challengeId] = window.setTimeout(() => {
+      setCopyFeedback((prev) => (prev?.challengeId === challengeId ? null : prev))
+      delete copyTimeoutsRef.current[challengeId]
+    }, 2000)
   }
 
   function pickGm(row: ChallengeListRow): GameMatchPick | null {
@@ -372,10 +407,18 @@ export default function AdminOneMatchChallengesPage() {
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
-                        className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-800 hover:bg-gray-50"
-                        onClick={() => copyLink(c.slug)}
+                        className={
+                          copyFeedback?.challengeId === c.id && copyFeedback.status === 'copied'
+                            ? 'rounded-lg border border-green-300 bg-green-50 px-3 py-1.5 text-xs font-semibold text-green-700'
+                            : 'rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-800 hover:bg-gray-50'
+                        }
+                        onClick={() => void copyLink(c.id, c.slug)}
                       >
-                        Copy link
+                        {copyFeedback?.challengeId === c.id && copyFeedback.status === 'copied'
+                          ? '✓ Copied!'
+                          : copyFeedback?.challengeId === c.id && copyFeedback.status === 'failed'
+                            ? 'Copy failed'
+                            : 'Copy link'}
                       </button>
                       {c.is_active ? (
                         <button
