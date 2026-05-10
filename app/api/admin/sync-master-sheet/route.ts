@@ -274,7 +274,7 @@ type NormalizedSheetRow = {
   /** Trimmed sheet key when column exists; null when column absent (do not clear DB on update). */
   fixture_key: string | null
   /** Only set when Fixtures CSV has a province_group column (trimmed cell; empty → null). */
-  province_group_sheet?: string
+  province_group_sheet?: string | null
 }
 
 /** Loaded `game_matches` row fields needed for sheet sync matching and in-place updates. */
@@ -413,7 +413,7 @@ function provinceGroupForUpsert(
   row: NormalizedSheetRow,
   existing: ExistingGameMatchSyncRow | null
 ): string | null {
-  if (row.province_group_sheet !== undefined) {
+  if ('province_group_sheet' in row) {
     const t = (row.province_group_sheet ?? '').trim()
     return t ? t : null
   }
@@ -1092,7 +1092,7 @@ export async function POST(request: Request) {
                 away_team: row.away_team,
                 fixture_key: fixtureKeyForUpsert(row, existingGmUp),
                 province_group: provinceGroupForUpsert(row, existingGmUp),
-                league_group: leagueGroupForUpsert(row, existingGmUp),
+                league_group: upLeague,
                 tournament: null,
                 home_team_province: upHomeTeamProv ? upHomeTeamProv : null,
                 away_team_province: upAwayTeamProv ? upAwayTeamProv : null,
@@ -1272,7 +1272,8 @@ export async function POST(request: Request) {
           if (!ret?.id) continue
           const id = String(ret.id)
           const st = meta.kind === 'completed' ? 'completed' : 'upcoming'
-          existingGameMatchByPairOnDate.set(meta.pairOnDate, {
+          const b = meta.body as Record<string, unknown>
+          const syncRow: ExistingGameMatchSyncRow = {
             id,
             kickoff_time: String(ret.kickoff_time),
             home_team: String(ret.home_team),
@@ -1280,7 +1281,16 @@ export async function POST(request: Request) {
             status: st,
             verification_status: 'verified',
             admin_notes: null,
-          })
+            fixture_key: typeof b.fixture_key === 'string' ? b.fixture_key : null,
+            province_group: typeof b.province_group === 'string' ? b.province_group : null,
+            league_group: typeof b.league_group === 'string' ? b.league_group : null,
+          }
+          existingGameMatchByPairOnDate.set(meta.pairOnDate, syncRow)
+          const fkIns = syncRow.fixture_key?.trim() ? teamLookupNormalize(syncRow.fixture_key.trim()) : ''
+          if (fkIns) {
+            const prevFk = existingByFixtureKey.get(fkIns)
+            existingByFixtureKey.set(fkIns, prevFk ? pickPreferredExistingGmRow(prevFk, syncRow) : syncRow)
+          }
           if (meta.kind === 'upcoming') {
             existingCurrentUpcomingIdsByKey.set(meta.pairOnDate, id)
             inserted_upcoming += 1
@@ -1307,15 +1317,32 @@ export async function POST(request: Request) {
         }
         for (const u of slice) {
           const prev = existingGameMatchByPairOnDate.get(u.pairOnDate)
-          existingGameMatchByPairOnDate.set(u.pairOnDate, {
+          const b = u.body as Record<string, unknown>
+          const next: ExistingGameMatchSyncRow = {
             id: u.id,
-            kickoff_time: String(u.body.kickoff_time),
-            home_team: String(u.body.home_team),
-            away_team: String(u.body.away_team),
+            kickoff_time: String(b.kickoff_time),
+            home_team: String(b.home_team),
+            away_team: String(b.away_team),
             status: u.kind === 'completed' ? 'completed' : 'upcoming',
             verification_status: 'verified',
             admin_notes: u.prevAdminNotes ?? prev?.admin_notes ?? null,
-          })
+            fixture_key:
+              typeof b.fixture_key === 'string'
+                ? b.fixture_key
+                : (prev?.fixture_key ?? null),
+            province_group:
+              typeof b.province_group === 'string'
+                ? b.province_group
+                : (prev?.province_group ?? null),
+            league_group:
+              typeof b.league_group === 'string' ? b.league_group : (prev?.league_group ?? null),
+          }
+          existingGameMatchByPairOnDate.set(u.pairOnDate, next)
+          const fkUp = next.fixture_key?.trim() ? teamLookupNormalize(next.fixture_key.trim()) : ''
+          if (fkUp) {
+            const prevF = existingByFixtureKey.get(fkUp)
+            existingByFixtureKey.set(fkUp, prevF ? pickPreferredExistingGmRow(prevF, next) : next)
+          }
           if (u.kind === 'completed') {
             existingCurrentUpcomingIdsByKey.delete(u.pairOnDate)
             updated_completed += 1
