@@ -1,5 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { normalizeTeamKey, normalizeTeamKeyLoose, type TeamRow } from '@/lib/team-name-match'
+import {
+  normalizeTeamKey,
+  normalizeTeamKeyAsciiFold,
+  normalizeTeamKeyLoose,
+  type TeamRow,
+} from '@/lib/team-name-match'
 
 export type TeamAliasDbRow = Record<string, unknown>
 
@@ -15,13 +20,13 @@ const RAW_COL_CANDIDATES = [
 ] as const
 
 const CANONICAL_TEXT_COL_CANDIDATES = [
+  'canonical_name',
+  'canonical_team_name',
   'official_name',
-  'mapped_name',
   'full_name',
   'resolved_name',
-  'canonical_team_name',
   'team_name',
-  'canonical_name',
+  'mapped_name',
 ] as const
 
 const TEAM_ID_COL_CANDIDATES = ['team_id', 'canonical_team_id', 'matched_team_id'] as const
@@ -53,12 +58,17 @@ export function inferTeamAliasSchema(sample: TeamAliasDbRow | undefined): Inferr
   const rawCol = pickColumn(keys, RAW_COL_CANDIDATES)
   if (!rawCol) return null
 
-  const canonicalCol = pickColumn(keys, CANONICAL_TEXT_COL_CANDIDATES)
   const teamIdCol = pickColumn(keys, TEAM_ID_COL_CANDIDATES)
-
-  const canonStr = canonicalCol != null ? String(sample[canonicalCol] ?? '').trim() : ''
   const teamIdVal = teamIdCol != null ? sample[teamIdCol] : undefined
   const teamIdNum = teamIdVal != null && teamIdVal !== '' ? Number(teamIdVal) : NaN
+  const rawPreview = String(sample[rawCol] ?? '').trim()
+
+  if (teamIdCol && Number.isFinite(teamIdNum) && rawPreview) {
+    return { kind: 'raw_to_team_id', rawCol, teamIdCol }
+  }
+
+  const canonicalCol = pickColumn(keys, CANONICAL_TEXT_COL_CANDIDATES)
+  const canonStr = canonicalCol != null ? String(sample[canonicalCol] ?? '').trim() : ''
 
   if (canonicalCol && canonStr) {
     return { kind: 'raw_to_canonical_text', rawCol, canonicalCol }
@@ -68,9 +78,6 @@ export function inferTeamAliasSchema(sample: TeamAliasDbRow | undefined): Inferr
   }
   if (canonicalCol) {
     return { kind: 'raw_to_canonical_text', rawCol, canonicalCol }
-  }
-  if (teamIdCol) {
-    return { kind: 'raw_to_team_id', rawCol, teamIdCol }
   }
   return null
 }
@@ -107,6 +114,8 @@ export function buildTeamAliasResolverMap(rows: TeamAliasDbRow[], teams: TeamRow
     if (k) m.set(k, canon)
     const loose = normalizeTeamKeyLoose(raw)
     if (loose && loose !== k) m.set(loose, canon)
+    const af = normalizeTeamKeyAsciiFold(raw)
+    if (af && af !== k && af !== loose) m.set(af, canon)
   }
   return m
 }
@@ -119,13 +128,25 @@ function existingNormalizedRawKeys(rows: TeamAliasDbRow[], schema: InferredSchem
     s.add(normalizeTeamKey(raw))
     const loose = normalizeTeamKeyLoose(raw)
     if (loose) s.add(loose)
+    const af = normalizeTeamKeyAsciiFold(raw)
+    if (af) s.add(af)
   }
   return s
 }
 
 function findTeamIdByName(teams: TeamRow[], name: string): number | null {
-  const t = teams.find((x) => normalizeTeamKey(x.name) === normalizeTeamKey(name))
-  return t?.id ?? null
+  const nk = normalizeTeamKey(name)
+  const naf = normalizeTeamKeyAsciiFold(name)
+  for (const x of teams) {
+    if (normalizeTeamKey(x.name) === nk) return x.id
+    const c = x.canonical_name?.trim()
+    if (c) {
+      if (normalizeTeamKey(c) === nk) return x.id
+      if (normalizeTeamKeyAsciiFold(c) === naf) return x.id
+    }
+    if (normalizeTeamKeyAsciiFold(x.name) === naf) return x.id
+  }
+  return null
 }
 
 export type NewAliasPair = { raw: string; canonicalName: string }
@@ -171,16 +192,19 @@ export async function insertNewTeamAliasesOnly(
 
     const nk = normalizeTeamKey(raw)
     const nl = normalizeTeamKeyLoose(raw)
-    if (taken.has(nk) || (nl && taken.has(nl))) {
+    const naf = normalizeTeamKeyAsciiFold(raw)
+    if (taken.has(nk) || (nl && taken.has(nl)) || (naf && taken.has(naf))) {
       continue
     }
     taken.add(nk)
     if (nl) taken.add(nl)
+    if (naf) taken.add(naf)
 
     if (schema.kind === 'raw_to_canonical_text') {
       payloads.push({
         [schema.rawCol]: raw,
         [schema.canonicalCol]: canon,
+        normalized_alias: normalizeTeamKeyAsciiFold(raw),
       })
     } else {
       const tid = findTeamIdByName(teams, canon)
@@ -188,6 +212,7 @@ export async function insertNewTeamAliasesOnly(
       payloads.push({
         [schema.rawCol]: raw,
         [schema.teamIdCol]: tid,
+        normalized_alias: normalizeTeamKeyAsciiFold(raw),
       })
     }
   }
@@ -212,11 +237,11 @@ export function collectAliasRawStringsForCanonicalTeam(
   if (!canonicalTeamName.trim() || aliasRows.length === 0) return []
   const schema = inferTeamAliasSchema(aliasRows[0])
   if (!schema) return []
-  const target = normalizeTeamKey(canonicalTeamName)
+  const targetAf = normalizeTeamKeyAsciiFold(canonicalTeamName)
   const out: string[] = []
   for (const row of aliasRows) {
     const canon = rowToCanonicalName(row, schema, teams)
-    if (!canon || normalizeTeamKey(canon) !== target) continue
+    if (!canon || normalizeTeamKeyAsciiFold(canon) !== targetAf) continue
     const raw = rowRawString(row, schema.rawCol)
     if (raw) out.push(raw)
   }

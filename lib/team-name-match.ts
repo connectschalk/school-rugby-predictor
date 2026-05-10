@@ -3,7 +3,7 @@
  * Used for URL import preview + manual review before insert.
  */
 
-export type TeamRow = { id: number; name: string }
+export type TeamRow = { id: number; name: string; canonical_name?: string | null }
 
 export type TeamMatchMethod = 'exact' | 'normalized' | 'alias' | 'fuzzy' | 'unmatched'
 
@@ -19,21 +19,6 @@ export type TeamMatchResult = {
   needsReview: boolean
 }
 
-/** Manual nickname → must match a real `teams.name` value after trim. */
-const KNOWN_ALIASES: Record<string, string> = {
-  affies: 'Afrikaans Hoër Seuns',
-  'afrikaanse hoër seuns': 'Afrikaans Hoër Seuns',
-  'afrikaans hoer seuns': 'Afrikaans Hoër Seuns',
-  'paarl boys': 'Paarl Boys High',
-  'paarl gim': 'Paarl Gimnasium',
-  'paarl boys high': 'Paarl Boys High',
-  grey: 'Grey College',
-  'durban high': 'Durban High',
-  'durban hs': 'Durban High',
-  oakdale: 'Oakdale',
-  outeniqua: 'Outeniqua',
-}
-
 const STOP_WORDS = /\b(high school|hoër skool|hoer skool|secondary school|school|college|gymnasium|gimnasium|boys|girls|rugby)\b/gi
 
 export function normalizeTeamKey(name: string): string {
@@ -44,6 +29,12 @@ export function normalizeTeamKey(name: string): string {
   return s
 }
 
+/** Like `normalizeTeamKey` but strips combining marks (ö→o) for duplicate-safe comparisons. */
+export function normalizeTeamKeyAsciiFold(name: string): string {
+  const stripped = name.normalize('NFKD').replace(/\p{M}/gu, '')
+  return normalizeTeamKey(stripped)
+}
+
 /** Stronger normalization for fuzzy / alias (also strips common trailing words). */
 export function normalizeTeamKeyLoose(name: string): string {
   let s = normalizeTeamKey(name)
@@ -51,6 +42,9 @@ export function normalizeTeamKeyLoose(name: string): string {
   s = s.replace(/\s+/g, ' ').trim()
   return s
 }
+
+/** Legacy static hints removed; Teams sheet + `team_aliases` supply alias maps at runtime. */
+const KNOWN_ALIASES: Record<string, string> = {}
 
 function levenshtein(a: string, b: string): number {
   const m = a.length
@@ -87,6 +81,8 @@ function findTeamByExactName(teams: TeamRow[], name: string): TeamRow | null {
   const key = normalizeTeamKey(name)
   for (const t of teams) {
     if (normalizeTeamKey(t.name) === key) return t
+    const c = t.canonical_name?.trim()
+    if (c && normalizeTeamKey(c) === key) return t
   }
   return null
 }
@@ -96,6 +92,8 @@ function findTeamByNormalizedLoose(teams: TeamRow[], name: string): TeamRow | nu
   if (!key) return null
   for (const t of teams) {
     if (normalizeTeamKeyLoose(t.name) === key) return t
+    const c = t.canonical_name?.trim()
+    if (c && normalizeTeamKeyLoose(c) === key) return t
   }
   return null
 }
@@ -110,6 +108,11 @@ function resolveAlias(raw: string): string | null {
 
 function resolveDbStoredAlias(raw: string, dbAliases: Map<string, string> | undefined): string | null {
   if (!dbAliases || dbAliases.size === 0) return null
+  const af = normalizeTeamKeyAsciiFold(raw)
+  if (af) {
+    const byAf = dbAliases.get(af)
+    if (byAf) return byAf
+  }
   const k = normalizeTeamKey(raw)
   const byKey = dbAliases.get(k)
   if (byKey) return byKey

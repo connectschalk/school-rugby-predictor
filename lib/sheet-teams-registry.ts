@@ -146,6 +146,8 @@ type RegistryEntry = ResolvedSheetTeam & { lookupKeys: Set<string> }
 
 /**
  * In-memory registry from the Teams tab — source of truth for identity, province, flags.
+ * Sheet sync maps fixture cells to official `teams.name` using `canonicalTeamLabelForGameMatches`
+ * (Teams sheet aliases + `public.team_aliases` gap-fill) after registry resolution, for pair keys, duplicate checks, and writes.
  */
 function significantTokens(normalizedKey: string): string[] {
   return normalizedKey.split(/[^a-z0-9]+/).filter((t) => t.length >= 3)

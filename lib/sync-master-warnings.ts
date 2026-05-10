@@ -52,7 +52,8 @@ function inferSeverity(message: string): SyncWarningSeverity {
     /missing score/i.test(m) ||
     /home_team and away_team are the same/i.test(m) ||
     /could not reject/i.test(m) ||
-    /sync log insert failed/i.test(m)
+    /sync log insert failed/i.test(m) ||
+    /critical:\s*team-date duplicate/i.test(message)
   ) {
     return 'error'
   }
@@ -70,6 +71,7 @@ function inferCategory(message: string): SyncWarningCategory {
     return 'group_link'
   }
   if (lower.includes('province_group') || lower.includes('unknown province')) return 'province'
+  if (lower.includes('critical: team-date duplicate')) return 'team_date'
   if (lower.includes('duplicate fixture') || lower.includes('duplicate pair_key') || lower.includes('duplicate')) {
     return 'duplicate'
   }
