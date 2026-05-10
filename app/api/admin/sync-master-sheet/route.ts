@@ -32,14 +32,70 @@ const SYNC_BATCH_SIZE = 50
 
 const SYNC_SHEET_LOG = '[sync-master-sheet]'
 
-/** Never send `id` on game_matches insert/update — DB default / .eq('id') only. */
-function stripGameMatchWritePayload(body: Record<string, unknown>): Record<string, unknown> {
+const FORBIDDEN_WRITE_KEYS = new Set(['id', 'created_at', 'updated_at'])
+
+/** Strip server-generated / key columns from insert/update JSON bodies. */
+function stripForbiddenWritePayload(body: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(body)) {
-    if (k === 'id') continue
+    if (FORBIDDEN_WRITE_KEYS.has(k)) continue
     out[k] = v
   }
   return out
+}
+
+function payloadForbiddenKeys(body: Record<string, unknown>): string[] {
+  const bad: string[] = []
+  for (const k of FORBIDDEN_WRITE_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(body, k)) bad.push(k)
+  }
+  return bad
+}
+
+const WARN_SKIP_GM_UPDATE_UNIQUE_PAIR =
+  'Warning: Skipped update because another fixture already exists for same date/team pair.'
+const WARN_SKIP_GM_INSERT_UNIQUE_PAIR =
+  'Warning: Skipped insert because another verified fixture already exists for same kickoff/team pair.'
+
+/**
+ * Same shape as `game_matches_verified_kickoff_pair_uidx` (verified rows only):
+ * kickoff_time + unordered lower(trim) home/away pair.
+ */
+function verifiedUniqueTripletKey(
+  kickoff: string,
+  home: string,
+  away: string,
+  verificationStatus: string | null | undefined
+): string | null {
+  const vs = String(verificationStatus ?? '').trim().toLowerCase()
+  if (vs !== 'verified') return null
+  const ko = String(kickoff).trim()
+  if (!ko) return null
+  return `${ko}|${orderedPairKey(home, away)}`
+}
+
+function verifiedUniqueTripletKeyFromPayload(payload: Record<string, unknown>): string | null {
+  return verifiedUniqueTripletKey(
+    String(payload.kickoff_time ?? ''),
+    String(payload.home_team ?? ''),
+    String(payload.away_team ?? ''),
+    (payload.verification_status as string | undefined) ?? 'verified'
+  )
+}
+
+/**
+ * If applying `updatePayload` to `currentId` would duplicate another row's verified unique triplet, return that row's id.
+ */
+function findConflictingGameMatch(
+  updatePayload: Record<string, unknown>,
+  currentId: string,
+  uniqueVerifiedTripletToId: Map<string, string>
+): string | null {
+  const k = verifiedUniqueTripletKeyFromPayload(updatePayload)
+  if (!k) return null
+  const occupant = uniqueVerifiedTripletToId.get(k)
+  if (occupant && occupant !== currentId) return occupant
+  return null
 }
 
 export const SYNC_IMPORT_FOLLOWUP_NOTICE =
@@ -486,27 +542,416 @@ type GmUpdateWorkItem = {
   prevAdminNotes: string | null
 }
 
+type MatchRowUpdatePlan = {
+  id: number
+  team_a_score: number
+  team_b_score: number
+  season: number
+}
+
+type MatchRowInsertPlan = {
+  team_a_id: number
+  team_b_id: number
+  team_a_score: number
+  team_b_score: number
+  match_date: string
+  season: number
+}
+
+type SyncWritePlan = {
+  gmInserts: GmInsertWorkItem[]
+  gmUpdates: GmUpdateWorkItem[]
+  matchRowUpdates: MatchRowUpdatePlan[]
+  matchRowInserts: MatchRowInsertPlan[]
+  skippedDuplicates: number
+  skippedUpdatesDueToVerifiedPair: number
+  skippedInsertsDueToVerifiedPair: number
+  wouldLinkGroupRows: number
+  groupLinkWarningAdds: number
+  errors: string[]
+  warnings: string[]
+}
+
+type PrepareSyncPlanContext = {
+  teamRegistry: SheetTeamsRegistry
+  fixtureGroupMaps: FixtureGroupMaps
+  fixturesCsvUrl: string
+  existingGameMatchByPairOnDate: Map<string, ExistingGameMatchSyncRow>
+  existingByFixtureKey: Map<string, ExistingGameMatchSyncRow>
+  uniqueVerifiedTripletToId: Map<string, string>
+  gameMatchById: Map<string, ExistingGameMatchSyncRow>
+  existingMatchesByDate: Map<string, Array<{ id: number; team_a_id: number; team_b_id: number }>>
+  completedTeamIdCache: Map<string, number>
+}
+
+function mergeGmRowAfterUpdate(
+  u: GmUpdateWorkItem,
+  payload: Record<string, unknown>,
+  oldGm: ExistingGameMatchSyncRow | undefined,
+  prevPairRow: ExistingGameMatchSyncRow | undefined
+): ExistingGameMatchSyncRow {
+  const b = payload
+  return {
+    id: u.id,
+    kickoff_time: String(b.kickoff_time ?? ''),
+    home_team: String(b.home_team ?? ''),
+    away_team: String(b.away_team ?? ''),
+    status: u.kind === 'completed' ? 'completed' : 'upcoming',
+    verification_status: typeof b.verification_status === 'string' ? b.verification_status : 'verified',
+    admin_notes: u.prevAdminNotes ?? prevPairRow?.admin_notes ?? null,
+    fixture_key: typeof b.fixture_key === 'string' ? b.fixture_key : (oldGm?.fixture_key ?? null),
+    province_group: typeof b.province_group === 'string' ? b.province_group : (oldGm?.province_group ?? null),
+    league_group: typeof b.league_group === 'string' ? b.league_group : (oldGm?.league_group ?? null),
+  }
+}
+
+function applySimulatedGmUpdate(
+  u: GmUpdateWorkItem,
+  payload: Record<string, unknown>,
+  simTriplet: Map<string, string>,
+  simGmById: Map<string, ExistingGameMatchSyncRow>,
+  pairOnDateSim: Map<string, ExistingGameMatchSyncRow>
+): void {
+  const oldGm = simGmById.get(u.id)
+  const oldUk = oldGm
+    ? verifiedUniqueTripletKey(oldGm.kickoff_time, oldGm.home_team, oldGm.away_team, oldGm.verification_status)
+    : null
+  if (oldUk && simTriplet.get(oldUk) === u.id) {
+    simTriplet.delete(oldUk)
+  }
+  const next = mergeGmRowAfterUpdate(u, payload, oldGm, pairOnDateSim.get(u.pairOnDate))
+  simGmById.set(u.id, next)
+  const newUk = verifiedUniqueTripletKeyFromPayload(payload)
+  if (newUk) {
+    simTriplet.set(newUk, u.id)
+  }
+  pairOnDateSim.set(u.pairOnDate, next)
+}
+
+function prepareSyncPlan(
+  rows: NormalizedSheetRow[],
+  _mode: 'dry_run' | 'run',
+  ctx: PrepareSyncPlanContext
+): SyncWritePlan {
+  const planErrors: string[] = []
+  const planWarnings: string[] = []
+  let wouldLinkGroupRows = 0
+  let groupLinkWarningAdds = 0
+
+  let gmInserts: GmInsertWorkItem[] = []
+  const gmUpdates: GmUpdateWorkItem[] = []
+  const matchRowUpdates: MatchRowUpdatePlan[] = []
+  const matchRowInserts: MatchRowInsertPlan[] = []
+
+  for (const row of rows) {
+    const trackKey = primarySheetPairKey(ctx.teamRegistry, row)
+    if (row.status === 'upcoming') {
+      const { linkInput, warnEff, sheetWarn } = buildLinkContext(row)
+      const linkIds = computeFixtureGroupLinkIds(ctx.fixtureGroupMaps, linkInput)
+      if (linkIds.length > 0) wouldLinkGroupRows += 1
+      const rowLabelUp = `${row.home_team} vs ${row.away_team}`
+      const warnUp = collectGroupLinkResolutionWarnings(ctx.fixtureGroupMaps, warnEff, sheetWarn, rowLabelUp)
+      groupLinkWarningAdds += warnUp.messages.length
+      for (const w of warnUp.messages) planErrors.push(w)
+
+      const existingGmUp = resolveExistingGameMatchForSync(
+        row,
+        ctx.teamRegistry,
+        ctx.existingGameMatchByPairOnDate,
+        ctx.existingByFixtureKey
+      )
+      const upLeague = leagueGroupForUpsert(row, existingGmUp ?? null)
+      const upHomeTeamProv = normalizeProvinceLabelForGameMatches(row.home_team_province.trim())
+      const upAwayTeamProv = normalizeProvinceLabelForGameMatches(row.away_team_province.trim())
+      if (existingGmUp?.id) {
+        const body: Record<string, unknown> = {
+          kickoff_time: row.kickoff_time,
+          home_team: row.home_team,
+          away_team: row.away_team,
+          fixture_key: fixtureKeyForUpsert(row, existingGmUp),
+          province_group: provinceGroupForUpsert(row, existingGmUp),
+          league_group: upLeague,
+          tournament: null,
+          home_team_province: upHomeTeamProv ? upHomeTeamProv : null,
+          away_team_province: upAwayTeamProv ? upAwayTeamProv : null,
+          is_interprovincial: row.is_interprovincial,
+          has_wp_elite_team: row.has_wp_elite_team,
+          home_is_prestige_team: row.home_is_prestige_team,
+          away_is_prestige_team: row.away_is_prestige_team,
+          home_is_wp_elite: row.home_is_wp_elite,
+          away_is_wp_elite: row.away_is_wp_elite,
+          is_prestige_match: row.is_prestige_sheet,
+          is_prestige: !!row.is_prestige_effective,
+          status: row.status,
+          verification_status: 'verified',
+          source_name: row.source || 'Google Sheet (Teams + Fixtures)',
+          source_url: ctx.fixturesCsvUrl,
+          source_type: 'google_sheet_teams_fixtures',
+          rejected_reason: null,
+        }
+        const bad = payloadForbiddenKeys(body)
+        if (bad.length) {
+          planErrors.push(`game_matches update payload must not include: ${bad.join(', ')}`)
+        } else {
+          gmUpdates.push({
+            pairOnDate: trackKey,
+            kind: 'upcoming',
+            id: existingGmUp.id,
+            reactivate: existingGmUp.status === 'rejected' || existingGmUp.verification_status === 'rejected',
+            prevAdminNotes: existingGmUp.admin_notes,
+            body,
+          })
+        }
+      } else {
+        const body: Record<string, unknown> = {
+          home_team: row.home_team,
+          away_team: row.away_team,
+          kickoff_time: row.kickoff_time,
+          status: row.status,
+          verification_status: 'verified',
+          fixture_key: fixtureKeyForUpsert(row, null),
+          province_group: provinceGroupForUpsert(row, null),
+          league_group: leagueGroupForUpsert(row, null),
+          tournament: null,
+          home_team_province: upHomeTeamProv ? upHomeTeamProv : null,
+          away_team_province: upAwayTeamProv ? upAwayTeamProv : null,
+          is_interprovincial: row.is_interprovincial,
+          has_wp_elite_team: row.has_wp_elite_team,
+          home_is_prestige_team: row.home_is_prestige_team,
+          away_is_prestige_team: row.away_is_prestige_team,
+          home_is_wp_elite: row.home_is_wp_elite,
+          away_is_wp_elite: row.away_is_wp_elite,
+          is_prestige_match: row.is_prestige_sheet,
+          is_prestige: !!row.is_prestige_effective,
+          source_name: row.source || 'Google Sheet (Teams + Fixtures)',
+          source_url: ctx.fixturesCsvUrl,
+          source_type: 'google_sheet_teams_fixtures',
+        }
+        const bad = payloadForbiddenKeys(body)
+        if (bad.length) {
+          planErrors.push(`game_matches insert payload must not include: ${bad.join(', ')}`)
+        } else {
+          gmInserts.push({ pairOnDate: trackKey, kind: 'upcoming', body })
+        }
+      }
+      continue
+    }
+
+    if (row.status !== 'completed') continue
+
+    const homeTeamId = ctx.completedTeamIdCache.get(teamLookupNormalize(row.home_team))
+    const awayTeamId = ctx.completedTeamIdCache.get(teamLookupNormalize(row.away_team))
+    if (homeTeamId === undefined || awayTeamId === undefined) {
+      planErrors.push(`Completed row team id missing after batch resolve (${row.home_team} vs ${row.away_team})`)
+      continue
+    }
+    if (homeTeamId === awayTeamId) {
+      planErrors.push(`Completed row resolved to same team id (${row.home_team} vs ${row.away_team})`)
+      continue
+    }
+    if (row.home_score == null || row.away_score == null) {
+      planErrors.push(`Completed row missing score (${row.home_team} vs ${row.away_team})`)
+      continue
+    }
+
+    const existingGmCompleted = resolveExistingGameMatchForSync(
+      row,
+      ctx.teamRegistry,
+      ctx.existingGameMatchByPairOnDate,
+      ctx.existingByFixtureKey
+    )
+    const dbLeague = leagueGroupForUpsert(row, existingGmCompleted)
+    const dbHomeTeamProv = normalizeProvinceLabelForGameMatches(row.home_team_province.trim())
+    const dbAwayTeamProv = normalizeProvinceLabelForGameMatches(row.away_team_province.trim())
+
+    const existingForDate = ctx.existingMatchesByDate.get(row.match_date) ?? []
+    const duplicateMatch = existingForDate.find((m) => {
+      const a = m.team_a_id
+      const b = m.team_b_id
+      return (a === homeTeamId && b === awayTeamId) || (a === awayTeamId && b === homeTeamId)
+    })
+    if (duplicateMatch) {
+      matchRowUpdates.push({
+        id: duplicateMatch.id,
+        team_a_score: row.home_score,
+        team_b_score: row.away_score,
+        season: Number(row.match_date.slice(0, 4)),
+      })
+    } else {
+      matchRowInserts.push({
+        team_a_id: homeTeamId,
+        team_b_id: awayTeamId,
+        team_a_score: row.home_score,
+        team_b_score: row.away_score,
+        match_date: row.match_date,
+        season: Number(row.match_date.slice(0, 4)),
+      })
+    }
+
+    const gmCompletedBody: Record<string, unknown> = {
+      kickoff_time: row.kickoff_time,
+      home_team: row.home_team,
+      away_team: row.away_team,
+      status: 'completed',
+      home_score: row.home_score,
+      away_score: row.away_score,
+      verification_status: 'verified',
+      fixture_key: fixtureKeyForUpsert(row, existingGmCompleted),
+      province_group: provinceGroupForUpsert(row, existingGmCompleted),
+      league_group: dbLeague,
+      tournament: null,
+      home_team_province: dbHomeTeamProv ? dbHomeTeamProv : null,
+      away_team_province: dbAwayTeamProv ? dbAwayTeamProv : null,
+      is_interprovincial: row.is_interprovincial,
+      has_wp_elite_team: row.has_wp_elite_team,
+      home_is_prestige_team: row.home_is_prestige_team,
+      away_is_prestige_team: row.away_is_prestige_team,
+      home_is_wp_elite: row.home_is_wp_elite,
+      away_is_wp_elite: row.away_is_wp_elite,
+      is_prestige_match: row.is_prestige_sheet,
+      is_prestige: !!row.is_prestige_effective,
+      rejected_reason: null,
+      source_name: row.source || 'Google Sheet (Teams + Fixtures)',
+      source_url: ctx.fixturesCsvUrl,
+      source_type: 'google_sheet_teams_fixtures',
+    }
+    const badGm = payloadForbiddenKeys(gmCompletedBody)
+    if (badGm.length) {
+      planErrors.push(`game_matches insert/update payload must not include: ${badGm.join(', ')}`)
+      continue
+    }
+    if (existingGmCompleted) {
+      gmUpdates.push({
+        pairOnDate: trackKey,
+        kind: 'completed',
+        id: existingGmCompleted.id,
+        reactivate: false,
+        prevAdminNotes: existingGmCompleted.admin_notes,
+        body: gmCompletedBody,
+      })
+    } else {
+      gmInserts.push({ pairOnDate: trackKey, kind: 'completed', body: gmCompletedBody })
+    }
+
+    const { warnEff, sheetWarn } = buildLinkContext(row)
+    const rowLabelC = `${row.home_team} vs ${row.away_team}`
+    const warnC = collectGroupLinkResolutionWarnings(ctx.fixtureGroupMaps, warnEff, sheetWarn, rowLabelC)
+    groupLinkWarningAdds += warnC.messages.length
+    for (const w of warnC.messages) planErrors.push(w)
+  }
+
+  const { inserts: finalizedInserts, skippedSheetBatchDedupes } = finalizeGameMatchInsertsWithCount(
+    gmInserts,
+    gmUpdates,
+    ctx.teamRegistry,
+    ctx.existingGameMatchByPairOnDate,
+    ctx.existingByFixtureKey
+  )
+
+  for (const r of matchRowUpdates) {
+    const writeBody: Record<string, unknown> = {
+      team_a_score: r.team_a_score,
+      team_b_score: r.team_b_score,
+      season: r.season,
+    }
+    const bad = payloadForbiddenKeys(writeBody)
+    if (bad.length) {
+      planErrors.push(`matches update write body must not include: ${bad.join(', ')}`)
+    }
+  }
+  for (const r of matchRowInserts) {
+    const writeBody: Record<string, unknown> = {
+      team_a_id: r.team_a_id,
+      team_b_id: r.team_b_id,
+      team_a_score: r.team_a_score,
+      team_b_score: r.team_b_score,
+      match_date: r.match_date,
+      season: r.season,
+    }
+    const bad = payloadForbiddenKeys(writeBody)
+    if (bad.length) {
+      planErrors.push(`matches insert write body must not include: ${bad.join(', ')}`)
+    }
+  }
+
+  const simTriplet = new Map(ctx.uniqueVerifiedTripletToId)
+  const simGmById = new Map(ctx.gameMatchById)
+  const pairOnDateSim = new Map(ctx.existingGameMatchByPairOnDate)
+
+  const finalGmUpdates: GmUpdateWorkItem[] = []
+  let skippedUpdatesDueToVerifiedPair = 0
+  for (const u of gmUpdates) {
+    const rawBody = u.body as Record<string, unknown>
+    const payload = stripForbiddenWritePayload(rawBody)
+    const conflictId = findConflictingGameMatch(payload, u.id, simTriplet)
+    if (conflictId) {
+      planWarnings.push(WARN_SKIP_GM_UPDATE_UNIQUE_PAIR)
+      skippedUpdatesDueToVerifiedPair += 1
+      continue
+    }
+    applySimulatedGmUpdate(u, payload, simTriplet, simGmById, pairOnDateSim)
+    finalGmUpdates.push(u)
+  }
+
+  const finalGmInserts: GmInsertWorkItem[] = []
+  let skippedInsertsDueToVerifiedPair = 0
+  let pendingSlot = 0
+  for (const ins of finalizedInserts) {
+    const rawBody = ins.body as Record<string, unknown>
+    const payload = stripForbiddenWritePayload(rawBody)
+    const k = verifiedUniqueTripletKeyFromPayload(payload)
+    if (k) {
+      const occ = simTriplet.get(k)
+      if (occ) {
+        planWarnings.push(WARN_SKIP_GM_INSERT_UNIQUE_PAIR)
+        skippedInsertsDueToVerifiedPair += 1
+        continue
+      }
+      simTriplet.set(k, `__pending_ins_${pendingSlot}`)
+      pendingSlot += 1
+    }
+    finalGmInserts.push(ins)
+  }
+
+  return {
+    gmInserts: finalGmInserts,
+    gmUpdates: finalGmUpdates,
+    matchRowUpdates,
+    matchRowInserts,
+    skippedDuplicates: skippedSheetBatchDedupes,
+    skippedUpdatesDueToVerifiedPair,
+    skippedInsertsDueToVerifiedPair,
+    wouldLinkGroupRows,
+    groupLinkWarningAdds,
+    errors: planErrors,
+    warnings: planWarnings,
+  }
+}
+
 /**
  * Dedupe insert batch (last row wins), then promote any insert that already exists in DB to an update.
+ * @returns `skippedSheetBatchDedupes` — rows replaced by a later duplicate key in the same sheet batch.
  */
-function finalizeGameMatchInserts(
+function finalizeGameMatchInsertsWithCount(
   inserts: GmInsertWorkItem[],
   updatesOut: GmUpdateWorkItem[],
   teamRegistry: SheetTeamsRegistry,
   pairMap: Map<string, ExistingGameMatchSyncRow>,
   fkMap: Map<string, ExistingGameMatchSyncRow>
-): GmInsertWorkItem[] {
+): { inserts: GmInsertWorkItem[]; skippedSheetBatchDedupes: number } {
+  let skippedSheetBatchDedupes = 0
   const lastWinByKey = new Map<string, GmInsertWorkItem>()
   for (const item of inserts) {
     const key = insertStableDedupeKeyFromBody(item.body, teamRegistry)
     if (lastWinByKey.has(key)) {
+      skippedSheetBatchDedupes += 1
       console.info(`${SYNC_SHEET_LOG} skipped duplicate insert (sheet batch dedupe)`, { key })
     }
     lastWinByKey.set(key, item)
   }
   const out: GmInsertWorkItem[] = []
   for (const item of lastWinByKey.values()) {
-    const body = stripGameMatchWritePayload(item.body)
+    const body = stripForbiddenWritePayload(item.body)
     const existing = existingFromGameMatchInsertBody(body, teamRegistry, pairMap, fkMap)
     if (existing) {
       const matchedBy =
@@ -532,7 +977,7 @@ function finalizeGameMatchInserts(
     }
     out.push({ ...item, body })
   }
-  return out
+  return { inserts: out, skippedSheetBatchDedupes }
 }
 
 /**
@@ -1001,6 +1446,9 @@ export async function POST(request: Request) {
   const existingGameMatchByPairOnDate = new Map<string, ExistingGameMatchSyncRow>()
   const existingByFixtureKey = new Map<string, ExistingGameMatchSyncRow>()
   const existingCurrentUpcomingIdsByKey = new Map<string, string>()
+  const gameMatchById = new Map<string, ExistingGameMatchSyncRow>()
+  /** Matches partial unique index `game_matches_verified_kickoff_pair_uidx` (verified-only). */
+  const uniqueVerifiedTripletToId = new Map<string, string>()
 
   for (const row of (existingGameMatchesData as ExistingGameMatchSyncRow[] | null) ?? []) {
     const gm: ExistingGameMatchSyncRow = {
@@ -1014,6 +1462,11 @@ export async function POST(request: Request) {
       fixture_key: row.fixture_key ?? null,
       province_group: row.province_group ?? null,
       league_group: row.league_group ?? null,
+    }
+    gameMatchById.set(gm.id, gm)
+    const tripletKey = verifiedUniqueTripletKey(gm.kickoff_time, gm.home_team, gm.away_team, gm.verification_status)
+    if (tripletKey) {
+      uniqueVerifiedTripletToId.set(tripletKey, gm.id)
     }
     const fkNorm = gm.fixture_key?.trim() ? teamLookupNormalize(gm.fixture_key.trim()) : ''
     if (fkNorm) {
@@ -1049,55 +1502,38 @@ export async function POST(request: Request) {
     }
   }
 
-  // Compute dry-run counts first.
-  for (const row of normalized) {
-    if (row.status === 'upcoming') {
-      const { linkInput, warnEff, sheetWarn } = buildLinkContext(row)
-      const linkIds = computeFixtureGroupLinkIds(fixtureGroupMaps, linkInput)
-      if (linkIds.length > 0) would_link_groups += 1
-      const rowLabel = `${row.home_team} vs ${row.away_team}`
-      const rowWarns = collectGroupLinkResolutionWarnings(fixtureGroupMaps, warnEff, sheetWarn, rowLabel)
-      group_link_warnings += rowWarns.messages.length
-      for (const w of rowWarns.messages) errors.push(w)
-      const existingGm = resolveExistingGameMatchForSync(
-        row,
-        teamRegistry,
-        existingGameMatchByPairOnDate,
-        existingByFixtureKey
-      )
-      if (existingGm) {
-        if (existingGm.status === 'rejected' || existingGm.verification_status === 'rejected') {
-          would_reactivate_upcoming += 1
-        } else {
-          would_update_upcoming += 1
-        }
-      } else {
-        would_insert_upcoming += 1
-      }
-      continue
-    }
+  const completedTeamIdCache = new Map<string, number>()
+  await batchEnsureTeamIdsForCompletedRows(supabase, normalized, teams, completedTeamIdCache, errors)
 
-    if (row.status !== 'completed') {
-      continue
-    }
+  const plan = prepareSyncPlan(normalized, dryRun ? 'dry_run' : 'run', {
+    teamRegistry,
+    fixtureGroupMaps,
+    fixturesCsvUrl,
+    existingGameMatchByPairOnDate,
+    existingByFixtureKey,
+    uniqueVerifiedTripletToId,
+    gameMatchById,
+    existingMatchesByDate,
+    completedTeamIdCache,
+  })
 
-    if (teamLookupNormalize(row.home_team) === teamLookupNormalize(row.away_team)) {
-      errors.push(`Completed row has same home and away canonical team (${row.home_team})`)
-      continue
-    }
-    if (row.home_score == null || row.away_score == null) {
-      errors.push(`Completed row missing score (${row.home_team} vs ${row.away_team})`)
-      continue
-    }
-    const existingGmForCompleted = resolveExistingGameMatchForSync(
-      row,
-      teamRegistry,
-      existingGameMatchByPairOnDate,
-      existingByFixtureKey
-    )
-    if (existingGmForCompleted) would_update_completed += 1
-    else would_insert_completed += 1
-  }
+  for (const e of plan.errors) errors.push(e)
+  for (const w of plan.warnings) errors.push(w)
+  skipped_duplicates += plan.skippedDuplicates
+  would_link_groups = plan.wouldLinkGroupRows
+  group_link_warnings += plan.groupLinkWarningAdds
+
+  would_insert_upcoming = plan.gmInserts.filter((i) => i.kind === 'upcoming').length
+  would_update_upcoming = plan.gmUpdates.filter((u) => u.kind === 'upcoming' && !u.reactivate).length
+  would_reactivate_upcoming = plan.gmUpdates.filter((u) => u.kind === 'upcoming' && u.reactivate).length
+  would_insert_completed = plan.gmInserts.filter((i) => i.kind === 'completed').length
+  would_update_completed = plan.gmUpdates.filter((u) => u.kind === 'completed').length
+
+  const gmInserts = plan.gmInserts
+  const gmUpdates = plan.gmUpdates
+  const matchRowUpdates = plan.matchRowUpdates
+  const matchRowInserts = plan.matchRowInserts
+  let upcomingUpsertFailed = false
 
   if (replaceUpcoming) {
     for (const key of snapshotUpcomingKeyToId.keys()) {
@@ -1112,20 +1548,6 @@ export async function POST(request: Request) {
     syncTimedOut = false
     lastProcessedFixtureRow = undefined
 
-    const completedTeamIdCache = new Map<string, number>()
-
-    let gmInserts: GmInsertWorkItem[] = []
-    const gmUpdates: GmUpdateWorkItem[] = []
-    const matchRowUpdates: { id: number; team_a_score: number; team_b_score: number; season: number }[] = []
-    const matchRowInserts: {
-      team_a_id: number
-      team_b_id: number
-      team_a_score: number
-      team_b_score: number
-      match_date: string
-      season: number
-    }[] = []
-
     const checkTime = () => {
       if (Date.now() - syncImportStartedMs > SYNC_IMPORT_MAX_MS) {
         syncTimedOut = true
@@ -1137,247 +1559,36 @@ export async function POST(request: Request) {
       return false
     }
 
-    if (!checkTime()) {
-      await batchEnsureTeamIdsForCompletedRows(supabase, normalized, teams, completedTeamIdCache, errors)
-    }
-
-    if (!syncTimedOut && !checkTime()) {
-      for (let ni = 0; ni < normalized.length; ni += 1) {
-        const row = normalized[ni]
-        lastProcessedFixtureRow = `${row.match_date} ${row.home_team} vs ${row.away_team} (${ni + 1}/${normalized.length})`
-        if (checkTime()) break
-
-        const trackKey = primarySheetPairKey(teamRegistry, row)
-        if (row.status === 'upcoming') {
-          const existingGmUp = resolveExistingGameMatchForSync(
-            row,
-            teamRegistry,
-            existingGameMatchByPairOnDate,
-            existingByFixtureKey
-          )
-          const upLeague = leagueGroupForUpsert(row, existingGmUp ?? null)
-          const { warnEff, sheetWarn } = buildLinkContext(row)
-          const upHomeTeamProv = normalizeProvinceLabelForGameMatches(row.home_team_province.trim())
-          const upAwayTeamProv = normalizeProvinceLabelForGameMatches(row.away_team_province.trim())
-          const rowLabelUp = `${row.home_team} vs ${row.away_team}`
-          const warnUp = collectGroupLinkResolutionWarnings(fixtureGroupMaps, warnEff, sheetWarn, rowLabelUp)
-          group_link_warnings += warnUp.messages.length
-          for (const w of warnUp.messages) errors.push(w)
-          if (existingGmUp?.id) {
-            console.info(`${SYNC_SHEET_LOG} matched existing fixture`, {
-              id: existingGmUp.id,
-              kind: 'upcoming',
-              source: 'sheet_row',
-            })
-            console.info(`${SYNC_SHEET_LOG} updating existing fixture`, { id: existingGmUp.id, kind: 'upcoming' })
-            gmUpdates.push({
-              pairOnDate: trackKey,
-              kind: 'upcoming',
-              id: existingGmUp.id,
-              reactivate:
-                existingGmUp.status === 'rejected' || existingGmUp.verification_status === 'rejected',
-              prevAdminNotes: existingGmUp.admin_notes,
-              body: {
-                kickoff_time: row.kickoff_time,
-                home_team: row.home_team,
-                away_team: row.away_team,
-                fixture_key: fixtureKeyForUpsert(row, existingGmUp),
-                province_group: provinceGroupForUpsert(row, existingGmUp),
-                league_group: upLeague,
-                tournament: null,
-                home_team_province: upHomeTeamProv ? upHomeTeamProv : null,
-                away_team_province: upAwayTeamProv ? upAwayTeamProv : null,
-                is_interprovincial: row.is_interprovincial,
-                has_wp_elite_team: row.has_wp_elite_team,
-                home_is_prestige_team: row.home_is_prestige_team,
-                away_is_prestige_team: row.away_is_prestige_team,
-                home_is_wp_elite: row.home_is_wp_elite,
-                away_is_wp_elite: row.away_is_wp_elite,
-                is_prestige_match: row.is_prestige_sheet,
-                is_prestige: !!row.is_prestige_effective,
-                status: row.status,
-                verification_status: 'verified',
-                source_name: row.source || 'Google Sheet (Teams + Fixtures)',
-                source_url: fixturesCsvUrl,
-                source_type: 'google_sheet_teams_fixtures',
-                rejected_reason: null,
-              },
-            })
-          } else {
-            gmInserts.push({
-              pairOnDate: trackKey,
-              kind: 'upcoming',
-              body: {
-                home_team: row.home_team,
-                away_team: row.away_team,
-                kickoff_time: row.kickoff_time,
-                status: row.status,
-                verification_status: 'verified',
-                fixture_key: fixtureKeyForUpsert(row, null),
-                province_group: provinceGroupForUpsert(row, null),
-                league_group: leagueGroupForUpsert(row, null),
-                tournament: null,
-                home_team_province: upHomeTeamProv ? upHomeTeamProv : null,
-                away_team_province: upAwayTeamProv ? upAwayTeamProv : null,
-                is_interprovincial: row.is_interprovincial,
-                has_wp_elite_team: row.has_wp_elite_team,
-                home_is_prestige_team: row.home_is_prestige_team,
-                away_is_prestige_team: row.away_is_prestige_team,
-                home_is_wp_elite: row.home_is_wp_elite,
-                away_is_wp_elite: row.away_is_wp_elite,
-                is_prestige_match: row.is_prestige_sheet,
-                is_prestige: !!row.is_prestige_effective,
-                source_name: row.source || 'Google Sheet (Teams + Fixtures)',
-                source_url: fixturesCsvUrl,
-                source_type: 'google_sheet_teams_fixtures',
-              },
-            })
-          }
-          continue
-        }
-
-        if (row.status !== 'completed') continue
-
-        const homeTeamId = completedTeamIdCache.get(teamLookupNormalize(row.home_team))
-        const awayTeamId = completedTeamIdCache.get(teamLookupNormalize(row.away_team))
-        if (homeTeamId === undefined || awayTeamId === undefined) {
-          errors.push(
-            `Completed row team id missing after batch resolve (${row.home_team} vs ${row.away_team})`
-          )
-          continue
-        }
-        if (homeTeamId === awayTeamId) {
-          errors.push(`Completed row resolved to same team id (${row.home_team} vs ${row.away_team})`)
-          continue
-        }
-        if (row.home_score == null || row.away_score == null) {
-          errors.push(`Completed row missing score (${row.home_team} vs ${row.away_team})`)
-          continue
-        }
-
-        const { warnEff, sheetWarn } = buildLinkContext(row)
-        const existingGmCompleted = resolveExistingGameMatchForSync(
-          row,
-          teamRegistry,
-          existingGameMatchByPairOnDate,
-          existingByFixtureKey
-        )
-        const dbLeague = leagueGroupForUpsert(row, existingGmCompleted)
-        const dbHomeTeamProv = normalizeProvinceLabelForGameMatches(row.home_team_province.trim())
-        const dbAwayTeamProv = normalizeProvinceLabelForGameMatches(row.away_team_province.trim())
-
-        const existingForDate = existingMatchesByDate.get(row.match_date) ?? []
-        const duplicateMatch = existingForDate.find((m) => {
-          const a = m.team_a_id
-          const b = m.team_b_id
-          return (
-            (a === homeTeamId && b === awayTeamId) ||
-            (a === awayTeamId && b === homeTeamId)
-          )
-        })
-        if (duplicateMatch) {
-          matchRowUpdates.push({
-            id: duplicateMatch.id,
-            team_a_score: row.home_score,
-            team_b_score: row.away_score,
-            season: Number(row.match_date.slice(0, 4)),
-          })
-        } else {
-          matchRowInserts.push({
-            team_a_id: homeTeamId,
-            team_b_id: awayTeamId,
-            team_a_score: row.home_score,
-            team_b_score: row.away_score,
-            match_date: row.match_date,
-            season: Number(row.match_date.slice(0, 4)),
-          })
-        }
-
-        const gmCompletedBody: Record<string, unknown> = {
-          kickoff_time: row.kickoff_time,
-          home_team: row.home_team,
-          away_team: row.away_team,
-          status: 'completed',
-          home_score: row.home_score,
-          away_score: row.away_score,
-          verification_status: 'verified',
-          fixture_key: fixtureKeyForUpsert(row, existingGmCompleted),
-          province_group: provinceGroupForUpsert(row, existingGmCompleted),
-          league_group: dbLeague,
-          tournament: null,
-          home_team_province: dbHomeTeamProv ? dbHomeTeamProv : null,
-          away_team_province: dbAwayTeamProv ? dbAwayTeamProv : null,
-          is_interprovincial: row.is_interprovincial,
-          has_wp_elite_team: row.has_wp_elite_team,
-          home_is_prestige_team: row.home_is_prestige_team,
-          away_is_prestige_team: row.away_is_prestige_team,
-          home_is_wp_elite: row.home_is_wp_elite,
-          away_is_wp_elite: row.away_is_wp_elite,
-          is_prestige_match: row.is_prestige_sheet,
-          is_prestige: !!row.is_prestige_effective,
-          rejected_reason: null,
-          source_name: row.source || 'Google Sheet (Teams + Fixtures)',
-          source_url: fixturesCsvUrl,
-          source_type: 'google_sheet_teams_fixtures',
-        }
-        if (existingGmCompleted) {
-          console.info(`${SYNC_SHEET_LOG} matched existing fixture`, {
-            id: existingGmCompleted.id,
-            kind: 'completed',
-            source: 'sheet_row',
-          })
-          console.info(`${SYNC_SHEET_LOG} updating existing fixture`, { id: existingGmCompleted.id, kind: 'completed' })
-          gmUpdates.push({
-            pairOnDate: trackKey,
-            kind: 'completed',
-            id: existingGmCompleted.id,
-            reactivate: false,
-            prevAdminNotes: existingGmCompleted.admin_notes,
-            body: gmCompletedBody,
-          })
-        } else {
-          gmInserts.push({ pairOnDate: trackKey, kind: 'completed', body: gmCompletedBody })
-        }
-
-        const rowLabelC = `${row.home_team} vs ${row.away_team}`
-        const warnC = collectGroupLinkResolutionWarnings(fixtureGroupMaps, warnEff, sheetWarn, rowLabelC)
-        group_link_warnings += warnC.messages.length
-        for (const w of warnC.messages) errors.push(w)
-      }
-    }
-
-    gmInserts = finalizeGameMatchInserts(
-      gmInserts,
-      gmUpdates,
-      teamRegistry,
-      existingGameMatchByPairOnDate,
-      existingByFixtureKey
-    )
-
-    let upcomingUpsertFailed = false
-
     if (!syncTimedOut) {
       for (let bi = 0; bi < gmUpdates.length; bi += SYNC_BATCH_SIZE) {
         if (checkTime()) break
         const slice = gmUpdates.slice(bi, bi + SYNC_BATCH_SIZE)
         const i = Math.floor(bi / SYNC_BATCH_SIZE)
         console.info(`${SYNC_SHEET_LOG} batch game_matches updates`, { batch: i, count: slice.length })
-        const updateResults = await Promise.all(
-          slice.map((u) =>
-            supabase
-              .from('game_matches')
-              .update(stripGameMatchWritePayload(u.body as Record<string, unknown>))
-              .eq('id', u.id)
-          )
-        )
-        const failed = updateResults.find((r) => r.error)
-        if (failed?.error) {
-          upcomingUpsertFailed = true
-          errors.push(`game_matches batch update failed: ${failed.error.message}`)
-          break
-        }
+        let batchAborted = false
         for (const u of slice) {
-          const prev = existingGameMatchByPairOnDate.get(u.pairOnDate)
+          lastProcessedFixtureRow = u.pairOnDate
+          const payload = stripForbiddenWritePayload(u.body as Record<string, unknown>)
+          const { error } = await supabase.from('game_matches').update(payload).eq('id', u.id)
+          if (error) {
+            upcomingUpsertFailed = true
+            errors.push(`game_matches batch update failed: ${error.message}`)
+            batchAborted = true
+            break
+          }
+          const oldGm = gameMatchById.get(u.id)
+          if (oldGm) {
+            const oldUk = verifiedUniqueTripletKey(
+              oldGm.kickoff_time,
+              oldGm.home_team,
+              oldGm.away_team,
+              oldGm.verification_status
+            )
+            if (oldUk && uniqueVerifiedTripletToId.get(oldUk) === u.id) {
+              uniqueVerifiedTripletToId.delete(oldUk)
+            }
+          }
+          const prevPair = existingGameMatchByPairOnDate.get(u.pairOnDate)
           const b = u.body as Record<string, unknown>
           const next: ExistingGameMatchSyncRow = {
             id: u.id,
@@ -1385,18 +1596,23 @@ export async function POST(request: Request) {
             home_team: String(b.home_team),
             away_team: String(b.away_team),
             status: u.kind === 'completed' ? 'completed' : 'upcoming',
-            verification_status: 'verified',
-            admin_notes: u.prevAdminNotes ?? prev?.admin_notes ?? null,
+            verification_status: typeof b.verification_status === 'string' ? b.verification_status : 'verified',
+            admin_notes: u.prevAdminNotes ?? prevPair?.admin_notes ?? null,
             fixture_key:
               typeof b.fixture_key === 'string'
                 ? b.fixture_key
-                : (prev?.fixture_key ?? null),
+                : (oldGm?.fixture_key ?? null),
             province_group:
               typeof b.province_group === 'string'
                 ? b.province_group
-                : (prev?.province_group ?? null),
+                : (oldGm?.province_group ?? null),
             league_group:
-              typeof b.league_group === 'string' ? b.league_group : (prev?.league_group ?? null),
+              typeof b.league_group === 'string' ? b.league_group : (oldGm?.league_group ?? null),
+          }
+          gameMatchById.set(u.id, next)
+          const newUk = verifiedUniqueTripletKeyFromPayload(payload)
+          if (newUk) {
+            uniqueVerifiedTripletToId.set(newUk, u.id)
           }
           existingGameMatchByPairOnDate.set(u.pairOnDate, next)
           const fkUp = next.fixture_key?.trim() ? teamLookupNormalize(next.fixture_key.trim()) : ''
@@ -1413,6 +1629,7 @@ export async function POST(request: Request) {
             else updated_upcoming += 1
           }
         }
+        if (batchAborted) break
       }
     }
 
@@ -1421,8 +1638,9 @@ export async function POST(request: Request) {
         if (checkTime()) break
         const slice = gmInserts.slice(bi, bi + SYNC_BATCH_SIZE)
         const i = Math.floor(bi / SYNC_BATCH_SIZE)
+        if (slice.length) lastProcessedFixtureRow = slice[0].pairOnDate
         console.info(`${SYNC_SHEET_LOG} batch game_matches inserts`, { batch: i, count: slice.length })
-        const insertPayloads = slice.map((s) => stripGameMatchWritePayload(s.body as Record<string, unknown>))
+        const insertPayloads = slice.map((s) => stripForbiddenWritePayload(s.body as Record<string, unknown>))
         for (let ii = 0; ii < slice.length; ii += 1) {
           console.info(`${SYNC_SHEET_LOG} inserting new fixture`, {
             kind: slice[ii].kind,
@@ -1457,6 +1675,16 @@ export async function POST(request: Request) {
             province_group: typeof b.province_group === 'string' ? b.province_group : null,
             league_group: typeof b.league_group === 'string' ? b.league_group : null,
           }
+          gameMatchById.set(id, syncRow)
+          const ut = verifiedUniqueTripletKey(
+            syncRow.kickoff_time,
+            syncRow.home_team,
+            syncRow.away_team,
+            syncRow.verification_status
+          )
+          if (ut) {
+            uniqueVerifiedTripletToId.set(ut, id)
+          }
           existingGameMatchByPairOnDate.set(meta.pairOnDate, syncRow)
           const fkIns = syncRow.fixture_key?.trim() ? teamLookupNormalize(syncRow.fixture_key.trim()) : ''
           if (fkIns) {
@@ -1479,19 +1707,25 @@ export async function POST(request: Request) {
         if (checkTime()) break
         const slice = matchRowUpdates.slice(bi, bi + SYNC_BATCH_SIZE)
         const i = Math.floor(bi / SYNC_BATCH_SIZE)
-        console.log(`Batch ${i} matches updated`, slice.length)
-        const rowsWithExistingId = slice.map((r) => ({
-          id: r.id,
-          team_a_score: r.team_a_score,
-          team_b_score: r.team_b_score,
-          season: r.season,
-        }))
-        const { error } = await supabase.from('matches').upsert(rowsWithExistingId, { onConflict: 'id' })
-        if (error) {
-          errors.push(`matches batch upsert failed: ${error.message}`)
-          break
+        console.info(`${SYNC_SHEET_LOG} batch matches updates`, { batch: i, count: slice.length })
+        let matchesBatchAborted = false
+        let updatedInBatch = 0
+        for (const r of slice) {
+          const payload = stripForbiddenWritePayload({
+            team_a_score: r.team_a_score,
+            team_b_score: r.team_b_score,
+            season: r.season,
+          } as Record<string, unknown>)
+          const { error } = await supabase.from('matches').update(payload).eq('id', r.id)
+          if (error) {
+            errors.push(`matches batch update failed: ${error.message}`)
+            matchesBatchAborted = true
+            break
+          }
+          updatedInBatch += 1
         }
-        matches_updated += slice.length
+        if (matchesBatchAborted) break
+        matches_updated += updatedInBatch
       }
     }
 
@@ -1500,15 +1734,17 @@ export async function POST(request: Request) {
         if (checkTime()) break
         const slice = matchRowInserts.slice(bi, bi + SYNC_BATCH_SIZE)
         const i = Math.floor(bi / SYNC_BATCH_SIZE)
-        console.log(`Batch ${i} matches inserted`, slice.length)
-        const rowsWithoutId = slice.map((r) => ({
-          team_a_id: r.team_a_id,
-          team_b_id: r.team_b_id,
-          team_a_score: r.team_a_score,
-          team_b_score: r.team_b_score,
-          match_date: r.match_date,
-          season: r.season,
-        }))
+        console.info(`${SYNC_SHEET_LOG} batch matches inserts`, { batch: i, count: slice.length })
+        const rowsWithoutId = slice.map((r) =>
+          stripForbiddenWritePayload({
+            team_a_id: r.team_a_id,
+            team_b_id: r.team_b_id,
+            team_a_score: r.team_a_score,
+            team_b_score: r.team_b_score,
+            match_date: r.match_date,
+            season: r.season,
+          } as Record<string, unknown>)
+        )
         const { data, error } = await supabase
           .from('matches')
           .insert(rowsWithoutId)
