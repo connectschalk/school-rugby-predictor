@@ -59,10 +59,28 @@ function payloadForbiddenKeys(body: Record<string, unknown>): string[] {
   return bad
 }
 
-const WARN_SKIP_GM_UPDATE_UNIQUE_PAIR =
-  'Warning: Skipped update because another fixture already exists for same date/team pair.'
-const WARN_SKIP_GM_INSERT_UNIQUE_PAIR =
-  'Warning: Skipped insert because another verified fixture already exists for same kickoff/team pair.'
+const GM_SKIP_UNIQUE_PAIR_UPDATE_FIX =
+  'Skipped update because another fixture already exists with the same teams and kickoff.'
+const GM_SKIP_UNIQUE_PAIR_INSERT_FIX =
+  'Skipped insert because another fixture already exists with the same teams and kickoff.'
+
+function formatGmUpdateSkippedUniquePairWarning(
+  currentId: string,
+  conflictId: string,
+  payload: Record<string, unknown>
+): string {
+  const home_team = String(payload.home_team ?? '')
+  const away_team = String(payload.away_team ?? '')
+  const kickoff_time = String(payload.kickoff_time ?? '')
+  return `Warning: Skipped game_matches update (unique pair conflict). currentId=${currentId} conflictId=${conflictId} home_team=${JSON.stringify(home_team)} away_team=${JSON.stringify(away_team)} kickoff_time=${JSON.stringify(kickoff_time)}. ${GM_SKIP_UNIQUE_PAIR_UPDATE_FIX}`
+}
+
+function formatGmInsertSkippedUniquePairWarning(conflictId: string, payload: Record<string, unknown>): string {
+  const home_team = String(payload.home_team ?? '')
+  const away_team = String(payload.away_team ?? '')
+  const kickoff_time = String(payload.kickoff_time ?? '')
+  return `Warning: Skipped game_matches insert (unique pair conflict). conflictId=${conflictId} home_team=${JSON.stringify(home_team)} away_team=${JSON.stringify(away_team)} kickoff_time=${JSON.stringify(kickoff_time)}. ${GM_SKIP_UNIQUE_PAIR_INSERT_FIX}`
+}
 
 /**
  * Same shape as `game_matches_verified_kickoff_pair_uidx` (verified rows only):
@@ -103,6 +121,16 @@ function findConflictingGameMatch(
   const occupant = uniqueVerifiedTripletToId.get(k)
   if (occupant && occupant !== currentId) return occupant
   return null
+}
+
+function buildKickoffPairOccupantMap(gmById: Map<string, ExistingGameMatchSyncRow>): Map<string, string> {
+  const m = new Map<string, string>()
+  for (const gm of gmById.values()) {
+    const pk = uniqueKickoffPairKey(gm.kickoff_time, gm.home_team, gm.away_team)
+    if (!pk) continue
+    m.set(pk, gm.id)
+  }
+  return m
 }
 
 export const SYNC_IMPORT_FOLLOWUP_NOTICE =
@@ -441,6 +469,24 @@ function orderedPairKey(a: string, b: string): string {
   return [a.trim().toLowerCase(), b.trim().toLowerCase()].sort().join('|')
 }
 
+/**
+ * Normalized key for `game_matches_unique_pair` (production) and the verified pair index:
+ * `kickoff_time` plus unordered `lower(trim)` home/away (same as `least`/`greatest` pair columns).
+ */
+function uniqueKickoffPairKey(kickoff: string, home: string, away: string): string {
+  const ko = String(kickoff ?? '').trim()
+  if (!ko) return ''
+  return `${ko}|${orderedPairKey(home, away)}`
+}
+
+function uniqueKickoffPairKeyFromPayload(payload: Record<string, unknown>): string {
+  return uniqueKickoffPairKey(
+    String(payload.kickoff_time ?? ''),
+    String(payload.home_team ?? ''),
+    String(payload.away_team ?? '')
+  )
+}
+
 function gameMatchStatusRank(status: string): number {
   const s = status.trim().toLowerCase()
   if (s === 'upcoming') return 4
@@ -613,6 +659,8 @@ type SyncWritePlan = {
   skippedDuplicates: number
   skippedUpdatesDueToVerifiedPair: number
   skippedInsertsDueToVerifiedPair: number
+  skippedUpdatesDueToKickoffPairConflict: number
+  skippedInsertsDueToKickoffPairConflict: number
   wouldLinkGroupRows: number
   groupLinkWarningAdds: number
   errors: string[]
@@ -659,7 +707,8 @@ function applySimulatedGmUpdate(
   payload: Record<string, unknown>,
   simTriplet: Map<string, string>,
   simGmById: Map<string, ExistingGameMatchSyncRow>,
-  pairOnDateSim: Map<string, ExistingGameMatchSyncRow>
+  pairOnDateSim: Map<string, ExistingGameMatchSyncRow>,
+  simKickoffPair: Map<string, string>
 ): void {
   const oldGm = simGmById.get(u.id)
   const oldUk = oldGm
@@ -673,6 +722,10 @@ function applySimulatedGmUpdate(
   const newUk = verifiedUniqueTripletKeyFromPayload(payload)
   if (newUk) {
     simTriplet.set(newUk, u.id)
+  }
+  const newPk = uniqueKickoffPairKey(next.kickoff_time, next.home_team, next.away_team)
+  if (newPk) {
+    simKickoffPair.set(newPk, u.id)
   }
   pairOnDateSim.set(u.pairOnDate, next)
 }
@@ -932,39 +985,72 @@ function prepareSyncPlan(
   const simTriplet = new Map(ctx.uniqueVerifiedTripletToId)
   const simGmById = new Map(ctx.gameMatchById)
   const pairOnDateSim = new Map(ctx.existingGameMatchByPairOnDate)
+  const simKickoffPair = buildKickoffPairOccupantMap(simGmById)
 
   const finalGmUpdates: GmUpdateWorkItem[] = []
   let skippedUpdatesDueToVerifiedPair = 0
+  let skippedUpdatesDueToKickoffPairConflict = 0
   for (const u of gmUpdates) {
     const rawBody = u.body as Record<string, unknown>
     const payload = stripForbiddenWritePayload(rawBody)
+    const oldGm = simGmById.get(u.id)
+    const oldPk = oldGm ? uniqueKickoffPairKey(oldGm.kickoff_time, oldGm.home_team, oldGm.away_team) : ''
+    const newPk = uniqueKickoffPairKeyFromPayload(payload)
+
+    if (oldPk && oldPk !== newPk && simKickoffPair.get(oldPk) === u.id) {
+      simKickoffPair.delete(oldPk)
+    }
+
+    const pairOccupant = newPk ? simKickoffPair.get(newPk) : undefined
+    if (newPk && pairOccupant && pairOccupant !== u.id) {
+      if (oldPk && oldPk !== newPk) simKickoffPair.set(oldPk, u.id)
+      planWarnings.push(formatGmUpdateSkippedUniquePairWarning(u.id, pairOccupant, payload))
+      skippedUpdatesDueToKickoffPairConflict += 1
+      continue
+    }
+
     const conflictId = findConflictingGameMatch(payload, u.id, simTriplet)
     if (conflictId) {
-      planWarnings.push(WARN_SKIP_GM_UPDATE_UNIQUE_PAIR)
+      if (oldPk && oldPk !== newPk) simKickoffPair.set(oldPk, u.id)
+      planWarnings.push(
+        `Warning: Skipped game_matches update (verified kickoff triplet conflict). currentId=${u.id} conflictId=${conflictId} home_team=${JSON.stringify(String(payload.home_team ?? ''))} away_team=${JSON.stringify(String(payload.away_team ?? ''))} kickoff_time=${JSON.stringify(String(payload.kickoff_time ?? ''))}.`
+      )
       skippedUpdatesDueToVerifiedPair += 1
       continue
     }
-    applySimulatedGmUpdate(u, payload, simTriplet, simGmById, pairOnDateSim)
+    applySimulatedGmUpdate(u, payload, simTriplet, simGmById, pairOnDateSim, simKickoffPair)
     finalGmUpdates.push(u)
   }
 
   const finalGmInserts: GmInsertWorkItem[] = []
   let skippedInsertsDueToVerifiedPair = 0
+  let skippedInsertsDueToKickoffPairConflict = 0
   let pendingSlot = 0
   for (const ins of finalizedInserts) {
     const rawBody = ins.body as Record<string, unknown>
     const payload = stripForbiddenWritePayload(rawBody)
+    const pk = uniqueKickoffPairKeyFromPayload(payload)
+    if (pk && simKickoffPair.get(pk)) {
+      const occPair = simKickoffPair.get(pk)!
+      planWarnings.push(formatGmInsertSkippedUniquePairWarning(occPair, payload))
+      skippedInsertsDueToKickoffPairConflict += 1
+      continue
+    }
     const k = verifiedUniqueTripletKeyFromPayload(payload)
     if (k) {
       const occ = simTriplet.get(k)
       if (occ) {
-        planWarnings.push(WARN_SKIP_GM_INSERT_UNIQUE_PAIR)
+        planWarnings.push(
+          'Warning: Skipped insert because another verified fixture already exists for same kickoff/team pair.'
+        )
         skippedInsertsDueToVerifiedPair += 1
         continue
       }
-      simTriplet.set(k, `__pending_ins_${pendingSlot}`)
-      pendingSlot += 1
     }
+    const pend = `__pending_ins_${pendingSlot}`
+    if (k) simTriplet.set(k, pend)
+    if (pk) simKickoffPair.set(pk, pend)
+    if (k || pk) pendingSlot += 1
     finalGmInserts.push(ins)
   }
 
@@ -976,6 +1062,8 @@ function prepareSyncPlan(
     skippedDuplicates: skippedSheetBatchDedupes,
     skippedUpdatesDueToVerifiedPair,
     skippedInsertsDueToVerifiedPair,
+    skippedUpdatesDueToKickoffPairConflict,
+    skippedInsertsDueToKickoffPairConflict,
     wouldLinkGroupRows,
     groupLinkWarningAdds,
     errors: planErrors,
@@ -1642,23 +1730,50 @@ export async function POST(request: Request) {
     }
 
     if (!syncTimedOut) {
+      const liveKickoffPairToId = buildKickoffPairOccupantMap(gameMatchById)
       for (let bi = 0; bi < gmUpdates.length; bi += SYNC_BATCH_SIZE) {
         if (checkTime()) break
         const slice = gmUpdates.slice(bi, bi + SYNC_BATCH_SIZE)
         const i = Math.floor(bi / SYNC_BATCH_SIZE)
         console.info(`${SYNC_SHEET_LOG} batch game_matches updates`, { batch: i, count: slice.length })
-        let batchAborted = false
+        let fatalUpdateError = false
         for (const u of slice) {
           lastProcessedFixtureRow = u.pairOnDate
           const payload = stripForbiddenWritePayload(u.body as Record<string, unknown>)
+          const oldGm = gameMatchById.get(u.id)
+          const oldPk = oldGm ? uniqueKickoffPairKey(oldGm.kickoff_time, oldGm.home_team, oldGm.away_team) : ''
+          const newPk = uniqueKickoffPairKeyFromPayload(payload)
+
+          const pairOccCheck = newPk ? liveKickoffPairToId.get(newPk) : undefined
+          if (newPk && pairOccCheck && pairOccCheck !== u.id) {
+            const w = formatGmUpdateSkippedUniquePairWarning(u.id, pairOccCheck, payload)
+            errors.push(w)
+            console.warn(SYNC_SHEET_LOG, w)
+            continue
+          }
+
           const { error } = await supabase.from('game_matches').update(payload).eq('id', u.id)
           if (error) {
+            const isPairDup = /game_matches_unique_pair/i.test(error.message)
+            if (isPairDup) {
+              const w = `Warning: Skipped game_matches update (unique pair conflict, DB). currentId=${u.id} conflictId=unknown home_team=${JSON.stringify(String(payload.home_team ?? ''))} away_team=${JSON.stringify(String(payload.away_team ?? ''))} kickoff_time=${JSON.stringify(String(payload.kickoff_time ?? ''))}. ${GM_SKIP_UNIQUE_PAIR_UPDATE_FIX} dbMessage=${JSON.stringify(error.message)}`
+              errors.push(w)
+              console.warn(SYNC_SHEET_LOG, w)
+              continue
+            }
             upcomingUpsertFailed = true
             errors.push(`game_matches batch update failed: ${error.message}`)
-            batchAborted = true
+            fatalUpdateError = true
             break
           }
-          const oldGm = gameMatchById.get(u.id)
+
+          if (oldPk && oldPk !== newPk && liveKickoffPairToId.get(oldPk) === u.id) {
+            liveKickoffPairToId.delete(oldPk)
+          }
+          if (newPk) {
+            liveKickoffPairToId.set(newPk, u.id)
+          }
+
           if (oldGm) {
             const oldUk = verifiedUniqueTripletKey(
               oldGm.kickoff_time,
@@ -1711,36 +1826,54 @@ export async function POST(request: Request) {
             else updated_upcoming += 1
           }
         }
-        if (batchAborted) break
+        if (fatalUpdateError) break
       }
     }
 
     if (!syncTimedOut) {
+      const liveKickoffPairInserts = buildKickoffPairOccupantMap(gameMatchById)
       for (let bi = 0; bi < gmInserts.length; bi += SYNC_BATCH_SIZE) {
         if (checkTime()) break
         const slice = gmInserts.slice(bi, bi + SYNC_BATCH_SIZE)
         const i = Math.floor(bi / SYNC_BATCH_SIZE)
         if (slice.length) lastProcessedFixtureRow = slice[0].pairOnDate
         console.info(`${SYNC_SHEET_LOG} batch game_matches inserts`, { batch: i, count: slice.length })
-        const insertPayloads = slice.map((s) => stripForbiddenWritePayload(s.body as Record<string, unknown>))
-        for (let ii = 0; ii < slice.length; ii += 1) {
+        let fatalInsertError = false
+        for (const meta of slice) {
+          const payload = stripForbiddenWritePayload(meta.body as Record<string, unknown>)
           console.info(`${SYNC_SHEET_LOG} inserting new fixture`, {
-            kind: slice[ii].kind,
-            dedupeKey: insertStableDedupeKeyFromBody(insertPayloads[ii], teamRegistry, teams, sheetSyncAliasMap),
+            kind: meta.kind,
+            dedupeKey: insertStableDedupeKeyFromBody(payload, teamRegistry, teams, sheetSyncAliasMap),
           })
-        }
-        const { data, error } = await supabase
-          .from('game_matches')
-          .insert(insertPayloads)
-          .select('id, kickoff_time, home_team, away_team')
-        if (error) {
-          upcomingUpsertFailed = true
-          errors.push(`game_matches batch insert failed: ${error.message}`)
-          break
-        }
-        for (let j = 0; j < slice.length; j += 1) {
-          const meta = slice[j]
-          const ret = data?.[j]
+          const pk = uniqueKickoffPairKeyFromPayload(payload)
+          if (pk && liveKickoffPairInserts.get(pk)) {
+            const occ = liveKickoffPairInserts.get(pk)!
+            const w = formatGmInsertSkippedUniquePairWarning(occ, payload)
+            errors.push(w)
+            console.warn(SYNC_SHEET_LOG, w)
+            continue
+          }
+          const { data: ret, error } = await supabase
+            .from('game_matches')
+            .insert(payload)
+            .select('id, kickoff_time, home_team, away_team')
+            .maybeSingle()
+          if (error) {
+            const isPairDup =
+              /game_matches_unique_pair/i.test(error.message) ||
+              (/duplicate key value violates unique constraint/i.test(error.message) &&
+                /game_matches/i.test(error.message))
+            if (isPairDup) {
+              const w = `${formatGmInsertSkippedUniquePairWarning('unknown', payload)} dbMessage=${JSON.stringify(error.message)}`
+              errors.push(w)
+              console.warn(SYNC_SHEET_LOG, w)
+              continue
+            }
+            upcomingUpsertFailed = true
+            errors.push(`game_matches insert failed: ${error.message}`)
+            fatalInsertError = true
+            break
+          }
           if (!ret?.id) continue
           const id = String(ret.id)
           const st = meta.kind === 'completed' ? 'completed' : 'upcoming'
@@ -1758,6 +1891,10 @@ export async function POST(request: Request) {
             league_group: typeof b.league_group === 'string' ? b.league_group : null,
           }
           gameMatchById.set(id, syncRow)
+          const pkAfter = uniqueKickoffPairKey(syncRow.kickoff_time, syncRow.home_team, syncRow.away_team)
+          if (pkAfter) {
+            liveKickoffPairInserts.set(pkAfter, id)
+          }
           const ut = verifiedUniqueTripletKey(
             syncRow.kickoff_time,
             syncRow.home_team,
@@ -1781,6 +1918,7 @@ export async function POST(request: Request) {
             inserted_completed += 1
           }
         }
+        if (fatalInsertError) break
       }
     }
 

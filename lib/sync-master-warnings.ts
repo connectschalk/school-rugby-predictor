@@ -45,6 +45,13 @@ function extractTeamsVs(message: string): { home: string | null; away: string | 
 function inferSeverity(message: string): SyncWarningSeverity {
   const m = message.toLowerCase()
   if (
+    /skipped game_matches (update|insert) \(unique pair conflict\)/i.test(message) ||
+    /unique pair conflict,\s*db/i.test(message) ||
+    /skipped update because another fixture already exists with the same teams and kickoff/i.test(m)
+  ) {
+    return 'warning'
+  }
+  if (
     /\bfailed\b/i.test(message) ||
     /missing required/i.test(m) ||
     /missing or invalid (date|time)/i.test(m) ||
@@ -72,7 +79,12 @@ function inferCategory(message: string): SyncWarningCategory {
   }
   if (lower.includes('province_group') || lower.includes('unknown province')) return 'province'
   if (lower.includes('critical: team-date duplicate')) return 'team_date'
-  if (lower.includes('duplicate fixture') || lower.includes('duplicate pair_key') || lower.includes('duplicate')) {
+  if (
+    lower.includes('duplicate fixture') ||
+    lower.includes('duplicate pair_key') ||
+    lower.includes('unique pair conflict') ||
+    lower.includes('duplicate')
+  ) {
     return 'duplicate'
   }
   if (lower.includes('same team appears multiple times') || lower.includes('same date')) return 'team_date'
@@ -120,6 +132,12 @@ function suggestedFix(category: SyncWarningCategory, message: string): string | 
     case 'group_link':
       return 'Add or fix league_group to match a fixture group in Admin → Fixture groups; province links come from team provinces on the Teams tab.'
     case 'duplicate':
+      if (lower.includes('skipped update because another fixture already exists with the same teams and kickoff')) {
+        return 'Skipped update because another fixture already exists with the same teams and kickoff.'
+      }
+      if (lower.includes('skipped insert because another fixture already exists with the same teams and kickoff')) {
+        return 'Skipped insert because another fixture already exists with the same teams and kickoff.'
+      }
       return 'Remove duplicate Fixtures rows with the same date and the same two teams (order of home/away does not matter).'
     case 'team_date':
       return 'Ensure each team plays at most once per date in the sheet; remove or merge duplicate fixtures.'
