@@ -48,6 +48,10 @@ type FixtureCsvRow = {
   home_score: string
   away_score: string
   league_group: string
+  /** Present only when the CSV includes a fixture_key (or alias) column. */
+  fixture_key?: string
+  /** Present only when the CSV includes province_group / province column. */
+  province_group?: string
   is_prestige: string
   status: string
   verification_status: string
@@ -267,6 +271,24 @@ type NormalizedSheetRow = {
   verification_status: 'draft' | 'needs_review' | 'verified' | 'rejected'
   source: string
   dedupe_key: string
+  /** Trimmed sheet key when column exists; null when column absent (do not clear DB on update). */
+  fixture_key: string | null
+  /** Only set when Fixtures CSV has a province_group column (trimmed cell; empty → null). */
+  province_group_sheet?: string
+}
+
+/** Loaded `game_matches` row fields needed for sheet sync matching and in-place updates. */
+type ExistingGameMatchSyncRow = {
+  id: string
+  kickoff_time: string
+  home_team: string
+  away_team: string
+  status: string
+  verification_status: string | null
+  admin_notes: string | null
+  fixture_key: string | null
+  province_group: string | null
+  league_group: string | null
 }
 
 function buildLinkContext(row: NormalizedSheetRow) {
@@ -317,6 +339,103 @@ function orderedPairKey(a: string, b: string): string {
   return [a.trim().toLowerCase(), b.trim().toLowerCase()].sort().join('|')
 }
 
+/** Resolve display / alias team labels to Teams-tab canonical names for stable fixture matching. */
+function canonicalTeamNameForSync(registry: SheetTeamsRegistry, raw: string): string {
+  const t = raw.trim()
+  if (!t) return t
+  const hit = registry.resolve(t)
+  return hit.ok ? hit.team.canonicalName.trim() : t
+}
+
+function gameMatchStatusRank(status: string): number {
+  const s = status.trim().toLowerCase()
+  if (s === 'upcoming') return 4
+  if (s === 'locked') return 3
+  if (s === 'completed') return 2
+  if (s === 'cancelled' || s === 'canceled') return 1
+  return 0
+}
+
+/** When two DB rows collide on the same lookup key, prefer the row sync should update (usually upcoming). */
+function pickPreferredExistingGmRow(
+  a: ExistingGameMatchSyncRow,
+  b: ExistingGameMatchSyncRow
+): ExistingGameMatchSyncRow {
+  const ra = gameMatchStatusRank(a.status)
+  const rb = gameMatchStatusRank(b.status)
+  if (ra !== rb) return ra > rb ? a : b
+  return a.id.localeCompare(b.id) <= 0 ? a : b
+}
+
+function pairLookupKey(
+  registry: SheetTeamsRegistry,
+  sastYmd: string,
+  homeTeam: string,
+  awayTeam: string
+): string {
+  const h = canonicalTeamNameForSync(registry, homeTeam)
+  const a = canonicalTeamNameForSync(registry, awayTeam)
+  return `${sastYmd}|${orderedPairKey(h, a)}`
+}
+
+/** Primary map key for a sheet row (SAST calendar day from kickoff + unordered canonical pair). */
+function primarySheetPairKey(registry: SheetTeamsRegistry, row: NormalizedSheetRow): string {
+  return pairLookupKey(registry, dateInSastFromIso(row.kickoff_time), row.home_team, row.away_team)
+}
+
+/** Alternate pair keys when CSV date and kickoff-derived SAST date disagree (legacy rows). */
+function sheetPairKeysForSync(registry: SheetTeamsRegistry, row: NormalizedSheetRow): string[] {
+  const sastKick = dateInSastFromIso(row.kickoff_time)
+  const primary = pairLookupKey(registry, sastKick, row.home_team, row.away_team)
+  if (row.match_date === sastKick) return [primary]
+  return [primary, pairLookupKey(registry, row.match_date, row.home_team, row.away_team)]
+}
+
+function resolveExistingGameMatchForSync(
+  row: NormalizedSheetRow,
+  registry: SheetTeamsRegistry,
+  pairMap: Map<string, ExistingGameMatchSyncRow>,
+  fixtureKeyMap: Map<string, ExistingGameMatchSyncRow>
+): ExistingGameMatchSyncRow | null {
+  const fk = row.fixture_key?.trim()
+  if (fk) {
+    const hit = fixtureKeyMap.get(teamLookupNormalize(fk))
+    if (hit) return hit
+  }
+  for (const pk of sheetPairKeysForSync(registry, row)) {
+    const hit = pairMap.get(pk)
+    if (hit) return hit
+  }
+  return null
+}
+
+function provinceGroupForUpsert(
+  row: NormalizedSheetRow,
+  existing: ExistingGameMatchSyncRow | null
+): string | null {
+  if (row.province_group_sheet !== undefined) {
+    const t = (row.province_group_sheet ?? '').trim()
+    return t ? t : null
+  }
+  return existing?.province_group ?? null
+}
+
+function fixtureKeyForUpsert(row: NormalizedSheetRow, existing: ExistingGameMatchSyncRow | null): string | null {
+  const fk = row.fixture_key?.trim()
+  if (fk) return fk
+  const prev = existing?.fixture_key?.trim()
+  return prev ? prev : null
+}
+
+function leagueGroupForUpsert(row: NormalizedSheetRow, existing: ExistingGameMatchSyncRow | null): string | null {
+  const raw = row.league_group.trim()
+  if (raw) {
+    const n = normalizeLeagueGroupForGameMatches(raw)
+    return n ? n : null
+  }
+  return existing?.league_group ?? null
+}
+
 /**
  * Teams-tab provinces → `game_matches.home_team_province` / `away_team_province`.
  * Short codes (FS, WP, …) must match `fixture_groups.name` so `trg_sync_game_match_groups_from_fields`
@@ -363,6 +482,8 @@ function parseFixturesSheetCsv(csvText: string): { rows: FixtureCsvRow[]; errors
     home_score: header.indexOf('home_score'),
     away_score: header.indexOf('away_score'),
     league_group: firstIdx(['league_group', 'league']),
+    fixture_key: firstIdx(['fixture_key', 'fixture_id', 'match_key', 'id']),
+    province_group: firstIdx(['province_group', 'province']),
     is_prestige: firstIdx(['is_prestige', 'prestige']),
     status: header.indexOf('status'),
     verification_status: header.indexOf('verification_status'),
@@ -380,7 +501,7 @@ function parseFixturesSheetCsv(csvText: string): { rows: FixtureCsvRow[]; errors
   for (let i = 1; i < lines.length; i += 1) {
     const cells = splitCsvLine(lines[i])
     const read = (k: keyof typeof idx) => (idx[k] >= 0 ? (cells[idx[k]] ?? '').trim() : '')
-    rows.push({
+    const row: FixtureCsvRow = {
       date: read('date'),
       time: read('time'),
       home_team: read('home_team'),
@@ -392,7 +513,10 @@ function parseFixturesSheetCsv(csvText: string): { rows: FixtureCsvRow[]; errors
       status: read('status'),
       verification_status: read('verification_status'),
       source: read('source'),
-    })
+    }
+    if (idx.fixture_key >= 0) row.fixture_key = read('fixture_key')
+    if (idx.province_group >= 0) row.province_group = read('province_group')
+    rows.push(row)
   }
   return { rows, errors }
 }
@@ -641,7 +765,10 @@ export async function POST(request: Request) {
       continue
     }
 
-    const dedupe = `${date}|${orderedPairKey(home, away)}`
+    const fkCell = r.fixture_key?.trim() ?? ''
+    const fixtureKey = fkCell ? fkCell : null
+
+    const dedupe = fixtureKey ? `fk:${teamLookupNormalize(fixtureKey)}` : `${date}|${orderedPairKey(home, away)}`
     if (seen.has(dedupe)) {
       skipped_duplicates += 1
       continue
@@ -709,6 +836,10 @@ export async function POST(request: Request) {
       verification_status: normalizeVerification(r.verification_status),
       source: r.source.trim(),
       dedupe_key: dedupe,
+      fixture_key: fixtureKey,
+      ...(r.province_group !== undefined
+        ? { province_group_sheet: r.province_group.trim() ? r.province_group.trim() : null }
+        : {}),
     })
 
     const homeDay = `${date}|${home.toLowerCase()}`
@@ -740,11 +871,14 @@ export async function POST(request: Request) {
     if (count > 1) errors.push(`Warning: same team appears multiple times on same date (${teamDate})`)
   }
 
-  const sheetCompletedPairKeys = new Set(
-    normalized
-      .filter((r) => r.status === 'completed')
-      .map((r) => `${r.match_date}|${orderedPairKey(r.home_team, r.away_team)}`)
-  )
+  const sheetCompletedPairKeys = new Set<string>()
+  const sheetUpcomingKeys = new Set<string>()
+  for (const row of normalized) {
+    for (const k of sheetPairKeysForSync(teamRegistry, row)) {
+      if (row.status === 'completed') sheetCompletedPairKeys.add(k)
+      else sheetUpcomingKeys.add(k)
+    }
+  }
 
   const { data: teamsData, error: teamsErr } = await supabase.from('teams').select('id, name')
   if (teamsErr) {
@@ -754,41 +888,23 @@ export async function POST(request: Request) {
 
   let fixtureGroupMaps: FixtureGroupMaps = await loadFixtureGroupMaps(supabase)
 
-  /** All statuses (incl. rejected/locked/cancelled/draft) — unique pair + SAST calendar day identifies one row */
+  /** All statuses (incl. rejected/locked/cancelled/draft) — match by fixture_key or SAST date + canonical pair */
   const { data: existingGameMatchesData, error: existingGameMatchesErr } = await supabase
     .from('game_matches')
-    .select('id, kickoff_time, home_team, away_team, status, verification_status, admin_notes')
+    .select(
+      'id, kickoff_time, home_team, away_team, status, verification_status, admin_notes, fixture_key, province_group, league_group'
+    )
   if (existingGameMatchesErr) {
     return NextResponse.json({ ok: false, error: `Could not load existing game matches: ${existingGameMatchesErr.message}` }, { status: 500 })
   }
 
-  type ExistingGm = {
-    id: string
-    kickoff_time: string
-    home_team: string
-    away_team: string
-    status: string
-    verification_status: string | null
-    admin_notes: string | null
-  }
-
-  /** Key: SAST date (YYYY-MM-DD) | unordered normalized home/away pair */
-  const existingGameMatchByPairOnDate = new Map<string, ExistingGm>()
+  /** Key: SAST date (YYYY-MM-DD) | unordered canonical home/away pair (Teams tab) */
+  const existingGameMatchByPairOnDate = new Map<string, ExistingGameMatchSyncRow>()
+  const existingByFixtureKey = new Map<string, ExistingGameMatchSyncRow>()
   const existingCurrentUpcomingIdsByKey = new Map<string, string>()
-  for (const row of
-    ((existingGameMatchesData as
-      | {
-          id: string
-          kickoff_time: string
-          home_team: string
-          away_team: string
-          status: string
-          verification_status: string | null
-          admin_notes: string | null
-        }[]
-      | null) ?? [])) {
-    const key = `${dateInSastFromIso(row.kickoff_time)}|${orderedPairKey(row.home_team, row.away_team)}`
-    existingGameMatchByPairOnDate.set(key, {
+
+  for (const row of (existingGameMatchesData as ExistingGameMatchSyncRow[] | null) ?? []) {
+    const gm: ExistingGameMatchSyncRow = {
       id: row.id,
       kickoff_time: row.kickoff_time,
       home_team: row.home_team,
@@ -796,9 +912,23 @@ export async function POST(request: Request) {
       status: row.status,
       verification_status: row.verification_status,
       admin_notes: row.admin_notes,
-    })
-    if (row.status === 'upcoming') {
-      existingCurrentUpcomingIdsByKey.set(key, row.id)
+      fixture_key: row.fixture_key ?? null,
+      province_group: row.province_group ?? null,
+      league_group: row.league_group ?? null,
+    }
+    const fkNorm = gm.fixture_key?.trim() ? teamLookupNormalize(gm.fixture_key.trim()) : ''
+    if (fkNorm) {
+      const prevF = existingByFixtureKey.get(fkNorm)
+      existingByFixtureKey.set(fkNorm, prevF ? pickPreferredExistingGmRow(prevF, gm) : gm)
+    }
+    const pairKey = pairLookupKey(teamRegistry, dateInSastFromIso(gm.kickoff_time), gm.home_team, gm.away_team)
+    const prevP = existingGameMatchByPairOnDate.get(pairKey)
+    existingGameMatchByPairOnDate.set(pairKey, prevP ? pickPreferredExistingGmRow(prevP, gm) : gm)
+  }
+
+  for (const [pairKey, gm] of existingGameMatchByPairOnDate.entries()) {
+    if (gm.status === 'upcoming') {
+      existingCurrentUpcomingIdsByKey.set(pairKey, gm.id)
     }
   }
 
@@ -821,11 +951,8 @@ export async function POST(request: Request) {
   }
 
   // Compute dry-run counts first.
-  const sheetUpcomingKeys = new Set<string>()
   for (const row of normalized) {
-    const pairOnDate = `${row.match_date}|${orderedPairKey(row.home_team, row.away_team)}`
     if (row.status === 'upcoming') {
-      sheetUpcomingKeys.add(pairOnDate)
       const { linkInput, warnEff, sheetWarn } = buildLinkContext(row)
       const linkIds = computeFixtureGroupLinkIds(fixtureGroupMaps, linkInput)
       if (linkIds.length > 0) would_link_groups += 1
@@ -833,7 +960,12 @@ export async function POST(request: Request) {
       const rowWarns = collectGroupLinkResolutionWarnings(fixtureGroupMaps, warnEff, sheetWarn, rowLabel)
       group_link_warnings += rowWarns.messages.length
       for (const w of rowWarns.messages) errors.push(w)
-      const existingGm = existingGameMatchByPairOnDate.get(pairOnDate)
+      const existingGm = resolveExistingGameMatchForSync(
+        row,
+        teamRegistry,
+        existingGameMatchByPairOnDate,
+        existingByFixtureKey
+      )
       if (existingGm) {
         if (existingGm.status === 'rejected' || existingGm.verification_status === 'rejected') {
           would_reactivate_upcoming += 1
@@ -858,7 +990,12 @@ export async function POST(request: Request) {
       errors.push(`Completed row missing score (${row.home_team} vs ${row.away_team})`)
       continue
     }
-    const existingGmForCompleted = existingGameMatchByPairOnDate.get(pairOnDate)
+    const existingGmForCompleted = resolveExistingGameMatchForSync(
+      row,
+      teamRegistry,
+      existingGameMatchByPairOnDate,
+      existingByFixtureKey
+    )
     if (existingGmForCompleted) would_update_completed += 1
     else would_insert_completed += 1
   }
@@ -925,20 +1062,25 @@ export async function POST(request: Request) {
         lastProcessedFixtureRow = `${row.match_date} ${row.home_team} vs ${row.away_team} (${ni + 1}/${normalized.length})`
         if (checkTime()) break
 
-        const pairOnDate = `${row.match_date}|${orderedPairKey(row.home_team, row.away_team)}`
+        const trackKey = primarySheetPairKey(teamRegistry, row)
         if (row.status === 'upcoming') {
+          const existingGmUp = resolveExistingGameMatchForSync(
+            row,
+            teamRegistry,
+            existingGameMatchByPairOnDate,
+            existingByFixtureKey
+          )
+          const upLeague = leagueGroupForUpsert(row, existingGmUp ?? null)
           const { warnEff, sheetWarn } = buildLinkContext(row)
-          const upLeague = normalizeLeagueGroupForGameMatches(row.league_group.trim())
           const upHomeTeamProv = normalizeProvinceLabelForGameMatches(row.home_team_province.trim())
           const upAwayTeamProv = normalizeProvinceLabelForGameMatches(row.away_team_province.trim())
           const rowLabelUp = `${row.home_team} vs ${row.away_team}`
           const warnUp = collectGroupLinkResolutionWarnings(fixtureGroupMaps, warnEff, sheetWarn, rowLabelUp)
           group_link_warnings += warnUp.messages.length
           for (const w of warnUp.messages) errors.push(w)
-          const existingGmUp = existingGameMatchByPairOnDate.get(pairOnDate)
           if (existingGmUp?.id) {
             gmUpdates.push({
-              pairOnDate,
+              pairOnDate: trackKey,
               kind: 'upcoming',
               id: existingGmUp.id,
               reactivate:
@@ -948,8 +1090,9 @@ export async function POST(request: Request) {
                 kickoff_time: row.kickoff_time,
                 home_team: row.home_team,
                 away_team: row.away_team,
-                province_group: null,
-                league_group: upLeague ? upLeague : null,
+                fixture_key: fixtureKeyForUpsert(row, existingGmUp),
+                province_group: provinceGroupForUpsert(row, existingGmUp),
+                league_group: leagueGroupForUpsert(row, existingGmUp),
                 tournament: null,
                 home_team_province: upHomeTeamProv ? upHomeTeamProv : null,
                 away_team_province: upAwayTeamProv ? upAwayTeamProv : null,
@@ -971,7 +1114,7 @@ export async function POST(request: Request) {
             })
           } else {
             gmInserts.push({
-              pairOnDate,
+              pairOnDate: trackKey,
               kind: 'upcoming',
               body: {
                 home_team: row.home_team,
@@ -979,8 +1122,9 @@ export async function POST(request: Request) {
                 kickoff_time: row.kickoff_time,
                 status: row.status,
                 verification_status: 'verified',
-                province_group: null,
-                league_group: upLeague ? upLeague : null,
+                fixture_key: fixtureKeyForUpsert(row, null),
+                province_group: provinceGroupForUpsert(row, null),
+                league_group: leagueGroupForUpsert(row, null),
                 tournament: null,
                 home_team_province: upHomeTeamProv ? upHomeTeamProv : null,
                 away_team_province: upAwayTeamProv ? upAwayTeamProv : null,
@@ -1021,7 +1165,13 @@ export async function POST(request: Request) {
         }
 
         const { warnEff, sheetWarn } = buildLinkContext(row)
-        const dbLeague = normalizeLeagueGroupForGameMatches(row.league_group.trim()) || null
+        const existingGmCompleted = resolveExistingGameMatchForSync(
+          row,
+          teamRegistry,
+          existingGameMatchByPairOnDate,
+          existingByFixtureKey
+        )
+        const dbLeague = leagueGroupForUpsert(row, existingGmCompleted)
         const dbHomeTeamProv = normalizeProvinceLabelForGameMatches(row.home_team_province.trim())
         const dbAwayTeamProv = normalizeProvinceLabelForGameMatches(row.away_team_province.trim())
 
@@ -1052,7 +1202,6 @@ export async function POST(request: Request) {
           })
         }
 
-        const existingGmCompleted = existingGameMatchByPairOnDate.get(pairOnDate) ?? null
         const gmCompletedBody: Record<string, unknown> = {
           kickoff_time: row.kickoff_time,
           home_team: row.home_team,
@@ -1061,7 +1210,8 @@ export async function POST(request: Request) {
           home_score: row.home_score,
           away_score: row.away_score,
           verification_status: 'verified',
-          province_group: null,
+          fixture_key: fixtureKeyForUpsert(row, existingGmCompleted),
+          province_group: provinceGroupForUpsert(row, existingGmCompleted),
           league_group: dbLeague,
           tournament: null,
           home_team_province: dbHomeTeamProv ? dbHomeTeamProv : null,
@@ -1081,7 +1231,7 @@ export async function POST(request: Request) {
         }
         if (existingGmCompleted) {
           gmUpdates.push({
-            pairOnDate,
+            pairOnDate: trackKey,
             kind: 'completed',
             id: existingGmCompleted.id,
             reactivate: false,
@@ -1089,7 +1239,7 @@ export async function POST(request: Request) {
             body: gmCompletedBody,
           })
         } else {
-          gmInserts.push({ pairOnDate, kind: 'completed', body: gmCompletedBody })
+          gmInserts.push({ pairOnDate: trackKey, kind: 'completed', body: gmCompletedBody })
         }
 
         const rowLabelC = `${row.home_team} vs ${row.away_team}`
