@@ -30,6 +30,18 @@ export const runtime = 'nodejs'
 const SYNC_IMPORT_MAX_MS = 45_000
 const SYNC_BATCH_SIZE = 50
 
+const SYNC_SHEET_LOG = '[sync-master-sheet]'
+
+/** Never send `id` on game_matches insert/update — DB default / .eq('id') only. */
+function stripGameMatchWritePayload(body: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(body)) {
+    if (k === 'id') continue
+    out[k] = v
+  }
+  return out
+}
+
 export const SYNC_IMPORT_FOLLOWUP_NOTICE =
   'Sync imports fixtures only. Run group linking and scoring separately.'
 
@@ -434,6 +446,93 @@ function leagueGroupForUpsert(row: NormalizedSheetRow, existing: ExistingGameMat
     return n ? n : null
   }
   return existing?.league_group ?? null
+}
+
+/** Same key shape as DB matching: SAST kickoff date + unordered canonical pair. */
+function insertStableDedupeKeyFromBody(body: Record<string, unknown>, registry: SheetTeamsRegistry): string {
+  const ko = String(body.kickoff_time ?? '')
+  const sast = dateInSastFromIso(ko)
+  const h = String(body.home_team ?? '')
+  const a = String(body.away_team ?? '')
+  return pairLookupKey(registry, sast, h, a)
+}
+
+function existingFromGameMatchInsertBody(
+  body: Record<string, unknown>,
+  registry: SheetTeamsRegistry,
+  pairMap: Map<string, ExistingGameMatchSyncRow>,
+  fkMap: Map<string, ExistingGameMatchSyncRow>
+): ExistingGameMatchSyncRow | null {
+  const fkRaw = typeof body.fixture_key === 'string' ? body.fixture_key.trim() : ''
+  if (fkRaw) {
+    const hit = fkMap.get(teamLookupNormalize(fkRaw))
+    if (hit) return hit
+  }
+  return pairMap.get(insertStableDedupeKeyFromBody(body, registry)) ?? null
+}
+
+type GmInsertWorkItem = {
+  pairOnDate: string
+  kind: 'upcoming' | 'completed'
+  body: Record<string, unknown>
+}
+
+type GmUpdateWorkItem = {
+  pairOnDate: string
+  kind: 'upcoming' | 'completed'
+  id: string
+  reactivate: boolean
+  body: Record<string, unknown>
+  prevAdminNotes: string | null
+}
+
+/**
+ * Dedupe insert batch (last row wins), then promote any insert that already exists in DB to an update.
+ */
+function finalizeGameMatchInserts(
+  inserts: GmInsertWorkItem[],
+  updatesOut: GmUpdateWorkItem[],
+  teamRegistry: SheetTeamsRegistry,
+  pairMap: Map<string, ExistingGameMatchSyncRow>,
+  fkMap: Map<string, ExistingGameMatchSyncRow>
+): GmInsertWorkItem[] {
+  const lastWinByKey = new Map<string, GmInsertWorkItem>()
+  for (const item of inserts) {
+    const key = insertStableDedupeKeyFromBody(item.body, teamRegistry)
+    if (lastWinByKey.has(key)) {
+      console.info(`${SYNC_SHEET_LOG} skipped duplicate insert (sheet batch dedupe)`, { key })
+    }
+    lastWinByKey.set(key, item)
+  }
+  const out: GmInsertWorkItem[] = []
+  for (const item of lastWinByKey.values()) {
+    const body = stripGameMatchWritePayload(item.body)
+    const existing = existingFromGameMatchInsertBody(body, teamRegistry, pairMap, fkMap)
+    if (existing) {
+      const matchedBy =
+        typeof body.fixture_key === 'string' && body.fixture_key.trim() ? 'fixture_key' : 'date_pair'
+      console.info(`${SYNC_SHEET_LOG} matched existing fixture`, {
+        id: existing.id,
+        matchedBy,
+        kind: item.kind,
+      })
+      console.info(`${SYNC_SHEET_LOG} updating existing fixture (promoted from insert)`, {
+        id: existing.id,
+        kind: item.kind,
+      })
+      updatesOut.push({
+        pairOnDate: item.pairOnDate,
+        kind: item.kind,
+        id: existing.id,
+        reactivate: existing.status === 'rejected' || existing.verification_status === 'rejected',
+        prevAdminNotes: existing.admin_notes,
+        body,
+      })
+      continue
+    }
+    out.push({ ...item, body })
+  }
+  return out
 }
 
 /**
@@ -1015,22 +1114,8 @@ export async function POST(request: Request) {
 
     const completedTeamIdCache = new Map<string, number>()
 
-    type GmInsertBatchItem = {
-      pairOnDate: string
-      kind: 'upcoming' | 'completed'
-      body: Record<string, unknown>
-    }
-    type GmUpdateBatchItem = {
-      pairOnDate: string
-      kind: 'upcoming' | 'completed'
-      id: string
-      reactivate: boolean
-      body: Record<string, unknown>
-      prevAdminNotes: string | null
-    }
-
-    const gmInserts: GmInsertBatchItem[] = []
-    const gmUpdates: GmUpdateBatchItem[] = []
+    let gmInserts: GmInsertWorkItem[] = []
+    const gmUpdates: GmUpdateWorkItem[] = []
     const matchRowUpdates: { id: number; team_a_score: number; team_b_score: number; season: number }[] = []
     const matchRowInserts: {
       team_a_id: number
@@ -1079,6 +1164,12 @@ export async function POST(request: Request) {
           group_link_warnings += warnUp.messages.length
           for (const w of warnUp.messages) errors.push(w)
           if (existingGmUp?.id) {
+            console.info(`${SYNC_SHEET_LOG} matched existing fixture`, {
+              id: existingGmUp.id,
+              kind: 'upcoming',
+              source: 'sheet_row',
+            })
+            console.info(`${SYNC_SHEET_LOG} updating existing fixture`, { id: existingGmUp.id, kind: 'upcoming' })
             gmUpdates.push({
               pairOnDate: trackKey,
               kind: 'upcoming',
@@ -1230,6 +1321,12 @@ export async function POST(request: Request) {
           source_type: 'google_sheet_teams_fixtures',
         }
         if (existingGmCompleted) {
+          console.info(`${SYNC_SHEET_LOG} matched existing fixture`, {
+            id: existingGmCompleted.id,
+            kind: 'completed',
+            source: 'sheet_row',
+          })
+          console.info(`${SYNC_SHEET_LOG} updating existing fixture`, { id: existingGmCompleted.id, kind: 'completed' })
           gmUpdates.push({
             pairOnDate: trackKey,
             kind: 'completed',
@@ -1249,70 +1346,34 @@ export async function POST(request: Request) {
       }
     }
 
-    let upcomingUpsertFailed = false
+    gmInserts = finalizeGameMatchInserts(
+      gmInserts,
+      gmUpdates,
+      teamRegistry,
+      existingGameMatchByPairOnDate,
+      existingByFixtureKey
+    )
 
-    if (!syncTimedOut) {
-      for (let bi = 0; bi < gmInserts.length; bi += SYNC_BATCH_SIZE) {
-        if (checkTime()) break
-        const slice = gmInserts.slice(bi, bi + SYNC_BATCH_SIZE)
-        const i = Math.floor(bi / SYNC_BATCH_SIZE)
-        console.log(`Batch ${i} inserted`, slice.length)
-        const { data, error } = await supabase
-          .from('game_matches')
-          .insert(slice.map((s) => s.body))
-          .select('id, kickoff_time, home_team, away_team')
-        if (error) {
-          upcomingUpsertFailed = true
-          errors.push(`game_matches batch insert failed: ${error.message}`)
-          break
-        }
-        for (let j = 0; j < slice.length; j += 1) {
-          const meta = slice[j]
-          const ret = data?.[j]
-          if (!ret?.id) continue
-          const id = String(ret.id)
-          const st = meta.kind === 'completed' ? 'completed' : 'upcoming'
-          const b = meta.body as Record<string, unknown>
-          const syncRow: ExistingGameMatchSyncRow = {
-            id,
-            kickoff_time: String(ret.kickoff_time),
-            home_team: String(ret.home_team),
-            away_team: String(ret.away_team),
-            status: st,
-            verification_status: 'verified',
-            admin_notes: null,
-            fixture_key: typeof b.fixture_key === 'string' ? b.fixture_key : null,
-            province_group: typeof b.province_group === 'string' ? b.province_group : null,
-            league_group: typeof b.league_group === 'string' ? b.league_group : null,
-          }
-          existingGameMatchByPairOnDate.set(meta.pairOnDate, syncRow)
-          const fkIns = syncRow.fixture_key?.trim() ? teamLookupNormalize(syncRow.fixture_key.trim()) : ''
-          if (fkIns) {
-            const prevFk = existingByFixtureKey.get(fkIns)
-            existingByFixtureKey.set(fkIns, prevFk ? pickPreferredExistingGmRow(prevFk, syncRow) : syncRow)
-          }
-          if (meta.kind === 'upcoming') {
-            existingCurrentUpcomingIdsByKey.set(meta.pairOnDate, id)
-            inserted_upcoming += 1
-          } else {
-            existingCurrentUpcomingIdsByKey.delete(meta.pairOnDate)
-            inserted_completed += 1
-          }
-        }
-      }
-    }
+    let upcomingUpsertFailed = false
 
     if (!syncTimedOut) {
       for (let bi = 0; bi < gmUpdates.length; bi += SYNC_BATCH_SIZE) {
         if (checkTime()) break
         const slice = gmUpdates.slice(bi, bi + SYNC_BATCH_SIZE)
         const i = Math.floor(bi / SYNC_BATCH_SIZE)
-        console.log(`Batch ${i} game_matches updated`, slice.length)
-        const rows = slice.map((s) => ({ id: s.id, ...s.body }))
-        const { error } = await supabase.from('game_matches').upsert(rows, { onConflict: 'id' })
-        if (error) {
+        console.info(`${SYNC_SHEET_LOG} batch game_matches updates`, { batch: i, count: slice.length })
+        const updateResults = await Promise.all(
+          slice.map((u) =>
+            supabase
+              .from('game_matches')
+              .update(stripGameMatchWritePayload(u.body as Record<string, unknown>))
+              .eq('id', u.id)
+          )
+        )
+        const failed = updateResults.find((r) => r.error)
+        if (failed?.error) {
           upcomingUpsertFailed = true
-          errors.push(`game_matches batch upsert failed: ${error.message}`)
+          errors.push(`game_matches batch update failed: ${failed.error.message}`)
           break
         }
         for (const u of slice) {
@@ -1350,6 +1411,64 @@ export async function POST(request: Request) {
             existingCurrentUpcomingIdsByKey.set(u.pairOnDate, u.id)
             if (u.reactivate) reactivated_upcoming += 1
             else updated_upcoming += 1
+          }
+        }
+      }
+    }
+
+    if (!syncTimedOut) {
+      for (let bi = 0; bi < gmInserts.length; bi += SYNC_BATCH_SIZE) {
+        if (checkTime()) break
+        const slice = gmInserts.slice(bi, bi + SYNC_BATCH_SIZE)
+        const i = Math.floor(bi / SYNC_BATCH_SIZE)
+        console.info(`${SYNC_SHEET_LOG} batch game_matches inserts`, { batch: i, count: slice.length })
+        const insertPayloads = slice.map((s) => stripGameMatchWritePayload(s.body as Record<string, unknown>))
+        for (let ii = 0; ii < slice.length; ii += 1) {
+          console.info(`${SYNC_SHEET_LOG} inserting new fixture`, {
+            kind: slice[ii].kind,
+            dedupeKey: insertStableDedupeKeyFromBody(insertPayloads[ii], teamRegistry),
+          })
+        }
+        const { data, error } = await supabase
+          .from('game_matches')
+          .insert(insertPayloads)
+          .select('id, kickoff_time, home_team, away_team')
+        if (error) {
+          upcomingUpsertFailed = true
+          errors.push(`game_matches batch insert failed: ${error.message}`)
+          break
+        }
+        for (let j = 0; j < slice.length; j += 1) {
+          const meta = slice[j]
+          const ret = data?.[j]
+          if (!ret?.id) continue
+          const id = String(ret.id)
+          const st = meta.kind === 'completed' ? 'completed' : 'upcoming'
+          const b = meta.body as Record<string, unknown>
+          const syncRow: ExistingGameMatchSyncRow = {
+            id,
+            kickoff_time: String(ret.kickoff_time),
+            home_team: String(ret.home_team),
+            away_team: String(ret.away_team),
+            status: st,
+            verification_status: 'verified',
+            admin_notes: null,
+            fixture_key: typeof b.fixture_key === 'string' ? b.fixture_key : null,
+            province_group: typeof b.province_group === 'string' ? b.province_group : null,
+            league_group: typeof b.league_group === 'string' ? b.league_group : null,
+          }
+          existingGameMatchByPairOnDate.set(meta.pairOnDate, syncRow)
+          const fkIns = syncRow.fixture_key?.trim() ? teamLookupNormalize(syncRow.fixture_key.trim()) : ''
+          if (fkIns) {
+            const prevFk = existingByFixtureKey.get(fkIns)
+            existingByFixtureKey.set(fkIns, prevFk ? pickPreferredExistingGmRow(prevFk, syncRow) : syncRow)
+          }
+          if (meta.kind === 'upcoming') {
+            existingCurrentUpcomingIdsByKey.set(meta.pairOnDate, id)
+            inserted_upcoming += 1
+          } else {
+            existingCurrentUpcomingIdsByKey.delete(meta.pairOnDate)
+            inserted_completed += 1
           }
         }
       }
