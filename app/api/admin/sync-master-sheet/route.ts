@@ -3,6 +3,9 @@ import { NextResponse } from 'next/server'
 import { fetchUserIsAdmin } from '@/lib/admin-access'
 import { buildStructuredWarningsFromStrings, type SyncWarningItem } from '@/lib/sync-master-warnings'
 import { splitCsvLine } from '@/lib/parse-game-matches-bulk'
+import type { FixtureCsvRow } from '@/lib/parse-fixtures-sheet-csv'
+import { normalizeDate, normalizeTime, parseFixturesSheetCsv } from '@/lib/parse-fixtures-sheet-csv'
+import { dateInSastFromIso } from '@/lib/sast-date'
 import {
   collectGroupLinkResolutionWarnings,
   computeFixtureGroupLinkIds,
@@ -28,9 +31,12 @@ import { upsertTeamsAndAliasesFromTeamsSheet } from '@/lib/sync-teams-from-sheet
 import {
   buildSheetSyncAliasMap,
   canonicalTeamLabelForGameMatches,
-  orderedComparablePairKey,
 } from '@/lib/team-canonical-for-sync'
 import { normalizeTeamKeyAsciiFold, type TeamRow } from '@/lib/team-name-match'
+import {
+  buildStableSheetFixtureKey,
+  normalizeStableFixtureKeyForLookup,
+} from '@/lib/sync-sheet-fixture-key'
 
 export const runtime = 'nodejs'
 
@@ -133,6 +139,16 @@ function buildKickoffPairOccupantMap(gmById: Map<string, ExistingGameMatchSyncRo
   return m
 }
 
+function buildFixtureNormOccupantMap(gmById: Map<string, ExistingGameMatchSyncRow>): Map<string, string> {
+  const m = new Map<string, string>()
+  for (const gm of gmById.values()) {
+    const fk = gm.fixture_key?.trim()
+    if (!fk) continue
+    m.set(normalizeStableFixtureKeyForLookup(fk), gm.id)
+  }
+  return m
+}
+
 export const SYNC_IMPORT_FOLLOWUP_NOTICE =
   'Sync imports fixtures only. Run group linking and scoring separately.'
 
@@ -140,25 +156,6 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
   const out: T[][] = []
   for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
   return out
-}
-
-/** Raw row from the Fixtures tab CSV (Teams + Fixtures are the only source of truth). */
-type FixtureCsvRow = {
-  date: string
-  time: string
-  home_team: string
-  away_team: string
-  home_score: string
-  away_score: string
-  league_group: string
-  /** Present only when the CSV includes a fixture_key (or alias) column. */
-  fixture_key?: string
-  /** Present only when the CSV includes province_group / province column. */
-  province_group?: string
-  is_prestige: string
-  status: string
-  verification_status: string
-  source: string
 }
 
 type SyncSummary = {
@@ -208,14 +205,8 @@ type SyncSummary = {
   warnings: SyncWarningItem[]
   /** Present on dry-run (preview) responses and stored on preview `sync_runs.summary`. */
   teams_registry_debug?: TeamsRegistryDebug
-}
-
-function normalizeHeader(v: string): string {
-  return v
-    .replace(/^\ufeff/, '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, '_')
+  /** One-time legacy pass: rows that had empty `fixture_key` and received a stable sheet key (live sync only). */
+  fixture_key_backfilled?: number
 }
 
 /** Redact spreadsheet id in Google Sheets CSV URLs for safe preview logging. */
@@ -309,28 +300,6 @@ function parseBool(v: string): boolean {
   return x === 'true' || x === '1' || x === 'yes' || x === 'y'
 }
 
-function normalizeDate(v: string): string | null {
-  const s = v.trim()
-  if (!s) return null
-  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`
-  const dt = new Date(s)
-  if (Number.isNaN(dt.getTime())) return null
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`
-}
-
-function normalizeTime(v: string): string | null {
-  const s = v.trim()
-  if (!s) return null
-  const hm = s.match(/^(\d{1,2}):(\d{2})$/)
-  if (hm) return `${String(Number(hm[1])).padStart(2, '0')}:${hm[2]}`
-  const dt = new Date(s)
-  if (Number.isNaN(dt.getTime())) return null
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${p(dt.getHours())}:${p(dt.getMinutes())}`
-}
-
 function toSastKickoffIso(dateYmd: string, hhmm: string): string {
   return `${dateYmd}T${hhmm}:00+02:00`
 }
@@ -401,7 +370,9 @@ type NormalizedSheetRow = {
   verification_status: 'draft' | 'needs_review' | 'verified' | 'rejected'
   source: string
   dedupe_key: string
-  /** Trimmed sheet key when column exists; null when column absent (do not clear DB on update). */
+  /** Stable identity: `date` + canonical home + away (see `buildStableSheetFixtureKey`). */
+  sheet_fixture_key: string
+  /** @deprecated Optional CSV column; sync always writes `sheet_fixture_key` to DB `fixture_key`. */
   fixture_key: string | null
   /** Only set when Fixtures CSV has a province_group column (trimmed cell; empty → null). */
   province_group_sheet?: string | null
@@ -507,60 +478,11 @@ function pickPreferredExistingGmRow(
   return a.id.localeCompare(b.id) <= 0 ? a : b
 }
 
-function pairLookupKey(
-  registry: SheetTeamsRegistry,
-  sastYmd: string,
-  homeTeam: string,
-  awayTeam: string,
-  teams: TeamRow[],
-  aliasMap: Map<string, string>
-): string {
-  const h = canonicalTeamLabelForGameMatches(homeTeam, registry, teams, aliasMap)
-  const a = canonicalTeamLabelForGameMatches(awayTeam, registry, teams, aliasMap)
-  return `${sastYmd}|${orderedComparablePairKey(h, a)}`
-}
-
-/** Primary map key for a sheet row (SAST calendar day from kickoff + unordered canonical pair). */
-function primarySheetPairKey(
-  registry: SheetTeamsRegistry,
+function resolveExistingBySheetFixtureKey(
   row: NormalizedSheetRow,
-  teams: TeamRow[],
-  aliasMap: Map<string, string>
-): string {
-  return pairLookupKey(registry, dateInSastFromIso(row.kickoff_time), row.home_team, row.away_team, teams, aliasMap)
-}
-
-/** Alternate pair keys when CSV date and kickoff-derived SAST date disagree (legacy rows). */
-function sheetPairKeysForSync(
-  registry: SheetTeamsRegistry,
-  row: NormalizedSheetRow,
-  teams: TeamRow[],
-  aliasMap: Map<string, string>
-): string[] {
-  const sastKick = dateInSastFromIso(row.kickoff_time)
-  const primary = pairLookupKey(registry, sastKick, row.home_team, row.away_team, teams, aliasMap)
-  if (row.match_date === sastKick) return [primary]
-  return [primary, pairLookupKey(registry, row.match_date, row.home_team, row.away_team, teams, aliasMap)]
-}
-
-function resolveExistingGameMatchForSync(
-  row: NormalizedSheetRow,
-  registry: SheetTeamsRegistry,
-  pairMap: Map<string, ExistingGameMatchSyncRow>,
-  fixtureKeyMap: Map<string, ExistingGameMatchSyncRow>,
-  teams: TeamRow[],
-  aliasMap: Map<string, string>
+  byNorm: Map<string, ExistingGameMatchSyncRow>
 ): ExistingGameMatchSyncRow | null {
-  const fk = row.fixture_key?.trim()
-  if (fk) {
-    const hit = fixtureKeyMap.get(teamLookupNormalize(fk))
-    if (hit) return hit
-  }
-  for (const pk of sheetPairKeysForSync(registry, row, teams, aliasMap)) {
-    const hit = pairMap.get(pk)
-    if (hit) return hit
-  }
-  return null
+  return byNorm.get(normalizeStableFixtureKeyForLookup(row.sheet_fixture_key)) ?? null
 }
 
 function provinceGroupForUpsert(
@@ -574,13 +496,6 @@ function provinceGroupForUpsert(
   return existing?.province_group ?? null
 }
 
-function fixtureKeyForUpsert(row: NormalizedSheetRow, existing: ExistingGameMatchSyncRow | null): string | null {
-  const fk = row.fixture_key?.trim()
-  if (fk) return fk
-  const prev = existing?.fixture_key?.trim()
-  return prev ? prev : null
-}
-
 function leagueGroupForUpsert(row: NormalizedSheetRow, existing: ExistingGameMatchSyncRow | null): string | null {
   const raw = row.league_group.trim()
   if (raw) {
@@ -588,36 +503,6 @@ function leagueGroupForUpsert(row: NormalizedSheetRow, existing: ExistingGameMat
     return n ? n : null
   }
   return existing?.league_group ?? null
-}
-
-/** Same key shape as DB matching: SAST kickoff date + unordered canonical pair. */
-function insertStableDedupeKeyFromBody(
-  body: Record<string, unknown>,
-  registry: SheetTeamsRegistry,
-  teams: TeamRow[],
-  aliasMap: Map<string, string>
-): string {
-  const ko = String(body.kickoff_time ?? '')
-  const sast = dateInSastFromIso(ko)
-  const h = String(body.home_team ?? '')
-  const a = String(body.away_team ?? '')
-  return pairLookupKey(registry, sast, h, a, teams, aliasMap)
-}
-
-function existingFromGameMatchInsertBody(
-  body: Record<string, unknown>,
-  registry: SheetTeamsRegistry,
-  pairMap: Map<string, ExistingGameMatchSyncRow>,
-  fkMap: Map<string, ExistingGameMatchSyncRow>,
-  teams: TeamRow[],
-  aliasMap: Map<string, string>
-): ExistingGameMatchSyncRow | null {
-  const fkRaw = typeof body.fixture_key === 'string' ? body.fixture_key.trim() : ''
-  if (fkRaw) {
-    const hit = fkMap.get(teamLookupNormalize(fkRaw))
-    if (hit) return hit
-  }
-  return pairMap.get(insertStableDedupeKeyFromBody(body, registry, teams, aliasMap)) ?? null
 }
 
 type GmInsertWorkItem = {
@@ -661,6 +546,8 @@ type SyncWritePlan = {
   skippedInsertsDueToVerifiedPair: number
   skippedUpdatesDueToKickoffPairConflict: number
   skippedInsertsDueToKickoffPairConflict: number
+  skippedUpdatesDueToFixtureKeyConflict: number
+  skippedInsertsDueToFixtureKeyConflict: number
   wouldLinkGroupRows: number
   groupLinkWarningAdds: number
   errors: string[]
@@ -673,7 +560,6 @@ type PrepareSyncPlanContext = {
   syncTeamAliasMap: Map<string, string>
   fixtureGroupMaps: FixtureGroupMaps
   fixturesCsvUrl: string
-  existingGameMatchByPairOnDate: Map<string, ExistingGameMatchSyncRow>
   existingByFixtureKey: Map<string, ExistingGameMatchSyncRow>
   uniqueVerifiedTripletToId: Map<string, string>
   gameMatchById: Map<string, ExistingGameMatchSyncRow>
@@ -684,8 +570,7 @@ type PrepareSyncPlanContext = {
 function mergeGmRowAfterUpdate(
   u: GmUpdateWorkItem,
   payload: Record<string, unknown>,
-  oldGm: ExistingGameMatchSyncRow | undefined,
-  prevPairRow: ExistingGameMatchSyncRow | undefined
+  oldGm: ExistingGameMatchSyncRow | undefined
 ): ExistingGameMatchSyncRow {
   const b = payload
   return {
@@ -695,7 +580,7 @@ function mergeGmRowAfterUpdate(
     away_team: String(b.away_team ?? ''),
     status: u.kind === 'completed' ? 'completed' : 'upcoming',
     verification_status: typeof b.verification_status === 'string' ? b.verification_status : 'verified',
-    admin_notes: u.prevAdminNotes ?? prevPairRow?.admin_notes ?? null,
+    admin_notes: u.prevAdminNotes ?? oldGm?.admin_notes ?? null,
     fixture_key: typeof b.fixture_key === 'string' ? b.fixture_key : (oldGm?.fixture_key ?? null),
     province_group: typeof b.province_group === 'string' ? b.province_group : (oldGm?.province_group ?? null),
     league_group: typeof b.league_group === 'string' ? b.league_group : (oldGm?.league_group ?? null),
@@ -707,8 +592,8 @@ function applySimulatedGmUpdate(
   payload: Record<string, unknown>,
   simTriplet: Map<string, string>,
   simGmById: Map<string, ExistingGameMatchSyncRow>,
-  pairOnDateSim: Map<string, ExistingGameMatchSyncRow>,
-  simKickoffPair: Map<string, string>
+  simKickoffPair: Map<string, string>,
+  simFixtureNorm: Map<string, string>
 ): void {
   const oldGm = simGmById.get(u.id)
   const oldUk = oldGm
@@ -717,7 +602,11 @@ function applySimulatedGmUpdate(
   if (oldUk && simTriplet.get(oldUk) === u.id) {
     simTriplet.delete(oldUk)
   }
-  const next = mergeGmRowAfterUpdate(u, payload, oldGm, pairOnDateSim.get(u.pairOnDate))
+  const oldFk = oldGm?.fixture_key?.trim() ? normalizeStableFixtureKeyForLookup(oldGm.fixture_key.trim()) : ''
+  if (oldFk && simFixtureNorm.get(oldFk) === u.id) {
+    simFixtureNorm.delete(oldFk)
+  }
+  const next = mergeGmRowAfterUpdate(u, payload, oldGm)
   simGmById.set(u.id, next)
   const newUk = verifiedUniqueTripletKeyFromPayload(payload)
   if (newUk) {
@@ -727,7 +616,11 @@ function applySimulatedGmUpdate(
   if (newPk) {
     simKickoffPair.set(newPk, u.id)
   }
-  pairOnDateSim.set(u.pairOnDate, next)
+  const fkRaw = typeof payload.fixture_key === 'string' ? payload.fixture_key.trim() : ''
+  const newFn = fkRaw ? normalizeStableFixtureKeyForLookup(fkRaw) : ''
+  if (newFn) {
+    simFixtureNorm.set(newFn, u.id)
+  }
 }
 
 function prepareSyncPlan(
@@ -746,7 +639,7 @@ function prepareSyncPlan(
   const matchRowInserts: MatchRowInsertPlan[] = []
 
   for (const row of rows) {
-    const trackKey = primarySheetPairKey(ctx.teamRegistry, row, ctx.syncTeams, ctx.syncTeamAliasMap)
+    const trackKey = normalizeStableFixtureKeyForLookup(row.sheet_fixture_key)
     if (row.status === 'upcoming') {
       const { linkInput, warnEff, sheetWarn } = buildLinkContext(row)
       const linkIds = computeFixtureGroupLinkIds(ctx.fixtureGroupMaps, linkInput)
@@ -756,14 +649,7 @@ function prepareSyncPlan(
       groupLinkWarningAdds += warnUp.messages.length
       for (const w of warnUp.messages) planErrors.push(w)
 
-      const existingGmUp = resolveExistingGameMatchForSync(
-        row,
-        ctx.teamRegistry,
-        ctx.existingGameMatchByPairOnDate,
-        ctx.existingByFixtureKey,
-        ctx.syncTeams,
-        ctx.syncTeamAliasMap
-      )
+      const existingGmUp = resolveExistingBySheetFixtureKey(row, ctx.existingByFixtureKey)
       const upLeague = leagueGroupForUpsert(row, existingGmUp ?? null)
       const upHomeTeamProv = normalizeProvinceLabelForGameMatches(row.home_team_province.trim())
       const upAwayTeamProv = normalizeProvinceLabelForGameMatches(row.away_team_province.trim())
@@ -772,7 +658,7 @@ function prepareSyncPlan(
           kickoff_time: row.kickoff_time,
           home_team: row.home_team,
           away_team: row.away_team,
-          fixture_key: fixtureKeyForUpsert(row, existingGmUp),
+          fixture_key: row.sheet_fixture_key,
           province_group: provinceGroupForUpsert(row, existingGmUp),
           league_group: upLeague,
           tournament: null,
@@ -813,7 +699,7 @@ function prepareSyncPlan(
           kickoff_time: row.kickoff_time,
           status: row.status,
           verification_status: 'verified',
-          fixture_key: fixtureKeyForUpsert(row, null),
+          fixture_key: row.sheet_fixture_key,
           province_group: provinceGroupForUpsert(row, null),
           league_group: leagueGroupForUpsert(row, null),
           tournament: null,
@@ -858,14 +744,7 @@ function prepareSyncPlan(
       continue
     }
 
-    const existingGmCompleted = resolveExistingGameMatchForSync(
-      row,
-      ctx.teamRegistry,
-      ctx.existingGameMatchByPairOnDate,
-      ctx.existingByFixtureKey,
-      ctx.syncTeams,
-      ctx.syncTeamAliasMap
-    )
+    const existingGmCompleted = resolveExistingBySheetFixtureKey(row, ctx.existingByFixtureKey)
     const dbLeague = leagueGroupForUpsert(row, existingGmCompleted)
     const dbHomeTeamProv = normalizeProvinceLabelForGameMatches(row.home_team_province.trim())
     const dbAwayTeamProv = normalizeProvinceLabelForGameMatches(row.away_team_province.trim())
@@ -902,7 +781,7 @@ function prepareSyncPlan(
       home_score: row.home_score,
       away_score: row.away_score,
       verification_status: 'verified',
-      fixture_key: fixtureKeyForUpsert(row, existingGmCompleted),
+      fixture_key: row.sheet_fixture_key,
       province_group: provinceGroupForUpsert(row, existingGmCompleted),
       league_group: dbLeague,
       tournament: null,
@@ -949,11 +828,7 @@ function prepareSyncPlan(
   const { inserts: finalizedInserts, skippedSheetBatchDedupes } = finalizeGameMatchInsertsWithCount(
     gmInserts,
     gmUpdates,
-    ctx.teamRegistry,
-    ctx.existingGameMatchByPairOnDate,
-    ctx.existingByFixtureKey,
-    ctx.syncTeams,
-    ctx.syncTeamAliasMap
+    ctx.existingByFixtureKey
   )
 
   for (const r of matchRowUpdates) {
@@ -984,16 +859,36 @@ function prepareSyncPlan(
 
   const simTriplet = new Map(ctx.uniqueVerifiedTripletToId)
   const simGmById = new Map(ctx.gameMatchById)
-  const pairOnDateSim = new Map(ctx.existingGameMatchByPairOnDate)
   const simKickoffPair = buildKickoffPairOccupantMap(simGmById)
+  const simFixtureNorm = buildFixtureNormOccupantMap(simGmById)
 
   const finalGmUpdates: GmUpdateWorkItem[] = []
   let skippedUpdatesDueToVerifiedPair = 0
   let skippedUpdatesDueToKickoffPairConflict = 0
+  let skippedUpdatesDueToFixtureKeyConflict = 0
   for (const u of gmUpdates) {
     const rawBody = u.body as Record<string, unknown>
     const payload = stripForbiddenWritePayload(rawBody)
     const oldGm = simGmById.get(u.id)
+    const oldFn = oldGm?.fixture_key?.trim() ? normalizeStableFixtureKeyForLookup(oldGm.fixture_key.trim()) : ''
+    const newFn =
+      typeof payload.fixture_key === 'string' && payload.fixture_key.trim()
+        ? normalizeStableFixtureKeyForLookup(String(payload.fixture_key))
+        : ''
+
+    if (oldFn && oldFn !== newFn && simFixtureNorm.get(oldFn) === u.id) {
+      simFixtureNorm.delete(oldFn)
+    }
+    const fixtureOcc = newFn ? simFixtureNorm.get(newFn) : undefined
+    if (newFn && fixtureOcc && fixtureOcc !== u.id) {
+      if (oldFn && oldFn !== newFn) simFixtureNorm.set(oldFn, u.id)
+      planWarnings.push(
+        `Warning: Skipped game_matches update (fixture_key already used by another row). currentId=${u.id} conflictId=${fixtureOcc} fixture_key=${JSON.stringify(String(payload.fixture_key ?? ''))}.`
+      )
+      skippedUpdatesDueToFixtureKeyConflict += 1
+      continue
+    }
+
     const oldPk = oldGm ? uniqueKickoffPairKey(oldGm.kickoff_time, oldGm.home_team, oldGm.away_team) : ''
     const newPk = uniqueKickoffPairKeyFromPayload(payload)
 
@@ -1004,6 +899,7 @@ function prepareSyncPlan(
     const pairOccupant = newPk ? simKickoffPair.get(newPk) : undefined
     if (newPk && pairOccupant && pairOccupant !== u.id) {
       if (oldPk && oldPk !== newPk) simKickoffPair.set(oldPk, u.id)
+      if (oldFn && oldFn !== newFn) simFixtureNorm.set(oldFn, u.id)
       planWarnings.push(formatGmUpdateSkippedUniquePairWarning(u.id, pairOccupant, payload))
       skippedUpdatesDueToKickoffPairConflict += 1
       continue
@@ -1012,23 +908,37 @@ function prepareSyncPlan(
     const conflictId = findConflictingGameMatch(payload, u.id, simTriplet)
     if (conflictId) {
       if (oldPk && oldPk !== newPk) simKickoffPair.set(oldPk, u.id)
+      if (oldFn && oldFn !== newFn) simFixtureNorm.set(oldFn, u.id)
       planWarnings.push(
         `Warning: Skipped game_matches update (verified kickoff triplet conflict). currentId=${u.id} conflictId=${conflictId} home_team=${JSON.stringify(String(payload.home_team ?? ''))} away_team=${JSON.stringify(String(payload.away_team ?? ''))} kickoff_time=${JSON.stringify(String(payload.kickoff_time ?? ''))}.`
       )
       skippedUpdatesDueToVerifiedPair += 1
       continue
     }
-    applySimulatedGmUpdate(u, payload, simTriplet, simGmById, pairOnDateSim, simKickoffPair)
+    applySimulatedGmUpdate(u, payload, simTriplet, simGmById, simKickoffPair, simFixtureNorm)
     finalGmUpdates.push(u)
   }
 
   const finalGmInserts: GmInsertWorkItem[] = []
   let skippedInsertsDueToVerifiedPair = 0
   let skippedInsertsDueToKickoffPairConflict = 0
+  let skippedInsertsDueToFixtureKeyConflict = 0
   let pendingSlot = 0
   for (const ins of finalizedInserts) {
     const rawBody = ins.body as Record<string, unknown>
     const payload = stripForbiddenWritePayload(rawBody)
+    const fn =
+      typeof payload.fixture_key === 'string' && payload.fixture_key.trim()
+        ? normalizeStableFixtureKeyForLookup(String(payload.fixture_key))
+        : ''
+    if (fn && simFixtureNorm.get(fn)) {
+      const occ = simFixtureNorm.get(fn)!
+      planWarnings.push(
+        `Warning: Skipped game_matches insert (fixture_key already exists). conflictId=${occ} fixture_key=${JSON.stringify(String(payload.fixture_key ?? ''))}.`
+      )
+      skippedInsertsDueToFixtureKeyConflict += 1
+      continue
+    }
     const pk = uniqueKickoffPairKeyFromPayload(payload)
     if (pk && simKickoffPair.get(pk)) {
       const occPair = simKickoffPair.get(pk)!
@@ -1050,7 +960,8 @@ function prepareSyncPlan(
     const pend = `__pending_ins_${pendingSlot}`
     if (k) simTriplet.set(k, pend)
     if (pk) simKickoffPair.set(pk, pend)
-    if (k || pk) pendingSlot += 1
+    if (fn) simFixtureNorm.set(fn, pend)
+    if (k || pk || fn) pendingSlot += 1
     finalGmInserts.push(ins)
   }
 
@@ -1064,6 +975,8 @@ function prepareSyncPlan(
     skippedInsertsDueToVerifiedPair,
     skippedUpdatesDueToKickoffPairConflict,
     skippedInsertsDueToKickoffPairConflict,
+    skippedUpdatesDueToFixtureKeyConflict,
+    skippedInsertsDueToFixtureKeyConflict,
     wouldLinkGroupRows,
     groupLinkWarningAdds,
     errors: planErrors,
@@ -1071,54 +984,49 @@ function prepareSyncPlan(
   }
 }
 
+function sheetFixtureNormFromBody(body: Record<string, unknown>): string {
+  const raw = typeof body.fixture_key === 'string' ? body.fixture_key.trim() : ''
+  return raw ? normalizeStableFixtureKeyForLookup(raw) : ''
+}
+
 /**
- * Dedupe insert batch (last row wins), then promote any insert that already exists in DB to an update.
- * @returns `skippedSheetBatchDedupes` — rows replaced by a later duplicate key in the same sheet batch.
+ * Dedupe insert batch by stable `fixture_key` (last row wins), then promote to update when DB already has that key.
  */
 function finalizeGameMatchInsertsWithCount(
   inserts: GmInsertWorkItem[],
   updatesOut: GmUpdateWorkItem[],
-  teamRegistry: SheetTeamsRegistry,
-  pairMap: Map<string, ExistingGameMatchSyncRow>,
-  fkMap: Map<string, ExistingGameMatchSyncRow>,
-  teams: TeamRow[],
-  aliasMap: Map<string, string>
+  fkMap: Map<string, ExistingGameMatchSyncRow>
 ): { inserts: GmInsertWorkItem[]; skippedSheetBatchDedupes: number } {
   let skippedSheetBatchDedupes = 0
   const lastWinByKey = new Map<string, GmInsertWorkItem>()
   for (const item of inserts) {
-    const key = insertStableDedupeKeyFromBody(item.body, teamRegistry, teams, aliasMap)
-    if (lastWinByKey.has(key)) {
+    const body = stripForbiddenWritePayload(item.body)
+    const key = sheetFixtureNormFromBody(body)
+    const dedupeKey = key || `__missing_fk__:${item.pairOnDate}`
+    if (lastWinByKey.has(dedupeKey)) {
       skippedSheetBatchDedupes += 1
-      console.info(`${SYNC_SHEET_LOG} skipped duplicate insert (sheet batch dedupe)`, { key })
+      console.info(`${SYNC_SHEET_LOG} skipped duplicate insert (sheet batch dedupe)`, { key: dedupeKey })
     }
-    lastWinByKey.set(key, item)
+    lastWinByKey.set(dedupeKey, item)
   }
   const out: GmInsertWorkItem[] = []
   for (const item of lastWinByKey.values()) {
     const body = stripForbiddenWritePayload(item.body)
-    const existing = existingFromGameMatchInsertBody(body, teamRegistry, pairMap, fkMap, teams, aliasMap)
-    if (existing) {
-      const matchedBy =
-        typeof body.fixture_key === 'string' && body.fixture_key.trim() ? 'fixture_key' : 'date_pair'
-      console.info(`${SYNC_SHEET_LOG} matched existing fixture`, {
-        id: existing.id,
-        matchedBy,
-        kind: item.kind,
-      })
-      console.info(`${SYNC_SHEET_LOG} updating existing fixture (promoted from insert)`, {
-        id: existing.id,
-        kind: item.kind,
-      })
-      updatesOut.push({
-        pairOnDate: item.pairOnDate,
-        kind: item.kind,
-        id: existing.id,
-        reactivate: existing.status === 'rejected' || existing.verification_status === 'rejected',
-        prevAdminNotes: existing.admin_notes,
-        body,
-      })
-      continue
+    const kn = sheetFixtureNormFromBody(body)
+    if (kn) {
+      const existing = fkMap.get(kn)
+      if (existing) {
+        console.info(`${SYNC_SHEET_LOG} matched existing fixture by fixture_key`, { id: existing.id, kind: item.kind })
+        updatesOut.push({
+          pairOnDate: item.pairOnDate,
+          kind: item.kind,
+          id: existing.id,
+          reactivate: existing.status === 'rejected' || existing.verification_status === 'rejected',
+          prevAdminNotes: existing.admin_notes,
+          body,
+        })
+        continue
+      }
     }
     out.push({ ...item, body })
   }
@@ -1136,84 +1044,11 @@ function canonicalProvinceGroup(raw: string): { value: string | null; warning?: 
   return { value: normalizeProvinceLabelForGameMatches(t) }
 }
 
-function dateInSastFromIso(iso: string): string {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return iso.slice(0, 10)
-  const fmt = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Africa/Johannesburg',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  })
-  return fmt.format(d)
-}
-
-function parseFixturesSheetCsv(csvText: string): { rows: FixtureCsvRow[]; errors: string[] } {
-  const lines = csvText
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean)
-  if (!lines.length) return { rows: [], errors: ['Fixtures CSV is empty'] }
-
-  const header = splitCsvLine(lines[0]).map(normalizeHeader)
-  const firstIdx = (names: string[]) => {
-    for (const n of names) {
-      const i = header.indexOf(n)
-      if (i >= 0) return i
-    }
-    return -1
-  }
-  const idx = {
-    date: header.indexOf('date'),
-    time: header.indexOf('time'),
-    home_team: header.indexOf('home_team'),
-    away_team: header.indexOf('away_team'),
-    home_score: header.indexOf('home_score'),
-    away_score: header.indexOf('away_score'),
-    league_group: firstIdx(['league_group', 'league']),
-    fixture_key: firstIdx(['fixture_key', 'fixture_id', 'match_key', 'id']),
-    province_group: firstIdx(['province_group', 'province']),
-    is_prestige: firstIdx(['is_prestige', 'prestige']),
-    status: header.indexOf('status'),
-    verification_status: header.indexOf('verification_status'),
-    source: header.indexOf('source'),
-  }
-  if (idx.date < 0 || idx.time < 0 || idx.home_team < 0 || idx.away_team < 0) {
-    return {
-      rows: [],
-      errors: ['Fixtures CSV requires headers: date, time, home_team, away_team'],
-    }
-  }
-
-  const rows: FixtureCsvRow[] = []
-  const errors: string[] = []
-  for (let i = 1; i < lines.length; i += 1) {
-    const cells = splitCsvLine(lines[i])
-    const read = (k: keyof typeof idx) => (idx[k] >= 0 ? (cells[idx[k]] ?? '').trim() : '')
-    const row: FixtureCsvRow = {
-      date: read('date'),
-      time: read('time'),
-      home_team: read('home_team'),
-      away_team: read('away_team'),
-      home_score: read('home_score'),
-      away_score: read('away_score'),
-      league_group: read('league_group'),
-      is_prestige: idx.is_prestige >= 0 ? read('is_prestige') : '',
-      status: read('status'),
-      verification_status: read('verification_status'),
-      source: read('source'),
-    }
-    if (idx.fixture_key >= 0) row.fixture_key = read('fixture_key')
-    if (idx.province_group >= 0) row.province_group = read('province_group')
-    rows.push(row)
-  }
-  return { rows, errors }
-}
-
 export async function POST(request: Request) {
   const reqUrl = new URL(request.url)
   const dryRun = reqUrl.searchParams.get('dry_run') === '1'
   const replaceUpcoming = reqUrl.searchParams.get('replace_upcoming') === '1'
+  const legacyFixtureKeyBackfill = reqUrl.searchParams.get('legacy_fixture_key_backfill') === '1'
 
   const authHeader = request.headers.get('authorization')
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : ''
@@ -1280,6 +1115,7 @@ export async function POST(request: Request) {
   let matches_updated = 0
   let syncTimedOut = false
   let lastProcessedFixtureRow: string | undefined
+  let fixture_key_backfilled = 0
 
   const [teamsCsvRes, fixturesCsvRes] = await Promise.all([fetch(teamsCsvUrl), fetch(fixturesCsvUrl)])
   if (!teamsCsvRes.ok) {
@@ -1393,7 +1229,7 @@ export async function POST(request: Request) {
   )
 
   const seen = new Set<string>()
-  const pairKeyCounts = new Map<string, number>()
+  const stableFixtureRepeatCounts = new Map<string, number>()
   const teamDateDupMap = new Map<string, { teamLabel: string; matchDate: string; rows: TeamDateDupAppearance[] }>()
   for (let i = 0; i < parsed.rows.length; i += 1) {
     const r = parsed.rows[i]
@@ -1461,8 +1297,9 @@ export async function POST(request: Request) {
     const homeDb = canonicalTeamLabelForGameMatches(rawHome, teamRegistry, teams, sheetSyncAliasMap)
     const awayDb = canonicalTeamLabelForGameMatches(rawAway, teamRegistry, teams, sheetSyncAliasMap)
 
-    const pairCountKey = `${date}|${orderedComparablePairKey(homeDb, awayDb)}`
-    pairKeyCounts.set(pairCountKey, (pairKeyCounts.get(pairCountKey) ?? 0) + 1)
+    const sheet_fixture_key = buildStableSheetFixtureKey(date, homeDb, awayDb)
+    const dedupe = normalizeStableFixtureKeyForLookup(sheet_fixture_key)
+    stableFixtureRepeatCounts.set(dedupe, (stableFixtureRepeatCounts.get(dedupe) ?? 0) + 1)
 
     if (homeDb.toLowerCase() === awayDb.toLowerCase()) {
       errors.push(`Row ${i + 2}: home and away resolve to the same canonical team`)
@@ -1473,10 +1310,6 @@ export async function POST(request: Request) {
     recordTeamDateDup(teamDateDupMap, homeDb, date, sheetRowNum, homeDb, awayDb)
     recordTeamDateDup(teamDateDupMap, awayDb, date, sheetRowNum, homeDb, awayDb)
 
-    const fkCell = r.fixture_key?.trim() ?? ''
-    const fixtureKey = fkCell ? fkCell : null
-
-    const dedupe = fixtureKey ? `fk:${teamLookupNormalize(fixtureKey)}` : `${date}|${orderedComparablePairKey(homeDb, awayDb)}`
     if (seen.has(dedupe)) {
       skipped_duplicates += 1
       continue
@@ -1544,7 +1377,8 @@ export async function POST(request: Request) {
       verification_status: normalizeVerification(r.verification_status),
       source: r.source.trim(),
       dedupe_key: dedupe,
-      fixture_key: fixtureKey,
+      sheet_fixture_key,
+      fixture_key: sheet_fixture_key,
       ...(r.province_group !== undefined
         ? { province_group_sheet: r.province_group.trim() ? r.province_group.trim() : null }
         : {}),
@@ -1573,26 +1407,25 @@ export async function POST(request: Request) {
       })
     : undefined
 
-  for (const [pair, count] of pairKeyCounts.entries()) {
+  for (const [stableNorm, count] of stableFixtureRepeatCounts.entries()) {
     if (count > 1) {
       errors.push(
-        `Warning: duplicate fixture — same calendar date and same two teams (home/away order ignored): ${pair}`
+        `Warning: duplicate fixture in sheet — same stable fixture_key (${count} rows) after normalize: ${stableNorm}`
       )
     }
   }
 
-  const sheetCompletedPairKeys = new Set<string>()
-  const sheetUpcomingKeys = new Set<string>()
+  const sheetCompletedFixtureNorms = new Set<string>()
+  const sheetUpcomingFixtureNorms = new Set<string>()
   for (const row of normalized) {
-    for (const k of sheetPairKeysForSync(teamRegistry, row, teams, sheetSyncAliasMap)) {
-      if (row.status === 'completed') sheetCompletedPairKeys.add(k)
-      else sheetUpcomingKeys.add(k)
-    }
+    const n = normalizeStableFixtureKeyForLookup(row.sheet_fixture_key)
+    if (row.status === 'completed') sheetCompletedFixtureNorms.add(n)
+    else sheetUpcomingFixtureNorms.add(n)
   }
 
   let fixtureGroupMaps: FixtureGroupMaps = await loadFixtureGroupMaps(supabase)
 
-  /** All statuses (incl. rejected/locked/cancelled/draft) — match by fixture_key or SAST date + canonical pair */
+  /** Existing rows indexed by normalized `fixture_key` (sheet-driven sync). */
   const { data: existingGameMatchesData, error: existingGameMatchesErr } = await supabase
     .from('game_matches')
     .select(
@@ -1602,10 +1435,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: `Could not load existing game matches: ${existingGameMatchesErr.message}` }, { status: 500 })
   }
 
-  /** Key: SAST date (YYYY-MM-DD) | unordered canonical home/away pair (Teams tab) */
-  const existingGameMatchByPairOnDate = new Map<string, ExistingGameMatchSyncRow>()
   const existingByFixtureKey = new Map<string, ExistingGameMatchSyncRow>()
-  const existingCurrentUpcomingIdsByKey = new Map<string, string>()
+  const existingCurrentUpcomingIdsByFixtureNorm = new Map<string, string>()
   const gameMatchById = new Map<string, ExistingGameMatchSyncRow>()
   /** Matches partial unique index `game_matches_verified_kickoff_pair_uidx` (verified-only). */
   const uniqueVerifiedTripletToId = new Map<string, string>()
@@ -1628,31 +1459,18 @@ export async function POST(request: Request) {
     if (tripletKey) {
       uniqueVerifiedTripletToId.set(tripletKey, gm.id)
     }
-    const fkNorm = gm.fixture_key?.trim() ? teamLookupNormalize(gm.fixture_key.trim()) : ''
+    const fkNorm = gm.fixture_key?.trim() ? normalizeStableFixtureKeyForLookup(gm.fixture_key.trim()) : ''
     if (fkNorm) {
       const prevF = existingByFixtureKey.get(fkNorm)
       existingByFixtureKey.set(fkNorm, prevF ? pickPreferredExistingGmRow(prevF, gm) : gm)
     }
-    const pairKey = pairLookupKey(
-      teamRegistry,
-      dateInSastFromIso(gm.kickoff_time),
-      gm.home_team,
-      gm.away_team,
-      teams,
-      sheetSyncAliasMap
-    )
-    const prevP = existingGameMatchByPairOnDate.get(pairKey)
-    existingGameMatchByPairOnDate.set(pairKey, prevP ? pickPreferredExistingGmRow(prevP, gm) : gm)
-  }
-
-  for (const [pairKey, gm] of existingGameMatchByPairOnDate.entries()) {
-    if (gm.status === 'upcoming') {
-      existingCurrentUpcomingIdsByKey.set(pairKey, gm.id)
+    if (gm.status === 'upcoming' && fkNorm) {
+      existingCurrentUpcomingIdsByFixtureNorm.set(fkNorm, gm.id)
     }
   }
 
-  /** Replace-mode baseline: upcoming rows present before this sync (do not mutate during run). */
-  const snapshotUpcomingKeyToId = new Map(existingCurrentUpcomingIdsByKey)
+  /** Replace-mode baseline: upcoming rows that already have a `fixture_key`. */
+  const snapshotUpcomingFixtureNormToId = new Map(existingCurrentUpcomingIdsByFixtureNorm)
 
   const completedDates = [...new Set(normalized.filter((r) => r.status === 'completed').map((r) => r.match_date))]
   const existingMatchesByDate = new Map<string, Array<{ id: number; team_a_id: number; team_b_id: number }>>()
@@ -1669,6 +1487,45 @@ export async function POST(request: Request) {
     }
   }
 
+  if (legacyFixtureKeyBackfill && dryRun) {
+    errors.push(
+      'Note: legacy_fixture_key_backfill applies only during a live Run sync (not preview). It attaches stable sheet fixture_key values where the normalized slot is free.'
+    )
+  } else if (legacyFixtureKeyBackfill && !dryRun) {
+    for (const gm of [...gameMatchById.values()]) {
+      if (gm.fixture_key?.trim()) continue
+      const d = dateInSastFromIso(gm.kickoff_time)
+      const h = canonicalTeamLabelForGameMatches(gm.home_team, teamRegistry, teams, sheetSyncAliasMap)
+      const a = canonicalTeamLabelForGameMatches(gm.away_team, teamRegistry, teams, sheetSyncAliasMap)
+      const fk = buildStableSheetFixtureKey(d, h, a)
+      const norm = normalizeStableFixtureKeyForLookup(fk)
+      const occ = existingByFixtureKey.get(norm)
+      if (occ && occ.id !== gm.id) {
+        errors.push(
+          `Warning: legacy fixture_key backfill skipped for id=${gm.id} (normalized key already used by id=${occ.id}).`
+        )
+        continue
+      }
+      const { error } = await supabase.from('game_matches').update({ fixture_key: fk }).eq('id', gm.id)
+      if (error) {
+        errors.push(`legacy fixture_key backfill failed for id=${gm.id}: ${error.message}`)
+        continue
+      }
+      const next: ExistingGameMatchSyncRow = { ...gm, fixture_key: fk }
+      gameMatchById.set(gm.id, next)
+      const prevF = existingByFixtureKey.get(norm)
+      existingByFixtureKey.set(norm, prevF ? pickPreferredExistingGmRow(prevF, next) : next)
+      fixture_key_backfilled += 1
+    }
+    existingCurrentUpcomingIdsByFixtureNorm.clear()
+    for (const g of gameMatchById.values()) {
+      const fkNorm = g.fixture_key?.trim() ? normalizeStableFixtureKeyForLookup(g.fixture_key.trim()) : ''
+      if (g.status === 'upcoming' && fkNorm) {
+        existingCurrentUpcomingIdsByFixtureNorm.set(fkNorm, g.id)
+      }
+    }
+  }
+
   if (dryRun || !hasCriticalTeamDateDuplicates) {
     const completedTeamIdCache = new Map<string, number>()
     await batchEnsureTeamIdsForCompletedRows(supabase, normalized, teams, completedTeamIdCache, errors)
@@ -1679,7 +1536,6 @@ export async function POST(request: Request) {
       syncTeamAliasMap: sheetSyncAliasMap,
       fixtureGroupMaps,
       fixturesCsvUrl,
-      existingGameMatchByPairOnDate,
       existingByFixtureKey,
       uniqueVerifiedTripletToId,
       gameMatchById,
@@ -1706,9 +1562,9 @@ export async function POST(request: Request) {
   let upcomingUpsertFailed = false
 
   if (replaceUpcoming) {
-    for (const key of snapshotUpcomingKeyToId.keys()) {
-      if (sheetUpcomingKeys.has(key)) continue
-      if (sheetCompletedPairKeys.has(key)) continue
+    for (const norm of snapshotUpcomingFixtureNormToId.keys()) {
+      if (sheetUpcomingFixtureNorms.has(norm)) continue
+      if (sheetCompletedFixtureNorms.has(norm)) continue
       would_reject_old_upcoming += 1
     }
   }
@@ -1785,7 +1641,6 @@ export async function POST(request: Request) {
               uniqueVerifiedTripletToId.delete(oldUk)
             }
           }
-          const prevPair = existingGameMatchByPairOnDate.get(u.pairOnDate)
           const b = u.body as Record<string, unknown>
           const next: ExistingGameMatchSyncRow = {
             id: u.id,
@@ -1794,7 +1649,7 @@ export async function POST(request: Request) {
             away_team: String(b.away_team),
             status: u.kind === 'completed' ? 'completed' : 'upcoming',
             verification_status: typeof b.verification_status === 'string' ? b.verification_status : 'verified',
-            admin_notes: u.prevAdminNotes ?? prevPair?.admin_notes ?? null,
+            admin_notes: u.prevAdminNotes ?? oldGm?.admin_notes ?? null,
             fixture_key:
               typeof b.fixture_key === 'string'
                 ? b.fixture_key
@@ -1811,17 +1666,16 @@ export async function POST(request: Request) {
           if (newUk) {
             uniqueVerifiedTripletToId.set(newUk, u.id)
           }
-          existingGameMatchByPairOnDate.set(u.pairOnDate, next)
-          const fkUp = next.fixture_key?.trim() ? teamLookupNormalize(next.fixture_key.trim()) : ''
+          const fkUp = next.fixture_key?.trim() ? normalizeStableFixtureKeyForLookup(next.fixture_key.trim()) : ''
           if (fkUp) {
             const prevF = existingByFixtureKey.get(fkUp)
             existingByFixtureKey.set(fkUp, prevF ? pickPreferredExistingGmRow(prevF, next) : next)
           }
           if (u.kind === 'completed') {
-            existingCurrentUpcomingIdsByKey.delete(u.pairOnDate)
+            if (u.pairOnDate) existingCurrentUpcomingIdsByFixtureNorm.delete(u.pairOnDate)
             updated_completed += 1
           } else {
-            existingCurrentUpcomingIdsByKey.set(u.pairOnDate, u.id)
+            if (u.pairOnDate) existingCurrentUpcomingIdsByFixtureNorm.set(u.pairOnDate, u.id)
             if (u.reactivate) reactivated_upcoming += 1
             else updated_upcoming += 1
           }
@@ -1843,7 +1697,7 @@ export async function POST(request: Request) {
           const payload = stripForbiddenWritePayload(meta.body as Record<string, unknown>)
           console.info(`${SYNC_SHEET_LOG} inserting new fixture`, {
             kind: meta.kind,
-            dedupeKey: insertStableDedupeKeyFromBody(payload, teamRegistry, teams, sheetSyncAliasMap),
+            dedupeKey: sheetFixtureNormFromBody(payload),
           })
           const pk = uniqueKickoffPairKeyFromPayload(payload)
           if (pk && liveKickoffPairInserts.get(pk)) {
@@ -1904,17 +1758,16 @@ export async function POST(request: Request) {
           if (ut) {
             uniqueVerifiedTripletToId.set(ut, id)
           }
-          existingGameMatchByPairOnDate.set(meta.pairOnDate, syncRow)
-          const fkIns = syncRow.fixture_key?.trim() ? teamLookupNormalize(syncRow.fixture_key.trim()) : ''
+          const fkIns = syncRow.fixture_key?.trim() ? normalizeStableFixtureKeyForLookup(syncRow.fixture_key.trim()) : ''
           if (fkIns) {
             const prevFk = existingByFixtureKey.get(fkIns)
             existingByFixtureKey.set(fkIns, prevFk ? pickPreferredExistingGmRow(prevFk, syncRow) : syncRow)
           }
           if (meta.kind === 'upcoming') {
-            existingCurrentUpcomingIdsByKey.set(meta.pairOnDate, id)
+            if (meta.pairOnDate) existingCurrentUpcomingIdsByFixtureNorm.set(meta.pairOnDate, id)
             inserted_upcoming += 1
           } else {
-            existingCurrentUpcomingIdsByKey.delete(meta.pairOnDate)
+            if (meta.pairOnDate) existingCurrentUpcomingIdsByFixtureNorm.delete(meta.pairOnDate)
             inserted_completed += 1
           }
         }
@@ -1990,10 +1843,11 @@ export async function POST(request: Request) {
 
     if (replaceUpcoming && !upcomingUpsertFailed && !syncTimedOut) {
       const note = 'Replaced by Google Sheet sync (Teams + Fixtures)'
-      for (const [key] of snapshotUpcomingKeyToId.entries()) {
-        if (sheetUpcomingKeys.has(key)) continue
-        if (sheetCompletedPairKeys.has(key)) continue
-        const current = existingGameMatchByPairOnDate.get(key)
+      for (const [norm] of snapshotUpcomingFixtureNormToId.entries()) {
+        if (sheetUpcomingFixtureNorms.has(norm)) continue
+        if (sheetCompletedFixtureNorms.has(norm)) continue
+        const currentId = snapshotUpcomingFixtureNormToId.get(norm)
+        const current = currentId ? gameMatchById.get(currentId) : undefined
         if (!current || current.status !== 'upcoming') continue
         const combinedNotes = [current.admin_notes?.trim(), note].filter(Boolean).join(' | ')
         const { error: rejectErr } = await supabase
@@ -2060,6 +1914,7 @@ export async function POST(request: Request) {
     validation_errors: errors,
     warnings: buildStructuredWarningsFromStrings(errors),
     ...(teamsRegistryDebug ? { teams_registry_debug: teamsRegistryDebug } : {}),
+    ...(fixture_key_backfilled > 0 ? { fixture_key_backfilled } : {}),
   }
 
   const { error: logErr } = await supabase.from('sync_runs').insert({

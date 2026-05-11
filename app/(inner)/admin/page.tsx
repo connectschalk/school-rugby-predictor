@@ -253,6 +253,9 @@ export default function AdminPage() {
   const [syncMasterBusy, setSyncMasterBusy] = useState(false)
   const [syncMasterMessage, setSyncMasterMessage] = useState('')
   const [syncMasterReplaceUpcoming, setSyncMasterReplaceUpcoming] = useState(false)
+  const [syncMasterLegacyFixtureKeyBackfill, setSyncMasterLegacyFixtureKeyBackfill] = useState(false)
+  const [archiveNotInSheetBusy, setArchiveNotInSheetBusy] = useState(false)
+  const [archiveNotInSheetMessage, setArchiveNotInSheetMessage] = useState('')
   const [teamsRegistryPreviewDebug, setTeamsRegistryPreviewDebug] = useState<TeamsRegistryDebug | null>(null)
   const [syncRuns, setSyncRuns] = useState<SyncRunRow[]>([])
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null)
@@ -740,6 +743,7 @@ export default function AdminPage() {
     const params = new URLSearchParams()
     if (mode === 'preview') params.set('dry_run', '1')
     if (syncMasterReplaceUpcoming) params.set('replace_upcoming', '1')
+    if (syncMasterLegacyFixtureKeyBackfill && mode === 'run') params.set('legacy_fixture_key_backfill', '1')
     const query = params.toString()
     const res = await fetch(`/api/admin/sync-master-sheet${query ? `?${query}` : ''}`, {
       method: 'POST',
@@ -768,6 +772,7 @@ export default function AdminPage() {
       game_matches_inserted?: number
       game_matches_updated?: number
       teams_registry_debug?: TeamsRegistryDebug
+      fixture_key_backfilled?: number
     }
 
     if (mode === 'preview' && json.teams_registry_debug) {
@@ -811,6 +816,9 @@ export default function AdminPage() {
       const mIns = json.matches_inserted ?? 0
       const mUpd = json.matches_updated ?? 0
       let msg = `Sync complete: incoming ${json.incoming_rows ?? 0}, game_matches inserted/updated ${gmIns}/${gmUpd}, matches inserted/updated ${mIns}/${mUpd}, upcoming inserted/updated ${json.inserted_upcoming ?? 0}/${json.updated_upcoming ?? 0}, completed inserted/updated ${json.inserted_completed ?? 0}/${json.updated_completed ?? 0}, duplicates skipped ${json.skipped_duplicates ?? 0}, validation messages ${warningCount}.`
+      if (json.fixture_key_backfilled != null && json.fixture_key_backfilled > 0) {
+        msg += ` Legacy fixture_key backfilled: ${json.fixture_key_backfilled}.`
+      }
       if (json.sync_import_notice) {
         msg += ` ${json.sync_import_notice}`
       }
@@ -820,6 +828,65 @@ export default function AdminPage() {
     void refreshUpcomingFixtureCount()
     void loadScoringSummary()
     setSyncMasterBusy(false)
+  }
+
+  async function runArchiveFixturesNotInSheet(mode: 'preview' | 'run') {
+    setArchiveNotInSheetMessage('')
+    if (mode === 'run') {
+      const ok = window.confirm(
+        'Archive every game_match that is not on the current Fixtures sheet, has no scores, and has no predictions, comments, or pool/one-match activity? This sets verification to rejected.'
+      )
+      if (!ok) return
+    }
+    setArchiveNotInSheetBusy(true)
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    const token = session?.access_token
+    if (!token) {
+      setArchiveNotInSheetMessage('Not signed in. Please log in again.')
+      setArchiveNotInSheetBusy(false)
+      return
+    }
+    const params = new URLSearchParams()
+    if (mode === 'preview') params.set('dry_run', '1')
+    const q = params.toString()
+    const res = await fetch(`/api/admin/archive-fixtures-not-in-sheet${q ? `?${q}` : ''}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const json = (await res.json()) as {
+      ok?: boolean
+      error?: string
+      dry_run?: boolean
+      examined?: number
+      would_archive?: number
+      archived?: number
+      skipped_on_sheet?: number
+      skipped_has_scores?: number
+      skipped_has_activity?: number
+      validation_errors?: string[]
+    }
+    if (!res.ok) {
+      setArchiveNotInSheetMessage(json.error ?? res.statusText)
+      setArchiveNotInSheetBusy(false)
+      return
+    }
+    if (json.dry_run) {
+      setArchiveNotInSheetMessage(
+        `Preview archive: examined ${json.examined ?? 0}, would archive ${json.would_archive ?? 0} (on sheet ${json.skipped_on_sheet ?? 0}, has scores ${json.skipped_has_scores ?? 0}, has activity ${json.skipped_has_activity ?? 0}).`
+      )
+    } else {
+      setArchiveNotInSheetMessage(
+        `Archived ${json.archived ?? 0} fixture(s). Skipped: on sheet ${json.skipped_on_sheet ?? 0}, scores ${json.skipped_has_scores ?? 0}, activity ${json.skipped_has_activity ?? 0}.`
+      )
+      void refreshUpcomingFixtureCount()
+    }
+    const ve = json.validation_errors ?? []
+    if (ve.length) {
+      setArchiveNotInSheetMessage((prev) => `${prev} Notes: ${ve.slice(0, 5).join(' | ')}`)
+    }
+    setArchiveNotInSheetBusy(false)
   }
 
   async function handleAddSchool(e: React.FormEvent) {
@@ -2422,6 +2489,42 @@ export default function AdminPage() {
               />
               <span>Replace existing upcoming fixtures (reject previous upcoming rows)</span>
             </label>
+            <label className="mt-2 flex cursor-pointer items-start gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={syncMasterLegacyFixtureKeyBackfill}
+                onChange={(e) => setSyncMasterLegacyFixtureKeyBackfill(e.target.checked)}
+              />
+              <span>
+                One-time legacy: on <strong className="font-medium text-gray-900">Run sheet sync</strong> only, attach{' '}
+                <code className="rounded bg-gray-100 px-1">fixture_key</code> to DB rows that still lack it (same formula
+                as the sheet), only when the normalized key is not already taken.
+              </span>
+            </label>
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+              <button
+                type="button"
+                onClick={() => void runArchiveFixturesNotInSheet('preview')}
+                disabled={archiveNotInSheetBusy || syncMasterBusy}
+                className="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+              >
+                {archiveNotInSheetBusy ? 'Running…' : 'Preview archive (not in sheet)'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void runArchiveFixturesNotInSheet('run')}
+                disabled={archiveNotInSheetBusy || syncMasterBusy}
+                className="inline-flex items-center justify-center rounded-xl border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-950 hover:bg-rose-100 disabled:opacity-50"
+              >
+                {archiveNotInSheetBusy ? 'Running…' : 'Archive fixtures not in sheet'}
+              </button>
+            </div>
+            {archiveNotInSheetMessage ? (
+              <p className="mt-2 rounded-xl border border-gray-200 bg-rose-50/80 px-3 py-2 text-xs text-gray-800">
+                {archiveNotInSheetMessage}
+              </p>
+            ) : null}
             {syncMasterMessage ? (
               <p className="mt-4 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800">
                 {syncMasterMessage}
