@@ -132,6 +132,8 @@ type SyncRunRow = {
   summary?: unknown
 }
 
+type SheetSyncOpMode = 'sync_all' | 'sync' | 'new_upcoming' | 'new_scores'
+
 function masterSyncWarningsFromRun(run: SyncRunRow | undefined): SyncWarningItem[] {
   if (!run) return []
   const sum = run.summary as { warnings?: unknown; validation_errors?: unknown } | null | undefined
@@ -250,9 +252,9 @@ export default function AdminPage() {
   const [activeStudioTab, setActiveStudioTab] = useState<StudioTab>('match')
   const [teamToDeleteId, setTeamToDeleteId] = useState('')
   const [teamDeleteMessage, setTeamDeleteMessage] = useState('')
-  const [syncMasterBusy, setSyncMasterBusy] = useState(false)
   const [syncMasterMessage, setSyncMasterMessage] = useState('')
-  const [syncMasterReplaceUpcoming, setSyncMasterReplaceUpcoming] = useState(false)
+  const [sheetSyncBusy, setSheetSyncBusy] = useState<{ op: SheetSyncOpMode; preview: boolean } | null>(null)
+  const [syncAllConfirmOpen, setSyncAllConfirmOpen] = useState(false)
   const [syncMasterLegacyFixtureKeyBackfill, setSyncMasterLegacyFixtureKeyBackfill] = useState(false)
   const [archiveNotInSheetBusy, setArchiveNotInSheetBusy] = useState(false)
   const [archiveNotInSheetMessage, setArchiveNotInSheetMessage] = useState('')
@@ -726,108 +728,141 @@ export default function AdminPage() {
     void refreshUpcomingFixtureCount()
   }, [authChecked, refreshUpcomingFixtureCount])
 
-  async function runMasterSheetSync(mode: 'preview' | 'run') {
+  function sheetSyncRunning(op: SheetSyncOpMode, preview: boolean) {
+    return sheetSyncBusy?.op === op && sheetSyncBusy.preview === preview
+  }
+
+  async function runSheetSync(op: SheetSyncOpMode, preview: boolean) {
     setSyncMasterMessage('')
-    setTeamsRegistryPreviewDebug(null)
-    setSyncMasterBusy(true)
+    if (!preview) setTeamsRegistryPreviewDebug(null)
     const {
       data: { session },
     } = await supabase.auth.getSession()
     const token = session?.access_token
     if (!token) {
       setSyncMasterMessage('Not signed in. Please log in again.')
-      setSyncMasterBusy(false)
       return
     }
 
-    const params = new URLSearchParams()
-    if (mode === 'preview') params.set('dry_run', '1')
-    if (syncMasterReplaceUpcoming) params.set('replace_upcoming', '1')
-    if (syncMasterLegacyFixtureKeyBackfill && mode === 'run') params.set('legacy_fixture_key_backfill', '1')
-    const query = params.toString()
-    const res = await fetch(`/api/admin/sync-master-sheet${query ? `?${query}` : ''}`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    const json = (await res.json()) as {
-      ok?: boolean
-      error?: string
-      mode?: string
-      incoming_rows?: number
-      would_insert_upcoming?: number
-      would_update_upcoming?: number
-      would_insert_completed?: number
-      would_update_completed?: number
-      inserted_upcoming?: number
-      updated_upcoming?: number
-      inserted_completed?: number
-      updated_completed?: number
-      skipped_duplicates?: number
-      validation_errors?: string[]
-      warnings?: unknown
-      matches_inserted?: number
-      matches_updated?: number
-      sync_import_notice?: string
-      last_processed_fixture_row?: string
-      game_matches_inserted?: number
-      game_matches_updated?: number
-      teams_registry_debug?: TeamsRegistryDebug
-      fixture_key_backfilled?: number
-    }
+    setSheetSyncBusy({ op, preview })
+    try {
+      const params = new URLSearchParams()
+      params.set('sync_mode', op)
+      if (preview) params.set('dry_run', '1')
+      if (syncMasterLegacyFixtureKeyBackfill && !preview) params.set('legacy_fixture_key_backfill', '1')
+      const query = params.toString()
+      const res = await fetch(`/api/admin/sync-master-sheet${query ? `?${query}` : ''}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const json = (await res.json()) as {
+        ok?: boolean
+        error?: string
+        mode?: string
+        sheet_sync_op_mode?: SheetSyncOpMode
+        incoming_rows?: number
+        planned_inserts?: number
+        planned_updates?: number
+        new_upcoming_inserted?: number
+        scores_added?: number
+        scores_changed?: number
+        completed_updated?: number
+        recovered_duplicate_updates?: number
+        missing_db_fixtures_skipped?: number
+        validation_messages?: number
+        would_insert_upcoming?: number
+        would_update_upcoming?: number
+        would_insert_completed?: number
+        would_update_completed?: number
+        inserted_upcoming?: number
+        updated_upcoming?: number
+        inserted_completed?: number
+        updated_completed?: number
+        skipped_duplicates?: number
+        duplicates_skipped?: number
+        validation_errors?: string[]
+        warnings?: unknown
+        matches_inserted?: number
+        matches_updated?: number
+        sync_import_notice?: string
+        last_processed_fixture_row?: string
+        game_matches_inserted?: number
+        game_matches_updated?: number
+        teams_registry_debug?: TeamsRegistryDebug
+        fixture_key_backfilled?: number
+      }
 
-    if (mode === 'preview' && json.teams_registry_debug) {
-      setTeamsRegistryPreviewDebug(json.teams_registry_debug)
-    }
+      if (preview && json.teams_registry_debug) {
+        setTeamsRegistryPreviewDebug(json.teams_registry_debug)
+      }
 
-    const items = normalizeSyncWarningsInput(json.warnings ?? json.validation_errors)
-    setLatestMasterSyncWarnings(items)
-    setMasterSyncPanelEpoch((e) => e + 1)
+      const items = normalizeSyncWarningsInput(json.warnings ?? json.validation_errors)
+      setLatestMasterSyncWarnings(items)
+      setMasterSyncPanelEpoch((e) => e + 1)
 
-    if (!res.ok) {
-      const rowHint =
-        json.last_processed_fixture_row != null && json.last_processed_fixture_row !== ''
-          ? ` Last fixture: ${json.last_processed_fixture_row}`
-          : ''
-      setSyncMasterMessage(`Sync failed: ${json.error ?? res.statusText}.${rowHint}`)
-      setSyncMasterBusy(false)
-      return
-    }
-    if (!json.ok) {
-      setSyncMasterMessage(
-        json.error
-          ? `Sheet sync: ${json.error}`
-          : `Sheet sync finished with ${items.length} message${items.length === 1 ? '' : 's'} (see panel below).`
-      )
+      if (!res.ok) {
+        const rowHint =
+          json.last_processed_fixture_row != null && json.last_processed_fixture_row !== ''
+            ? ` Last fixture: ${json.last_processed_fixture_row}`
+            : ''
+        setSyncMasterMessage(`Sync failed: ${json.error ?? res.statusText}.${rowHint}`)
+        return
+      }
+      if (!json.ok) {
+        setSyncMasterMessage(
+          json.error
+            ? `Sheet sync: ${json.error}`
+            : `Sheet sync finished with ${items.length} message${items.length === 1 ? '' : 's'} (see panel below).`
+        )
+        await loadSyncRuns()
+        void refreshUpcomingFixtureCount()
+        return
+      }
+
+      const warningCount = items.length
+      const vm = json.validation_messages ?? warningCount
+      if (json.mode === 'dry_run' || preview) {
+        if (op === 'new_scores') {
+          setSyncMasterMessage(
+            `Preview (new scores): incoming ${json.incoming_rows ?? 0}, scores +${json.scores_added ?? 0} / changed ${json.scores_changed ?? 0}, completed row updates ${json.completed_updated ?? 0}, missing DB fixtures skipped ${json.missing_db_fixtures_skipped ?? 0}, insert→update promotions ${json.recovered_duplicate_updates ?? 0}, validation messages ${vm}.`
+          )
+        } else if (op === 'new_upcoming') {
+          setSyncMasterMessage(
+            `Preview (new upcoming): incoming ${json.incoming_rows ?? 0}, new upcoming inserts ${json.new_upcoming_inserted ?? json.would_insert_upcoming ?? 0}, duplicates skipped ${json.duplicates_skipped ?? json.skipped_duplicates ?? 0}, validation messages ${vm}.`
+          )
+        } else {
+          setSyncMasterMessage(
+            `Preview (${op}): incoming ${json.incoming_rows ?? 0}, planned inserts/updates ${json.planned_inserts ?? 0}/${json.planned_updates ?? 0}, upcoming insert/update ${json.would_insert_upcoming ?? 0}/${json.would_update_upcoming ?? 0}, completed insert/update ${json.would_insert_completed ?? 0}/${json.would_update_completed ?? 0}, duplicates skipped ${json.duplicates_skipped ?? json.skipped_duplicates ?? 0}, insert→update promotions ${json.recovered_duplicate_updates ?? 0}, validation messages ${vm}.`
+          )
+        }
+      } else {
+        setTeamsRegistryPreviewDebug(null)
+        const gmIns = json.game_matches_inserted ?? (json.inserted_upcoming ?? 0) + (json.inserted_completed ?? 0)
+        const gmUpd = json.game_matches_updated ?? (json.updated_upcoming ?? 0) + (json.updated_completed ?? 0)
+        const mIns = json.matches_inserted ?? 0
+        const mUpd = json.matches_updated ?? 0
+        let msg: string
+        if (op === 'new_scores') {
+          msg = `Sync complete (new scores): scores +${json.scores_added ?? 0} / changed ${json.scores_changed ?? 0}, completed updates ${json.completed_updated ?? 0}, missing DB skipped ${json.missing_db_fixtures_skipped ?? 0}, game_matches updated ${gmUpd}, matches ${mIns}/${mUpd}, duplicates skipped ${json.duplicates_skipped ?? json.skipped_duplicates ?? 0}, insert→update recoveries ${json.recovered_duplicate_updates ?? 0}, validation messages ${vm}.`
+        } else if (op === 'new_upcoming') {
+          msg = `Sync complete (new upcoming): new upcoming inserted ${json.new_upcoming_inserted ?? json.inserted_upcoming ?? 0}, game_matches inserted/updated ${gmIns}/${gmUpd}, duplicates skipped ${json.duplicates_skipped ?? json.skipped_duplicates ?? 0}, validation messages ${vm}.`
+        } else {
+          msg = `Sync complete (${op}): incoming ${json.incoming_rows ?? 0}, game_matches inserted/updated ${gmIns}/${gmUpd}, matches inserted/updated ${mIns}/${mUpd}, upcoming inserted/updated ${json.inserted_upcoming ?? 0}/${json.updated_upcoming ?? 0}, completed inserted/updated ${json.inserted_completed ?? 0}/${json.updated_completed ?? 0}, duplicates skipped ${json.duplicates_skipped ?? json.skipped_duplicates ?? 0}, insert→update promotions ${json.recovered_duplicate_updates ?? 0}, validation messages ${vm}.`
+        }
+        if (json.fixture_key_backfilled != null && json.fixture_key_backfilled > 0) {
+          msg += ` Legacy fixture_key backfilled: ${json.fixture_key_backfilled}.`
+        }
+        if (json.sync_import_notice) {
+          msg += ` ${json.sync_import_notice}`
+        }
+        setSyncMasterMessage(msg)
+      }
       await loadSyncRuns()
       void refreshUpcomingFixtureCount()
-      setSyncMasterBusy(false)
-      return
+      void loadScoringSummary()
+    } finally {
+      setSheetSyncBusy(null)
     }
-
-    const warningCount = items.length
-    if (json.mode === 'dry_run' || mode === 'preview') {
-      setSyncMasterMessage(
-        `Preview: incoming ${json.incoming_rows ?? 0}, upcoming insert/update ${json.would_insert_upcoming ?? 0}/${json.would_update_upcoming ?? 0}, completed insert/update ${json.would_insert_completed ?? 0}/${json.would_update_completed ?? 0}, duplicates skipped ${json.skipped_duplicates ?? 0}, validation messages ${warningCount}.`
-      )
-    } else {
-      setTeamsRegistryPreviewDebug(null)
-      const gmIns = json.game_matches_inserted ?? (json.inserted_upcoming ?? 0) + (json.inserted_completed ?? 0)
-      const gmUpd = json.game_matches_updated ?? (json.updated_upcoming ?? 0) + (json.updated_completed ?? 0)
-      const mIns = json.matches_inserted ?? 0
-      const mUpd = json.matches_updated ?? 0
-      let msg = `Sync complete: incoming ${json.incoming_rows ?? 0}, game_matches inserted/updated ${gmIns}/${gmUpd}, matches inserted/updated ${mIns}/${mUpd}, upcoming inserted/updated ${json.inserted_upcoming ?? 0}/${json.updated_upcoming ?? 0}, completed inserted/updated ${json.inserted_completed ?? 0}/${json.updated_completed ?? 0}, duplicates skipped ${json.skipped_duplicates ?? 0}, validation messages ${warningCount}.`
-      if (json.fixture_key_backfilled != null && json.fixture_key_backfilled > 0) {
-        msg += ` Legacy fixture_key backfilled: ${json.fixture_key_backfilled}.`
-      }
-      if (json.sync_import_notice) {
-        msg += ` ${json.sync_import_notice}`
-      }
-      setSyncMasterMessage(msg)
-    }
-    await loadSyncRuns()
-    void refreshUpcomingFixtureCount()
-    void loadScoringSummary()
-    setSyncMasterBusy(false)
   }
 
   async function runArchiveFixturesNotInSheet(mode: 'preview' | 'run') {
@@ -2441,28 +2476,73 @@ export default function AdminPage() {
                 <code className="rounded bg-gray-100 px-1">province_group</code>).
               </li>
               <li>
-                <strong className="text-gray-900">Preview</strong> sync — check counts and messages.
+                <strong className="text-gray-900">Preview</strong> then <strong className="text-gray-900">run</strong> the
+                right action: daily <strong className="text-gray-900">Sync</strong>, safe new fixtures{' '}
+                <strong className="text-gray-900">Sync New Upcoming Games</strong>, weekend scores only{' '}
+                <strong className="text-gray-900">Sync All New Scores Added</strong>, or full{' '}
+                <strong className="text-gray-900">Sync All</strong> (includes rejecting old upcoming no longer on the
+                sheet).
               </li>
               <li>
                 Open <strong className="text-gray-900">Errors &amp; warnings</strong> and fix the sheet if needed.
               </li>
-              <li>
-                <strong className="text-gray-900">Run</strong> sync when ready (optional: replace upcoming).
-              </li>
             </ol>
-            <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            <p className="mt-5 text-xs font-semibold uppercase tracking-wide text-gray-500">Fixture management</p>
+            <div className="mt-2 flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={() => void runMasterSheetSync('preview')}
-                disabled={syncMasterBusy}
+                onClick={() => void runSheetSync('sync_all', true)}
+                disabled={sheetSyncBusy !== null}
+                className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-950 hover:bg-rose-100 disabled:opacity-50"
+              >
+                {sheetSyncRunning('sync_all', true) ? 'Running…' : 'Preview Sync All'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void runSheetSync('sync', true)}
+                disabled={sheetSyncBusy !== null}
+                className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+              >
+                {sheetSyncRunning('sync', true) ? 'Running…' : 'Preview Sync'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void runSheetSync('new_upcoming', true)}
+                disabled={sheetSyncBusy !== null}
+                className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+              >
+                {sheetSyncRunning('new_upcoming', true) ? 'Running…' : 'Preview New Upcoming'}
+              </button>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSyncAllConfirmOpen(true)}
+                disabled={sheetSyncBusy !== null}
+                className="inline-flex items-center justify-center rounded-xl border border-rose-400 bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-rose-700 disabled:opacity-50"
+              >
+                Sync All
+              </button>
+              <button
+                type="button"
+                onClick={() => void runSheetSync('sync', false)}
+                disabled={sheetSyncBusy !== null}
                 className="inline-flex items-center justify-center rounded-xl bg-gray-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-black disabled:opacity-50"
               >
-                {syncMasterBusy ? 'Running…' : 'Preview sheet sync'}
+                {sheetSyncRunning('sync', false) ? 'Running…' : 'Sync'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void runSheetSync('new_upcoming', false)}
+                disabled={sheetSyncBusy !== null}
+                className="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+              >
+                {sheetSyncRunning('new_upcoming', false) ? 'Running…' : 'Sync New Upcoming Games'}
               </button>
               <button
                 type="button"
                 onClick={() => masterSyncWarningsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-5 py-2.5 text-sm font-semibold text-amber-950 hover:bg-amber-100"
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-950 hover:bg-amber-100"
               >
                 View errors &amp; warnings
                 {effectiveSyncWarnings.length > 0 ? (
@@ -2471,25 +2551,27 @@ export default function AdminPage() {
                   </span>
                 ) : null}
               </button>
+            </div>
+            <p className="mt-6 text-xs font-semibold uppercase tracking-wide text-gray-500">Scores</p>
+            <div className="mt-2 flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={() => void runMasterSheetSync('run')}
-                disabled={syncMasterBusy}
-                className="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-5 py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+                onClick={() => void runSheetSync('new_scores', true)}
+                disabled={sheetSyncBusy !== null}
+                className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-950 hover:bg-emerald-100 disabled:opacity-50"
               >
-                {syncMasterBusy ? 'Running…' : 'Run sheet sync'}
+                {sheetSyncRunning('new_scores', true) ? 'Running…' : 'Preview New Scores'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void runSheetSync('new_scores', false)}
+                disabled={sheetSyncBusy !== null}
+                className="inline-flex items-center justify-center rounded-xl border border-emerald-700 bg-emerald-800 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-900 disabled:opacity-50"
+              >
+                {sheetSyncRunning('new_scores', false) ? 'Running…' : 'Sync All New Scores Added'}
               </button>
             </div>
             <label className="mt-4 flex cursor-pointer items-start gap-2 text-sm text-gray-700">
-              <input
-                type="checkbox"
-                className="mt-1"
-                checked={syncMasterReplaceUpcoming}
-                onChange={(e) => setSyncMasterReplaceUpcoming(e.target.checked)}
-              />
-              <span>Replace existing upcoming fixtures (reject previous upcoming rows)</span>
-            </label>
-            <label className="mt-2 flex cursor-pointer items-start gap-2 text-sm text-gray-700">
               <input
                 type="checkbox"
                 className="mt-1"
@@ -2497,16 +2579,16 @@ export default function AdminPage() {
                 onChange={(e) => setSyncMasterLegacyFixtureKeyBackfill(e.target.checked)}
               />
               <span>
-                One-time legacy: on <strong className="font-medium text-gray-900">Run sheet sync</strong> only, attach{' '}
-                <code className="rounded bg-gray-100 px-1">fixture_key</code> to DB rows that still lack it (same formula
-                as the sheet), only when the normalized key is not already taken.
+                One-time legacy: on <strong className="font-medium text-gray-900">Run</strong> (any sync action above)
+                only, attach <code className="rounded bg-gray-100 px-1">fixture_key</code> to DB rows that still lack it
+                (same formula as the sheet), only when the normalized key is not already taken.
               </span>
             </label>
             <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
               <button
                 type="button"
                 onClick={() => void runArchiveFixturesNotInSheet('preview')}
-                disabled={archiveNotInSheetBusy || syncMasterBusy}
+                disabled={archiveNotInSheetBusy || sheetSyncBusy !== null}
                 className="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50"
               >
                 {archiveNotInSheetBusy ? 'Running…' : 'Preview archive (not in sheet)'}
@@ -2514,7 +2596,7 @@ export default function AdminPage() {
               <button
                 type="button"
                 onClick={() => void runArchiveFixturesNotInSheet('run')}
-                disabled={archiveNotInSheetBusy || syncMasterBusy}
+                disabled={archiveNotInSheetBusy || sheetSyncBusy !== null}
                 className="inline-flex items-center justify-center rounded-xl border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-950 hover:bg-rose-100 disabled:opacity-50"
               >
                 {archiveNotInSheetBusy ? 'Running…' : 'Archive fixtures not in sheet'}
@@ -2524,6 +2606,48 @@ export default function AdminPage() {
               <p className="mt-2 rounded-xl border border-gray-200 bg-rose-50/80 px-3 py-2 text-xs text-gray-800">
                 {archiveNotInSheetMessage}
               </p>
+            ) : null}
+            {syncAllConfirmOpen ? (
+              <div
+                className="fixed inset-0 z-[101] flex items-end justify-center p-4 sm:items-center"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="sync-all-title"
+              >
+                <button
+                  type="button"
+                  className="absolute inset-0 bg-black/40"
+                  onClick={() => setSyncAllConfirmOpen(false)}
+                  aria-label="Cancel"
+                />
+                <div className="relative z-[1] w-full max-w-md rounded-2xl border border-rose-200 bg-white p-5 shadow-xl">
+                  <h4 id="sync-all-title" className="text-sm font-semibold text-gray-900">
+                    Confirm Sync All
+                  </h4>
+                  <p className="mt-2 text-sm text-gray-600">
+                    Sync All may update many fixtures and scores. Continue?
+                  </p>
+                  <div className="mt-4 flex flex-wrap justify-end gap-2">
+                    <button
+                      type="button"
+                      className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-50"
+                      onClick={() => setSyncAllConfirmOpen(false)}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700"
+                      onClick={() => {
+                        setSyncAllConfirmOpen(false)
+                        void runSheetSync('sync_all', false)
+                      }}
+                    >
+                      Continue
+                    </button>
+                  </div>
+                </div>
+              </div>
             ) : null}
             {syncMasterMessage ? (
               <p className="mt-4 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-800">

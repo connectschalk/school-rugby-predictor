@@ -40,6 +40,14 @@ import {
 
 export const runtime = 'nodejs'
 
+/** Operational sheet sync mode (query: `sync_mode`). Preview uses `dry_run=1`. */
+export type SheetSyncOpMode = 'sync_all' | 'sync' | 'new_upcoming' | 'new_scores'
+
+export function parseSheetSyncOpMode(raw: string | null | undefined): SheetSyncOpMode {
+  if (raw === 'sync_all' || raw === 'sync' || raw === 'new_upcoming' || raw === 'new_scores') return raw
+  return 'sync'
+}
+
 const SYNC_IMPORT_MAX_MS = 45_000
 const SYNC_BATCH_SIZE = 50
 
@@ -139,6 +147,14 @@ function buildKickoffPairOccupantMap(gmById: Map<string, ExistingGameMatchSyncRo
   return m
 }
 
+function findGmIdByKickoffPair(gmById: Map<string, ExistingGameMatchSyncRow>, pairKey: string): string | undefined {
+  if (!pairKey) return undefined
+  for (const gm of gmById.values()) {
+    if (uniqueKickoffPairKey(gm.kickoff_time, gm.home_team, gm.away_team) === pairKey) return gm.id
+  }
+  return undefined
+}
+
 function buildFixtureNormOccupantMap(gmById: Map<string, ExistingGameMatchSyncRow>): Map<string, string> {
   const m = new Map<string, string>()
   for (const gm of gmById.values()) {
@@ -160,8 +176,19 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
 
 type SyncSummary = {
   mode: 'dry_run' | 'run'
+  /** Operational mode for this request (`sync_mode` query). */
+  sheet_sync_op_mode: SheetSyncOpMode
   replace_upcoming: boolean
   incoming_rows: number
+  planned_inserts: number
+  planned_updates: number
+  new_upcoming_inserted: number
+  scores_added: number
+  scores_changed: number
+  completed_updated: number
+  recovered_duplicate_updates: number
+  missing_db_fixtures_skipped: number
+  validation_messages: number
   would_insert_upcoming: number
   would_update_upcoming: number
   would_reactivate_upcoming: number
@@ -178,7 +205,10 @@ type SyncSummary = {
   rejected_old_upcoming: number
   inserted_completed: number
   updated_completed: number
+  /** Sheet duplicate rows + skipped pair inserts (e.g. new_upcoming). */
   skipped_duplicates: number
+  /** Same numeric value as `skipped_duplicates` (API contract). */
+  duplicates_skipped: number
   province_group_warnings: number
   would_link_groups: number
   linked_groups: number
@@ -390,6 +420,8 @@ type ExistingGameMatchSyncRow = {
   fixture_key: string | null
   province_group: string | null
   league_group: string | null
+  home_score: number | null
+  away_score: number | null
 }
 
 function buildLinkContext(row: NormalizedSheetRow) {
@@ -433,6 +465,14 @@ function toNumOrNull(v: string): number | null {
   const s = v.trim()
   if (!s) return null
   const n = Number(s)
+  return Number.isFinite(n) ? n : null
+}
+
+/** Coerce `game_matches` score columns from Supabase (number | string | null). */
+function dbScoreToNum(v: unknown): number | null {
+  if (v == null) return null
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null
+  const n = Number(String(v).trim())
   return Number.isFinite(n) ? n : null
 }
 
@@ -520,6 +560,35 @@ type GmUpdateWorkItem = {
   prevAdminNotes: string | null
 }
 
+/** Count completed `game_matches` score deltas for preview summaries (`new_scores` and full sync). */
+function summarizeCompletedGmScoreDeltas(
+  gmUpdates: GmUpdateWorkItem[],
+  gmById: Map<string, ExistingGameMatchSyncRow>
+): { scores_added: number; scores_changed: number; completed_updated: number } {
+  let scores_added = 0
+  let scores_changed = 0
+  let completed_updated = 0
+  for (const u of gmUpdates) {
+    if (u.kind !== 'completed') continue
+    completed_updated += 1
+    const oldGm = gmById.get(u.id)
+    const b = u.body as Record<string, unknown>
+    const nhs =
+      typeof b.home_score === 'number' && Number.isFinite(b.home_score)
+        ? b.home_score
+        : dbScoreToNum(b.home_score)
+    const nas =
+      typeof b.away_score === 'number' && Number.isFinite(b.away_score)
+        ? b.away_score
+        : dbScoreToNum(b.away_score)
+    const ohs = oldGm?.home_score ?? null
+    const oas = oldGm?.away_score ?? null
+    if (ohs == null && oas == null && nhs != null && nas != null) scores_added += 1
+    else if (nhs != null && nas != null && (ohs !== nhs || oas !== nas)) scores_changed += 1
+  }
+  return { scores_added, scores_changed, completed_updated }
+}
+
 type MatchRowUpdatePlan = {
   id: number
   team_a_score: number
@@ -542,6 +611,9 @@ type SyncWritePlan = {
   matchRowUpdates: MatchRowUpdatePlan[]
   matchRowInserts: MatchRowInsertPlan[]
   skippedDuplicates: number
+  skippedPairDuplicateInserts: number
+  pairPromotions: number
+  missingDbFixtureSkipped: number
   skippedUpdatesDueToVerifiedPair: number
   skippedInsertsDueToVerifiedPair: number
   skippedUpdatesDueToKickoffPairConflict: number
@@ -555,12 +627,16 @@ type SyncWritePlan = {
 }
 
 type PrepareSyncPlanContext = {
+  sheetSyncOpMode: SheetSyncOpMode
+  planNowMs: number
   teamRegistry: SheetTeamsRegistry
   syncTeams: TeamRow[]
   syncTeamAliasMap: Map<string, string>
   fixtureGroupMaps: FixtureGroupMaps
   fixturesCsvUrl: string
   existingByFixtureKey: Map<string, ExistingGameMatchSyncRow>
+  /** `uniqueKickoffPairKey` → preferred `game_matches.id` for dedupe / recovery. */
+  existingByKickoffPair: Map<string, string>
   uniqueVerifiedTripletToId: Map<string, string>
   gameMatchById: Map<string, ExistingGameMatchSyncRow>
   existingMatchesByDate: Map<string, Array<{ id: number; team_a_id: number; team_b_id: number }>>
@@ -573,17 +649,21 @@ function mergeGmRowAfterUpdate(
   oldGm: ExistingGameMatchSyncRow | undefined
 ): ExistingGameMatchSyncRow {
   const b = payload
+  const hs = b.home_score
+  const as = b.away_score
   return {
     id: u.id,
-    kickoff_time: String(b.kickoff_time ?? ''),
-    home_team: String(b.home_team ?? ''),
-    away_team: String(b.away_team ?? ''),
-    status: u.kind === 'completed' ? 'completed' : 'upcoming',
+    kickoff_time: String(b.kickoff_time ?? oldGm?.kickoff_time ?? ''),
+    home_team: String(b.home_team ?? oldGm?.home_team ?? ''),
+    away_team: String(b.away_team ?? oldGm?.away_team ?? ''),
+    status: typeof b.status === 'string' ? b.status : u.kind === 'completed' ? 'completed' : 'upcoming',
     verification_status: typeof b.verification_status === 'string' ? b.verification_status : 'verified',
     admin_notes: u.prevAdminNotes ?? oldGm?.admin_notes ?? null,
     fixture_key: typeof b.fixture_key === 'string' ? b.fixture_key : (oldGm?.fixture_key ?? null),
     province_group: typeof b.province_group === 'string' ? b.province_group : (oldGm?.province_group ?? null),
     league_group: typeof b.league_group === 'string' ? b.league_group : (oldGm?.league_group ?? null),
+    home_score: typeof hs === 'number' && Number.isFinite(hs) ? hs : (oldGm?.home_score ?? null),
+    away_score: typeof as === 'number' && Number.isFinite(as) ? as : (oldGm?.away_score ?? null),
   }
 }
 
@@ -637,10 +717,71 @@ function prepareSyncPlan(
   const gmUpdates: GmUpdateWorkItem[] = []
   const matchRowUpdates: MatchRowUpdatePlan[] = []
   const matchRowInserts: MatchRowInsertPlan[] = []
+  let missingDbFixtureSkipped = 0
+
+  const op = ctx.sheetSyncOpMode
+  const nowMs = ctx.planNowMs
 
   for (const row of rows) {
     const trackKey = normalizeStableFixtureKeyForLookup(row.sheet_fixture_key)
+
+    if (op === 'new_scores') {
+      if (row.status !== 'completed' || row.home_score == null || row.away_score == null) continue
+      const existingGm = resolveExistingBySheetFixtureKey(row, ctx.existingByFixtureKey)
+      if (!existingGm?.id) {
+        missingDbFixtureSkipped += 1
+        continue
+      }
+      if (existingGm.home_score === row.home_score && existingGm.away_score === row.away_score) continue
+      const minimalBody: Record<string, unknown> = {
+        kickoff_time: row.kickoff_time,
+        home_team: row.home_team,
+        away_team: row.away_team,
+        status: 'completed',
+        home_score: row.home_score,
+        away_score: row.away_score,
+        verification_status: 'verified',
+        fixture_key: existingGm.fixture_key ?? row.sheet_fixture_key,
+      }
+      const badMs = payloadForbiddenKeys(minimalBody)
+      if (badMs.length) {
+        planErrors.push(`game_matches score update payload must not include: ${badMs.join(', ')}`)
+        continue
+      }
+      gmUpdates.push({
+        pairOnDate: trackKey,
+        kind: 'completed',
+        id: existingGm.id,
+        reactivate: false,
+        prevAdminNotes: existingGm.admin_notes,
+        body: minimalBody,
+      })
+      const homeTeamIdNs = ctx.completedTeamIdCache.get(teamLookupNormalize(row.home_team))
+      const awayTeamIdNs = ctx.completedTeamIdCache.get(teamLookupNormalize(row.away_team))
+      if (homeTeamIdNs !== undefined && awayTeamIdNs !== undefined) {
+        const existingForDateNs = ctx.existingMatchesByDate.get(row.match_date) ?? []
+        const duplicateMatchNs = existingForDateNs.find((m) => {
+          const a = m.team_a_id
+          const b = m.team_b_id
+          return (a === homeTeamIdNs && b === awayTeamIdNs) || (a === awayTeamIdNs && b === homeTeamIdNs)
+        })
+        if (duplicateMatchNs) {
+          matchRowUpdates.push({
+            id: duplicateMatchNs.id,
+            team_a_score: row.home_score,
+            team_b_score: row.away_score,
+            season: Number(row.match_date.slice(0, 4)),
+          })
+        }
+      }
+      continue
+    }
+
+    if (op === 'new_upcoming' && row.status !== 'upcoming') continue
+
     if (row.status === 'upcoming') {
+      if (op === 'new_upcoming' && new Date(row.kickoff_time).getTime() <= nowMs) continue
+
       const { linkInput, warnEff, sheetWarn } = buildLinkContext(row)
       const linkIds = computeFixtureGroupLinkIds(ctx.fixtureGroupMaps, linkInput)
       if (linkIds.length > 0) wouldLinkGroupRows += 1
@@ -650,6 +791,46 @@ function prepareSyncPlan(
       for (const w of warnUp.messages) planErrors.push(w)
 
       const existingGmUp = resolveExistingBySheetFixtureKey(row, ctx.existingByFixtureKey)
+
+      if (op === 'new_upcoming') {
+        if (existingGmUp?.id) continue
+        const pairKeyNu = uniqueKickoffPairKey(row.kickoff_time, row.home_team, row.away_team)
+        if (pairKeyNu && ctx.existingByKickoffPair.has(pairKeyNu)) continue
+        const upHomeTeamProvNu = normalizeProvinceLabelForGameMatches(row.home_team_province.trim())
+        const upAwayTeamProvNu = normalizeProvinceLabelForGameMatches(row.away_team_province.trim())
+        const bodyNu: Record<string, unknown> = {
+          home_team: row.home_team,
+          away_team: row.away_team,
+          kickoff_time: row.kickoff_time,
+          status: row.status,
+          verification_status: 'verified',
+          fixture_key: row.sheet_fixture_key,
+          province_group: provinceGroupForUpsert(row, null),
+          league_group: leagueGroupForUpsert(row, null),
+          tournament: null,
+          home_team_province: upHomeTeamProvNu ? upHomeTeamProvNu : null,
+          away_team_province: upAwayTeamProvNu ? upAwayTeamProvNu : null,
+          is_interprovincial: row.is_interprovincial,
+          has_wp_elite_team: row.has_wp_elite_team,
+          home_is_prestige_team: row.home_is_prestige_team,
+          away_is_prestige_team: row.away_is_prestige_team,
+          home_is_wp_elite: row.home_is_wp_elite,
+          away_is_wp_elite: row.away_is_wp_elite,
+          is_prestige_match: row.is_prestige_sheet,
+          is_prestige: !!row.is_prestige_effective,
+          source_name: row.source || 'Google Sheet (Teams + Fixtures)',
+          source_url: ctx.fixturesCsvUrl,
+          source_type: 'google_sheet_teams_fixtures',
+        }
+        const badNu = payloadForbiddenKeys(bodyNu)
+        if (badNu.length) {
+          planErrors.push(`game_matches insert payload must not include: ${badNu.join(', ')}`)
+        } else {
+          gmInserts.push({ pairOnDate: trackKey, kind: 'upcoming', body: bodyNu })
+        }
+        continue
+      }
+
       const upLeague = leagueGroupForUpsert(row, existingGmUp ?? null)
       const upHomeTeamProv = normalizeProvinceLabelForGameMatches(row.home_team_province.trim())
       const upAwayTeamProv = normalizeProvinceLabelForGameMatches(row.away_team_province.trim())
@@ -728,6 +909,8 @@ function prepareSyncPlan(
     }
 
     if (row.status !== 'completed') continue
+
+    if (op === 'new_upcoming') continue
 
     const homeTeamId = ctx.completedTeamIdCache.get(teamLookupNormalize(row.home_team))
     const awayTeamId = ctx.completedTeamIdCache.get(teamLookupNormalize(row.away_team))
@@ -825,11 +1008,18 @@ function prepareSyncPlan(
     for (const w of warnC.messages) planErrors.push(w)
   }
 
-  const { inserts: finalizedInserts, skippedSheetBatchDedupes } = finalizeGameMatchInsertsWithCount(
-    gmInserts,
-    gmUpdates,
-    ctx.existingByFixtureKey
-  )
+  const pairIdByKey = new Map(ctx.existingByKickoffPair)
+  const {
+    inserts: finalizedInserts,
+    skippedSheetBatchDedupes,
+    skippedPairDuplicateInserts,
+    insertsPromotedToUpdates,
+  } = finalizeGameMatchInsertsWithCount(gmInserts, gmUpdates, ctx.existingByFixtureKey, {
+    pairIdByKey,
+    promoteInsertToUpdateByPairKey: op === 'sync' || op === 'sync_all',
+    gameMatchById: ctx.gameMatchById,
+    sheetSyncOpMode: op,
+  })
 
   for (const r of matchRowUpdates) {
     const writeBody: Record<string, unknown> = {
@@ -971,6 +1161,9 @@ function prepareSyncPlan(
     matchRowUpdates,
     matchRowInserts,
     skippedDuplicates: skippedSheetBatchDedupes,
+    skippedPairDuplicateInserts,
+    pairPromotions: insertsPromotedToUpdates,
+    missingDbFixtureSkipped,
     skippedUpdatesDueToVerifiedPair,
     skippedInsertsDueToVerifiedPair,
     skippedUpdatesDueToKickoffPairConflict,
@@ -995,9 +1188,22 @@ function sheetFixtureNormFromBody(body: Record<string, unknown>): string {
 function finalizeGameMatchInsertsWithCount(
   inserts: GmInsertWorkItem[],
   updatesOut: GmUpdateWorkItem[],
-  fkMap: Map<string, ExistingGameMatchSyncRow>
-): { inserts: GmInsertWorkItem[]; skippedSheetBatchDedupes: number } {
+  fkMap: Map<string, ExistingGameMatchSyncRow>,
+  opts: {
+    promoteInsertToUpdateByPairKey: boolean
+    pairIdByKey: Map<string, string>
+    gameMatchById: Map<string, ExistingGameMatchSyncRow>
+    sheetSyncOpMode: SheetSyncOpMode
+  }
+): {
+  inserts: GmInsertWorkItem[]
+  skippedSheetBatchDedupes: number
+  skippedPairDuplicateInserts: number
+  insertsPromotedToUpdates: number
+} {
   let skippedSheetBatchDedupes = 0
+  let skippedPairDuplicateInserts = 0
+  let insertsPromotedToUpdates = 0
   const lastWinByKey = new Map<string, GmInsertWorkItem>()
   for (const item of inserts) {
     const body = stripForbiddenWritePayload(item.body)
@@ -1025,12 +1231,41 @@ function finalizeGameMatchInsertsWithCount(
           prevAdminNotes: existing.admin_notes,
           body,
         })
+        insertsPromotedToUpdates += 1
         continue
+      }
+    }
+    const pk = uniqueKickoffPairKeyFromPayload(body)
+    if (pk) {
+      const occId = opts.pairIdByKey.get(pk)
+      if (occId) {
+        const existingGm = opts.gameMatchById.get(occId)
+        if (existingGm) {
+          const allowPairPromote =
+            opts.promoteInsertToUpdateByPairKey &&
+            (opts.sheetSyncOpMode === 'sync' || opts.sheetSyncOpMode === 'sync_all')
+          if (allowPairPromote) {
+            updatesOut.push({
+              pairOnDate: item.pairOnDate,
+              kind: item.kind,
+              id: occId,
+              reactivate: existingGm.status === 'rejected' || existingGm.verification_status === 'rejected',
+              prevAdminNotes: existingGm.admin_notes,
+              body,
+            })
+            insertsPromotedToUpdates += 1
+            continue
+          }
+          if (opts.sheetSyncOpMode === 'new_upcoming') {
+            skippedPairDuplicateInserts += 1
+            continue
+          }
+        }
       }
     }
     out.push({ ...item, body })
   }
-  return { inserts: out, skippedSheetBatchDedupes }
+  return { inserts: out, skippedSheetBatchDedupes, skippedPairDuplicateInserts, insertsPromotedToUpdates }
 }
 
 /**
@@ -1047,8 +1282,10 @@ function canonicalProvinceGroup(raw: string): { value: string | null; warning?: 
 export async function POST(request: Request) {
   const reqUrl = new URL(request.url)
   const dryRun = reqUrl.searchParams.get('dry_run') === '1'
-  const replaceUpcoming = reqUrl.searchParams.get('replace_upcoming') === '1'
+  const sheetSyncOpMode = parseSheetSyncOpMode(reqUrl.searchParams.get('sync_mode'))
+  const replaceUpcoming = sheetSyncOpMode === 'sync_all' || reqUrl.searchParams.get('replace_upcoming') === '1'
   const legacyFixtureKeyBackfill = reqUrl.searchParams.get('legacy_fixture_key_backfill') === '1'
+  const planAnchorMs = Date.now()
 
   const authHeader = request.headers.get('authorization')
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : ''
@@ -1116,6 +1353,14 @@ export async function POST(request: Request) {
   let syncTimedOut = false
   let lastProcessedFixtureRow: string | undefined
   let fixture_key_backfilled = 0
+  let planned_inserts = 0
+  let planned_updates = 0
+  let recovered_duplicate_updates = 0
+  let insert_pair_recovery_updates = 0
+  let scores_added = 0
+  let scores_changed = 0
+  let missing_db_fixtures_skipped = 0
+  let scoreDry = { scores_added: 0, scores_changed: 0, completed_updated: 0 }
 
   const [teamsCsvRes, fixturesCsvRes] = await Promise.all([fetch(teamsCsvUrl), fetch(fixturesCsvUrl)])
   if (!teamsCsvRes.ok) {
@@ -1150,8 +1395,20 @@ export async function POST(request: Request) {
     const validation_errors = errors.length ? errors : ['No rows found in CSV']
     const emptySummary: SyncSummary = {
       mode: dryRun ? 'dry_run' : 'run',
+      sheet_sync_op_mode: sheetSyncOpMode,
       replace_upcoming: replaceUpcoming,
       incoming_rows: 0,
+      planned_inserts: 0,
+      planned_updates: 0,
+      new_upcoming_inserted: 0,
+      scores_added: 0,
+      scores_changed: 0,
+      completed_updated: 0,
+      recovered_duplicate_updates: 0,
+      missing_db_fixtures_skipped: 0,
+      validation_messages: validation_errors.length,
+      skipped_duplicates: 0,
+      duplicates_skipped: 0,
       would_insert_upcoming: 0,
       would_update_upcoming: 0,
       would_reactivate_upcoming: 0,
@@ -1166,7 +1423,6 @@ export async function POST(request: Request) {
       rejected_old_upcoming: 0,
       inserted_completed: 0,
       updated_completed: 0,
-      skipped_duplicates: 0,
       province_group_warnings: 0,
       would_link_groups: 0,
       linked_groups: 0,
@@ -1429,7 +1685,7 @@ export async function POST(request: Request) {
   const { data: existingGameMatchesData, error: existingGameMatchesErr } = await supabase
     .from('game_matches')
     .select(
-      'id, kickoff_time, home_team, away_team, status, verification_status, admin_notes, fixture_key, province_group, league_group'
+      'id, kickoff_time, home_team, away_team, status, verification_status, admin_notes, fixture_key, province_group, league_group, home_score, away_score'
     )
   if (existingGameMatchesErr) {
     return NextResponse.json({ ok: false, error: `Could not load existing game matches: ${existingGameMatchesErr.message}` }, { status: 500 })
@@ -1453,6 +1709,8 @@ export async function POST(request: Request) {
       fixture_key: row.fixture_key ?? null,
       province_group: row.province_group ?? null,
       league_group: row.league_group ?? null,
+      home_score: dbScoreToNum(row.home_score),
+      away_score: dbScoreToNum(row.away_score),
     }
     gameMatchById.set(gm.id, gm)
     const tripletKey = verifiedUniqueTripletKey(gm.kickoff_time, gm.home_team, gm.away_team, gm.verification_status)
@@ -1467,6 +1725,24 @@ export async function POST(request: Request) {
     if (gm.status === 'upcoming' && fkNorm) {
       existingCurrentUpcomingIdsByFixtureNorm.set(fkNorm, gm.id)
     }
+  }
+
+  const existingByKickoffPair = new Map<string, string>()
+  const byPkCandidates = new Map<string, ExistingGameMatchSyncRow[]>()
+  for (const gm of gameMatchById.values()) {
+    const pk = uniqueKickoffPairKey(gm.kickoff_time, gm.home_team, gm.away_team)
+    if (!pk) continue
+    let arr = byPkCandidates.get(pk)
+    if (!arr) {
+      arr = []
+      byPkCandidates.set(pk, arr)
+    }
+    arr.push(gm)
+  }
+  for (const [pk, arr] of byPkCandidates.entries()) {
+    let best = arr[0]!
+    for (let i = 1; i < arr.length; i += 1) best = pickPreferredExistingGmRow(best, arr[i]!)
+    existingByKickoffPair.set(pk, best.id)
   }
 
   /** Replace-mode baseline: upcoming rows that already have a `fixture_key`. */
@@ -1531,12 +1807,15 @@ export async function POST(request: Request) {
     await batchEnsureTeamIdsForCompletedRows(supabase, normalized, teams, completedTeamIdCache, errors)
 
     const plan = prepareSyncPlan(normalized, dryRun ? 'dry_run' : 'run', {
+      sheetSyncOpMode,
+      planNowMs: planAnchorMs,
       teamRegistry,
       syncTeams: teams,
       syncTeamAliasMap: sheetSyncAliasMap,
       fixtureGroupMaps,
       fixturesCsvUrl,
       existingByFixtureKey,
+      existingByKickoffPair,
       uniqueVerifiedTripletToId,
       gameMatchById,
       existingMatchesByDate,
@@ -1545,9 +1824,15 @@ export async function POST(request: Request) {
 
   for (const e of plan.errors) errors.push(e)
   for (const w of plan.warnings) errors.push(w)
-  skipped_duplicates += plan.skippedDuplicates
+  skipped_duplicates += plan.skippedDuplicates + plan.skippedPairDuplicateInserts
+  missing_db_fixtures_skipped = plan.missingDbFixtureSkipped
+  planned_inserts = plan.gmInserts.length
+  planned_updates = plan.gmUpdates.length
+  recovered_duplicate_updates = plan.pairPromotions
   would_link_groups = plan.wouldLinkGroupRows
-  group_link_warnings += plan.groupLinkWarningAdds
+  group_link_warnings = plan.groupLinkWarningAdds
+
+  scoreDry = summarizeCompletedGmScoreDeltas(plan.gmUpdates, gameMatchById)
 
   would_insert_upcoming = plan.gmInserts.filter((i) => i.kind === 'upcoming').length
   would_update_upcoming = plan.gmUpdates.filter((u) => u.kind === 'upcoming' && !u.reactivate).length
@@ -1641,26 +1926,21 @@ export async function POST(request: Request) {
               uniqueVerifiedTripletToId.delete(oldUk)
             }
           }
-          const b = u.body as Record<string, unknown>
-          const next: ExistingGameMatchSyncRow = {
-            id: u.id,
-            kickoff_time: String(b.kickoff_time),
-            home_team: String(b.home_team),
-            away_team: String(b.away_team),
-            status: u.kind === 'completed' ? 'completed' : 'upcoming',
-            verification_status: typeof b.verification_status === 'string' ? b.verification_status : 'verified',
-            admin_notes: u.prevAdminNotes ?? oldGm?.admin_notes ?? null,
-            fixture_key:
-              typeof b.fixture_key === 'string'
-                ? b.fixture_key
-                : (oldGm?.fixture_key ?? null),
-            province_group:
-              typeof b.province_group === 'string'
-                ? b.province_group
-                : (oldGm?.province_group ?? null),
-            league_group:
-              typeof b.league_group === 'string' ? b.league_group : (oldGm?.league_group ?? null),
+          if (u.kind === 'completed' && oldGm) {
+            const ohs = oldGm.home_score ?? null
+            const oas = oldGm.away_score ?? null
+            const nhs =
+              typeof payload.home_score === 'number' && Number.isFinite(payload.home_score)
+                ? payload.home_score
+                : dbScoreToNum(payload.home_score)
+            const nas =
+              typeof payload.away_score === 'number' && Number.isFinite(payload.away_score)
+                ? payload.away_score
+                : dbScoreToNum(payload.away_score)
+            if (ohs == null && oas == null && nhs != null && nas != null) scores_added += 1
+            else if (nhs != null && nas != null && (ohs !== nhs || oas !== nas)) scores_changed += 1
           }
+          const next = mergeGmRowAfterUpdate(u, payload, oldGm)
           gameMatchById.set(u.id, next)
           const newUk = verifiedUniqueTripletKeyFromPayload(payload)
           if (newUk) {
@@ -1718,6 +1998,61 @@ export async function POST(request: Request) {
               (/duplicate key value violates unique constraint/i.test(error.message) &&
                 /game_matches/i.test(error.message))
             if (isPairDup) {
+              const conflictId =
+                pk ? liveKickoffPairInserts.get(pk) ?? findGmIdByKickoffPair(gameMatchById, pk) : undefined
+              if (
+                conflictId &&
+                (sheetSyncOpMode === 'sync' || sheetSyncOpMode === 'sync_all')
+              ) {
+                const oldRow = gameMatchById.get(conflictId)
+                const { error: upErr } = await supabase.from('game_matches').update(payload).eq('id', conflictId)
+                if (!upErr) {
+                  insert_pair_recovery_updates += 1
+                  const oldPkC = oldRow ? uniqueKickoffPairKey(oldRow.kickoff_time, oldRow.home_team, oldRow.away_team) : ''
+                  if (oldPkC && oldPkC !== pk && liveKickoffPairInserts.get(oldPkC) === conflictId) {
+                    liveKickoffPairInserts.delete(oldPkC)
+                  }
+                  if (pk) liveKickoffPairInserts.set(pk, conflictId)
+                  if (oldRow) {
+                    const oldUkC = verifiedUniqueTripletKey(
+                      oldRow.kickoff_time,
+                      oldRow.home_team,
+                      oldRow.away_team,
+                      oldRow.verification_status
+                    )
+                    if (oldUkC && uniqueVerifiedTripletToId.get(oldUkC) === conflictId) {
+                      uniqueVerifiedTripletToId.delete(oldUkC)
+                    }
+                  }
+                  const uRec: GmUpdateWorkItem = {
+                    pairOnDate: meta.pairOnDate,
+                    kind: meta.kind,
+                    id: conflictId,
+                    reactivate:
+                      oldRow?.status === 'rejected' || String(oldRow?.verification_status ?? '').toLowerCase() === 'rejected',
+                    prevAdminNotes: oldRow?.admin_notes ?? null,
+                    body: meta.body as Record<string, unknown>,
+                  }
+                  const next = mergeGmRowAfterUpdate(uRec, payload, oldRow)
+                  gameMatchById.set(conflictId, next)
+                  const newUkC = verifiedUniqueTripletKeyFromPayload(payload)
+                  if (newUkC) uniqueVerifiedTripletToId.set(newUkC, conflictId)
+                  const fkC = next.fixture_key?.trim() ? normalizeStableFixtureKeyForLookup(next.fixture_key.trim()) : ''
+                  if (fkC) {
+                    const prevF = existingByFixtureKey.get(fkC)
+                    existingByFixtureKey.set(fkC, prevF ? pickPreferredExistingGmRow(prevF, next) : next)
+                  }
+                  if (meta.kind === 'upcoming') {
+                    if (meta.pairOnDate) existingCurrentUpcomingIdsByFixtureNorm.set(meta.pairOnDate, conflictId)
+                    updated_upcoming += 1
+                  } else {
+                    if (meta.pairOnDate) existingCurrentUpcomingIdsByFixtureNorm.delete(meta.pairOnDate)
+                    updated_completed += 1
+                  }
+                  console.info(`${SYNC_SHEET_LOG} recovered insert→update (unique pair)`, { conflictId })
+                  continue
+                }
+              }
               const w = `${formatGmInsertSkippedUniquePairWarning('unknown', payload)} dbMessage=${JSON.stringify(error.message)}`
               errors.push(w)
               console.warn(SYNC_SHEET_LOG, w)
@@ -1743,6 +2078,8 @@ export async function POST(request: Request) {
             fixture_key: typeof b.fixture_key === 'string' ? b.fixture_key : null,
             province_group: typeof b.province_group === 'string' ? b.province_group : null,
             league_group: typeof b.league_group === 'string' ? b.league_group : null,
+            home_score: typeof b.home_score === 'number' && Number.isFinite(b.home_score) ? b.home_score : dbScoreToNum(b.home_score),
+            away_score: typeof b.away_score === 'number' && Number.isFinite(b.away_score) ? b.away_score : dbScoreToNum(b.away_score),
           }
           gameMatchById.set(id, syncRow)
           const pkAfter = uniqueKickoffPairKey(syncRow.kickoff_time, syncRow.home_team, syncRow.away_team)
@@ -1869,14 +2206,27 @@ export async function POST(request: Request) {
     }
   }
   }
+  recovered_duplicate_updates += insert_pair_recovery_updates
+
   const group_link_failures = 0
   const game_matches_inserted = inserted_upcoming + inserted_completed
   const game_matches_updated = updated_upcoming + updated_completed
 
   const summary: SyncSummary = {
     mode: dryRun ? 'dry_run' : 'run',
+    sheet_sync_op_mode: sheetSyncOpMode,
     replace_upcoming: replaceUpcoming,
     incoming_rows: parsed.rows.length,
+    planned_inserts,
+    planned_updates,
+    new_upcoming_inserted:
+      sheetSyncOpMode === 'new_upcoming' ? (dryRun ? would_insert_upcoming : inserted_upcoming) : 0,
+    scores_added: dryRun ? scoreDry.scores_added : scores_added,
+    scores_changed: dryRun ? scoreDry.scores_changed : scores_changed,
+    completed_updated: dryRun ? scoreDry.completed_updated : updated_completed,
+    recovered_duplicate_updates,
+    missing_db_fixtures_skipped,
+    validation_messages: errors.length,
     would_insert_upcoming,
     would_update_upcoming,
     would_reactivate_upcoming,
@@ -1892,6 +2242,7 @@ export async function POST(request: Request) {
     inserted_completed,
     updated_completed,
     skipped_duplicates,
+    duplicates_skipped: skipped_duplicates,
     province_group_warnings,
     would_link_groups,
     linked_groups: 0,
