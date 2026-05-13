@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import OneMatchChallengePage from './OneMatchChallengeClient'
+import { permanentRedirect } from 'next/navigation'
 import { buildOneMatchShareMetadata } from '@/lib/one-match-og'
 
 type PageProps = {
@@ -11,6 +11,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   return buildOneMatchShareMetadata(slug)
 }
 
-export default function OneMatchSlugPage() {
-  return <OneMatchChallengePage />
+export default async function GameSlugAliasPage({ params }: PageProps) {
+  const { slug } = await params
+  permanentRedirect(`/one-match/${encodeURIComponent(decodeURIComponent(slug))}`)
 }
