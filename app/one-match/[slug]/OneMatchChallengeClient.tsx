@@ -4,6 +4,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { OneMatchResultsRankedList } from '@/components/one-match/OneMatchResultsRankedList'
 import { getTeamLogo, RugbyBallIcon } from '@/components/export/team-logo'
 import {
   actualPointMargin,
@@ -78,15 +79,6 @@ function TeamCrestImg({ teamName, className = 'h-11 w-11' }: { teamName: string;
       onError={() => setFailed(true)}
     />
   )
-}
-
-function podiumGroups(ranked: ReturnType<typeof rankPredictionsForResults>) {
-  const correctRanks = [...new Set(ranked.filter((r) => r.correct).map((r) => r.rank))].sort((a, b) => a - b)
-  const topRanks = correctRanks.slice(0, 3)
-  return topRanks.map((rank) => ({
-    rank,
-    rows: ranked.filter((r) => r.correct && r.rank === rank),
-  }))
 }
 
 export default function OneMatchChallengePage() {
@@ -289,8 +281,6 @@ export default function OneMatchChallengePage() {
     const committed = predictions.filter((p) => p.is_locked)
     return rankPredictionsForResults(committed, w, actualM)
   }, [match, predictions, resultsAvailable])
-
-  const podium = useMemo(() => podiumGroups(ranked), [ranked])
 
   async function upsertWithToken(browserToken: string): Promise<{ ok: boolean; error?: string; id?: string | null }> {
     const m = Number(margin)
@@ -749,80 +739,7 @@ export default function OneMatchChallengePage() {
                 </p>
               </div>
             ) : (
-              <div className="rounded-2xl bg-gradient-to-b from-gray-50 to-white p-6 text-center shadow-md">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-center sm:gap-3">
-                  {(podium.length === 3 ? [podium[1], podium[0], podium[2]] : podium).map((tier, idx) => {
-                    const labelOrder = podium.length === 3 ? ['2nd', '1st', '3rd'] : ['1st', '2nd', '3rd']
-                    const heights = podium.length === 3 ? ['h-28', 'h-40', 'h-24'] : ['h-32', 'h-36', 'h-28']
-                    const h = heights[idx] ?? 'h-28'
-                    const label = labelOrder[idx] ?? `${idx + 1}`
-                    const isFirst = label === '1st'
-                    return (
-                      <div
-                        key={`${tier.rank}-${label}`}
-                        className="flex min-w-0 flex-1 flex-col rounded-2xl border border-gray-200/80 bg-white/90 p-4 shadow-sm"
-                      >
-                        <p
-                          className={`text-center font-bold uppercase tracking-wide text-gray-500 ${
-                            isFirst ? 'text-sm' : 'text-xs'
-                          }`}
-                        >
-                          {label}
-                        </p>
-                        <div className={`mt-3 flex flex-col justify-end rounded-xl bg-gradient-to-b from-red-50/80 to-white ${h}`}>
-                          {tier.rows.map((r) => (
-                            <div key={r.id} className="border-t border-gray-100 px-2 py-2 text-center first:border-t-0">
-                              <p
-                                className={`font-semibold text-gray-900 ${
-                                  isFirst ? 'text-base sm:text-lg' : 'text-sm'
-                                }`}
-                              >
-                                {r.display_name}
-                              </p>
-                              <p className={`text-gray-500 ${isFirst ? 'text-sm' : 'text-xs'}`}>
-                                {winnerLabel(match, r.predicted_winner)} by {r.predicted_margin}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-                {podium.length === 0 ? (
-                  <p className="mt-4 text-sm text-gray-500">No one picked the winning team.</p>
-                ) : null}
-                <div className="mt-6 overflow-hidden rounded-2xl border border-gray-200/80 bg-white text-left shadow-sm">
-                  <p className="border-b border-gray-100 bg-gray-50/80 px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-gray-500">
-                    Full ranking
-                  </p>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full text-left text-sm">
-                      <thead>
-                        <tr className="border-b border-gray-200 text-gray-500">
-                          <th className="px-4 py-2.5 font-semibold">#</th>
-                          <th className="px-4 py-2.5 font-semibold">Name</th>
-                          <th className="px-4 py-2.5 font-semibold">Pick</th>
-                          <th className="px-4 py-2.5 font-semibold">Margin</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {ranked.map((r) => (
-                          <tr key={r.id} className="border-b border-gray-100 transition-colors duration-150">
-                            <td className="px-4 py-2.5 tabular-nums text-gray-600">{r.rank}</td>
-                            <td className="px-4 py-2.5 font-medium text-gray-900">{r.display_name}</td>
-                            <td className="px-4 py-2.5 text-gray-600">
-                              {winnerLabel(match, r.predicted_winner)}
-                              {!r.correct ? <span className="ml-1 text-xs text-gray-400">(wrong)</span> : null}
-                            </td>
-                            <td className="px-4 py-2.5 tabular-nums text-gray-700">{r.predicted_margin}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
+              <OneMatchResultsRankedList match={match} ranked={ranked} myBrowserToken={myBrowserToken} />
             )}
           </div>
         ) : null}

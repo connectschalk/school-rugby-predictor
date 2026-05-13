@@ -73,6 +73,30 @@ export type RankedPrediction = OneMatchPredictionRow & {
   marginError: number | null
 }
 
+/** Medal bands follow the first three distinct margin-error tiers among correct picks (same as rank bands). */
+export type ResultsMedalTier = 'gold' | 'silver' | 'bronze' | null
+
+/** Sorted distinct |predicted − actual| among correct predictions (ascending). */
+export function distinctMarginErrorsForMedals(ranked: RankedPrediction[]): number[] {
+  const errs = ranked
+    .filter((r) => r.correct && r.marginError != null)
+    .map((r) => r.marginError as number)
+  return [...new Set(errs)].sort((a, b) => a - b)
+}
+
+export function medalTierForMarginError(
+  marginError: number | null,
+  correct: boolean,
+  orderedDistinctErrors: number[]
+): ResultsMedalTier {
+  if (!correct || marginError == null || orderedDistinctErrors.length === 0) return null
+  const i = orderedDistinctErrors.indexOf(marginError)
+  if (i === 0) return 'gold'
+  if (i === 1) return 'silver'
+  if (i === 2) return 'bronze'
+  return null
+}
+
 /**
  * Correct winner first; among correct, closest predicted margin to actual point margin wins.
  * Same margin error → same rank (competition style). Wrong picks share one trailing rank after corrects.
