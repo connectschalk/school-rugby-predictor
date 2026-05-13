@@ -13,6 +13,11 @@ export const revalidate = 300
 
 type Props = { params: Promise<{ slug: string }> }
 
+const RED = '#dc2626'
+const TEXT = '#171717'
+const MUTED = '#52525b'
+const CARD_SHADOW = '0 10px 40px rgba(15, 23, 42, 0.08), 0 2px 8px rgba(15, 23, 42, 0.04)'
+
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean)
   if (parts.length === 0) return '?'
@@ -20,11 +25,21 @@ function initials(name: string): string {
   return `${parts[0]![0] ?? ''}${parts[parts.length - 1]![0] ?? ''}`.toUpperCase()
 }
 
-function titleFontSize(home: string, away: string): number {
+function headlineFontSize(home: string, away: string): number {
   const len = home.length + away.length + 4
-  if (len > 52) return 34
-  if (len > 40) return 40
-  return 46
+  if (len > 56) return 32
+  if (len > 44) return 38
+  return 44
+}
+
+function CalendarIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <rect x="3" y="5" width="18" height="16" rx="2" stroke={RED} strokeWidth="2" />
+      <path d="M3 10h18" stroke={RED} strokeWidth="2" />
+      <path d="M8 3v4M16 3v4" stroke={RED} strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  )
 }
 
 export default async function OpenGraphImage({ params }: Props) {
@@ -33,15 +48,16 @@ export default async function OpenGraphImage({ params }: Props) {
   const base = getPublicSiteUrl()
   const match = await fetchOneMatchOgBySlug(slug)
 
-  const home = match?.home_team ?? 'NextPlay'
-  const away = match?.away_team ?? 'Predictor'
+  const home = match?.home_team ?? ''
+  const away = match?.away_team ?? ''
   const kickoff = match ? formatOneMatchKickoffOg(match.kickoff_time) : 'School rugby predictions'
   const homeLogo = match?.home_team_logo
   const awayLogo = match?.away_team_logo
   const crowd = match?.crowd_line
-  const titleSize = match ? titleFontSize(home, away) : 44
+  const headlineSize = match ? headlineFontSize(home, away) : 40
 
-  const logoBox = 280
+  const crestBox = 310
+  const crestInner = crestBox - 56
 
   return new ImageResponse(
     (
@@ -52,12 +68,12 @@ export default async function OpenGraphImage({ params }: Props) {
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          justifyContent: 'center',
-          background: 'linear-gradient(165deg, #0a0e14 0%, #121a24 45%, #0d1219 100%)',
-          color: '#f1f5f9',
+          justifyContent: 'flex-start',
+          background: 'linear-gradient(180deg, #ffffff 0%, #f8fafc 48%, #f1f5f9 100%)',
+          color: TEXT,
           fontFamily:
             'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-          padding: 48,
+          padding: '36px 56px 44px',
         }}
       >
         <div
@@ -66,118 +82,150 @@ export default async function OpenGraphImage({ params }: Props) {
             flexDirection: 'column',
             alignItems: 'center',
             width: '100%',
-            flex: 1,
-            justifyContent: 'center',
-            gap: 28,
+            gap: 22,
           }}
         >
-          <div
-            style={{
-              fontSize: 22,
-              letterSpacing: '0.35em',
-              textTransform: 'uppercase',
-              color: '#94a3b8',
-              fontWeight: 600,
-            }}
-          >
-            NextPlay Predictor
+          <div style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
+            <img
+              src={`${base}/nextplay-predictor.png`}
+              alt=""
+              height={72}
+              style={{ objectFit: 'contain', height: 72, width: 'auto', maxWidth: 420 }}
+            />
           </div>
 
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '100%',
-              gap: 36,
-            }}
-          >
+          {match ? (
             <div
               style={{
-                width: logoBox,
-                height: logoBox,
                 display: 'flex',
+                flexDirection: 'row',
                 alignItems: 'center',
                 justifyContent: 'center',
-                borderRadius: 24,
-                background: 'rgba(255,255,255,0.06)',
-                border: '1px solid rgba(148,163,184,0.25)',
+                flexWrap: 'wrap',
+                gap: 16,
+                maxWidth: 1100,
+                textAlign: 'center',
               }}
             >
-              {homeLogo ? (
-                <img
-                  src={homeLogo}
-                  alt=""
-                  width={logoBox - 48}
-                  height={logoBox - 48}
-                  style={{ objectFit: 'contain' }}
-                />
-              ) : (
-                <span style={{ fontSize: 72, fontWeight: 700, color: '#e2e8f0' }}>{initials(home)}</span>
-              )}
+              <span style={{ fontSize: headlineSize, fontWeight: 800, color: TEXT, letterSpacing: -0.5 }}>{home}</span>
+              <span
+                style={{
+                  fontSize: Math.max(26, Math.round(headlineSize * 0.55)),
+                  fontWeight: 800,
+                  color: RED,
+                  letterSpacing: '0.06em',
+                }}
+              >
+                VS
+              </span>
+              <span style={{ fontSize: headlineSize, fontWeight: 800, color: TEXT, letterSpacing: -0.5 }}>{away}</span>
             </div>
+          ) : (
+            <div style={{ fontSize: 40, fontWeight: 800, color: TEXT, letterSpacing: -0.4 }}>Match not found</div>
+          )}
 
+          {match ? (
             <div
               style={{
-                fontSize: 56,
-                fontWeight: 800,
-                color: '#d4a853',
-                fontStyle: 'italic',
-                textShadow: '0 2px 24px rgba(212,168,83,0.35)',
-              }}
-            >
-              VS
-            </div>
-
-            <div
-              style={{
-                width: logoBox,
-                height: logoBox,
                 display: 'flex',
+                flexDirection: 'row',
                 alignItems: 'center',
                 justifyContent: 'center',
-                borderRadius: 24,
-                background: 'rgba(255,255,255,0.06)',
-                border: '1px solid rgba(148,163,184,0.25)',
+                width: '100%',
+                gap: 28,
+                marginTop: 6,
               }}
             >
-              {awayLogo ? (
-                <img
-                  src={awayLogo}
-                  alt=""
-                  width={logoBox - 48}
-                  height={logoBox - 48}
-                  style={{ objectFit: 'contain' }}
-                />
-              ) : (
-                <span style={{ fontSize: 72, fontWeight: 700, color: '#e2e8f0' }}>{initials(away)}</span>
-              )}
+              <div
+                style={{
+                  width: crestBox,
+                  height: crestBox,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 20,
+                  background: '#ffffff',
+                  boxShadow: CARD_SHADOW,
+                  border: '1px solid rgba(226, 232, 240, 0.9)',
+                }}
+              >
+                {homeLogo ? (
+                  <img
+                    src={homeLogo}
+                    alt=""
+                    width={crestInner}
+                    height={crestInner}
+                    style={{ objectFit: 'contain' }}
+                  />
+                ) : (
+                  <span style={{ fontSize: 80, fontWeight: 800, color: '#94a3b8' }}>{initials(home)}</span>
+                )}
+              </div>
+
+              <div
+                style={{
+                  fontSize: 44,
+                  fontWeight: 800,
+                  color: RED,
+                  letterSpacing: '0.08em',
+                }}
+              >
+                VS
+              </div>
+
+              <div
+                style={{
+                  width: crestBox,
+                  height: crestBox,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 20,
+                  background: '#ffffff',
+                  boxShadow: CARD_SHADOW,
+                  border: '1px solid rgba(226, 232, 240, 0.9)',
+                }}
+              >
+                {awayLogo ? (
+                  <img
+                    src={awayLogo}
+                    alt=""
+                    width={crestInner}
+                    height={crestInner}
+                    style={{ objectFit: 'contain' }}
+                  />
+                ) : (
+                  <span style={{ fontSize: 80, fontWeight: 800, color: '#94a3b8' }}>{initials(away)}</span>
+                )}
+              </div>
             </div>
-          </div>
+          ) : null}
 
           <div
             style={{
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
-              gap: 12,
-              maxWidth: 1080,
-              textAlign: 'center',
+              gap: 8,
+              marginTop: 10,
             }}
           >
-            <div style={{ fontSize: titleSize, fontWeight: 700, lineHeight: 1.15 }}>
-              {match ? `${home} vs ${away}` : 'Match not found'}
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 10,
+              }}
+            >
+              <CalendarIcon />
+              <span style={{ fontSize: 22, fontWeight: 700, color: RED, letterSpacing: '0.02em' }}>Kickoff</span>
             </div>
-            <div style={{ fontSize: 30, color: '#cbd5e1', fontWeight: 500 }}>{kickoff}</div>
+            <div style={{ fontSize: 26, fontWeight: 600, color: MUTED }}>{kickoff}</div>
             {crowd ? (
-              <div style={{ fontSize: 22, color: '#94a3b8', marginTop: 4 }}>{crowd}</div>
+              <div style={{ fontSize: 20, fontWeight: 500, color: '#64748b', marginTop: 6 }}>{crowd}</div>
             ) : null}
           </div>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, opacity: 0.85 }}>
-          <img src={`${base}/nextplay-predictor.png`} alt="" height={36} style={{ objectFit: 'contain' }} />
         </div>
       </div>
     ),
