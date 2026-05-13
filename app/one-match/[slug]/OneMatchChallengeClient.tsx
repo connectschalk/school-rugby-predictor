@@ -4,11 +4,13 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { OneMatchFinalResultSummary } from '@/components/one-match/OneMatchFinalResultSummary'
 import { OneMatchResultsRankedList } from '@/components/one-match/OneMatchResultsRankedList'
 import { getTeamLogo, RugbyBallIcon } from '@/components/export/team-logo'
 import {
   actualPointMargin,
   actualWinnerFromScores,
+  finalGameResultSummaryFromScores,
   getOrCreateBrowserToken,
   rankPredictionsForResults,
   type OneMatchPredictionRow,
@@ -273,6 +275,11 @@ export default function OneMatchChallengePage() {
   const homeTint = getLightTint(getTeamColor(match?.home_team ?? '') ?? '#9ca3af')
   const awayTint = getLightTint(getTeamColor(match?.away_team ?? '') ?? '#9ca3af')
 
+  const finalResultSummary = useMemo(() => {
+    if (!match) return null
+    return finalGameResultSummaryFromScores(match.home_team, match.away_team, match.home_score, match.away_score)
+  }, [match])
+
   const ranked = useMemo(() => {
     if (!match || !resultsAvailable) return []
     const w = actualWinnerFromScores(match.home_score, match.away_score)
@@ -454,6 +461,9 @@ export default function OneMatchChallengePage() {
           <p className="mt-5 text-center text-sm font-medium text-gray-500">{formatKickoff(match.kickoff_time)}</p>
           {!predictionsOpen ? (
             <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-center text-xs font-medium text-amber-900">Predictions closed</p>
+          ) : null}
+          {finalResultSummary ? (
+            <OneMatchFinalResultSummary summary={finalResultSummary} tightTop={!predictionsOpen} />
           ) : null}
         </div>
 

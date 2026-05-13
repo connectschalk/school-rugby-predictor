@@ -11,6 +11,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   return buildOneMatchShareMetadata(slug)
 }
 
+/** Renders the One Match challenge (match card, final score summary, tabs, results). */
 export default function OneMatchSlugPage() {
   return <OneMatchChallengePage />
 }

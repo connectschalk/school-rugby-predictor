@@ -67,6 +67,26 @@ export function actualPointMargin(
   return winner === 'home' ? homeScore - awayScore : awayScore - homeScore
 }
 
+/** When both scores exist: winner + winning margin, or a draw (no margin). */
+export type FinalGameResultSummary = { kind: 'draw' } | { kind: 'winner'; teamName: string; margin: number }
+
+export function finalGameResultSummaryFromScores(
+  homeTeam: string,
+  awayTeam: string,
+  homeScore: number | null,
+  awayScore: number | null
+): FinalGameResultSummary | null {
+  if (homeScore == null || awayScore == null) return null
+  if (homeScore === awayScore) return { kind: 'draw' }
+  const w = actualWinnerFromScores(homeScore, awayScore)
+  if (!w) return { kind: 'draw' }
+  return {
+    kind: 'winner',
+    teamName: w === 'home' ? homeTeam : awayTeam,
+    margin: actualPointMargin(homeScore, awayScore, w),
+  }
+}
+
 export type RankedPrediction = OneMatchPredictionRow & {
   rank: number
   correct: boolean
