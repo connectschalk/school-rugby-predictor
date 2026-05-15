@@ -17,5 +17,10 @@ export function getPublicSiteUrl(): string {
 
 /** Full URL for a One Match Challenge share link. */
 export function absoluteOneMatchChallengeUrl(slug: string): string {
-  return `${getPublicSiteUrl()}/one-match/${slug.trim()}`
+  return `${getPublicSiteUrl()}/one-match/${encodeURIComponent(slug.trim())}`
+}
+
+/** Absolute OG image URL for crawlers (Facebook, WhatsApp, Twitter). */
+export function absoluteOneMatchOgImageUrl(slug: string): string {
+  return `${getPublicSiteUrl()}/game/${encodeURIComponent(slug.trim())}/opengraph-image`
 }

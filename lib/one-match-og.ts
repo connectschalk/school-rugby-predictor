@@ -1,7 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { Metadata } from 'next'
 import { getSchoolTeamLogoPath } from '@/lib/school-team-logos'
-import { getPublicSiteUrl } from '@/lib/site-url'
+import { absoluteOneMatchChallengeUrl, absoluteOneMatchOgImageUrl, getPublicSiteUrl } from '@/lib/site-url'
 
 export type OneMatchOgMatch = {
   home_team: string
@@ -109,7 +109,6 @@ export async function fetchOneMatchOgBySlug(slug: string): Promise<OneMatchOgMat
 
 export async function buildOneMatchShareMetadata(slug: string): Promise<Metadata> {
   const trimmed = slug.trim()
-  const base = getPublicSiteUrl()
   const match = await fetchOneMatchOgBySlug(trimmed)
   const home_team = match?.home_team ?? 'Home'
   const away_team = match?.away_team ?? 'Away'
@@ -119,8 +118,8 @@ export async function buildOneMatchShareMetadata(slug: string): Promise<Metadata
     ? `Kickoff: ${formatted_time}. Predict the winner and margin with NextPlay Predictor.`
     : 'Predict the winner and margin. Lock in your pick with NextPlay Predictor.'
 
-  const encodedSlug = encodeURIComponent(trimmed)
-  const ogImageUrl = `${base}/game/${encodedSlug}/opengraph-image`
+  const ogImageUrl = absoluteOneMatchOgImageUrl(trimmed)
+  const pageUrl = absoluteOneMatchChallengeUrl(trimmed)
 
   return {
     title,
@@ -128,7 +127,8 @@ export async function buildOneMatchShareMetadata(slug: string): Promise<Metadata
     openGraph: {
       title,
       description,
-      url: `${base}/one-match/${encodeURIComponent(trimmed)}`,
+      url: pageUrl,
+      siteName: 'NextPlay Predictor',
       type: 'website',
       images: [
         {
@@ -136,6 +136,7 @@ export async function buildOneMatchShareMetadata(slug: string): Promise<Metadata
           width: 1200,
           height: 630,
           alt: title,
+          type: 'image/png',
         },
       ],
     },
