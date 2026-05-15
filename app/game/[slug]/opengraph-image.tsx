@@ -31,6 +31,12 @@ const RED = '#dc2626'
 const TEXT = '#171717'
 const MUTED = '#52525b'
 
+/** Facebook / WhatsApp / iMessage safe zone: keep key content in center ~80%. */
+const SAFE_PAD_X = 90
+const CONTENT_MAX_W = 960
+const CREST_BOX = 220
+const CREST_INNER = 172
+
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean)
   if (parts.length === 0) return '?'
@@ -40,9 +46,9 @@ function initials(name: string): string {
 
 function headlineFontSize(home: string, away: string): number {
   const len = home.length + away.length + 4
-  if (len > 56) return 32
-  if (len > 44) return 38
-  return 44
+  if (len > 56) return 28
+  if (len > 44) return 32
+  return 36
 }
 
 function CalendarIcon() {
@@ -74,7 +80,7 @@ function CrestCard({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        borderRadius: 20,
+        borderRadius: 16,
         background: '#ffffff',
         border: '2px solid #e2e8f0',
       }}
@@ -82,7 +88,7 @@ function CrestCard({
       {logoSrc ? (
         <img src={logoSrc} alt="" width={crestInner} height={crestInner} style={{ objectFit: 'contain' }} />
       ) : (
-        <span style={{ fontSize: 80, fontWeight: 800, color: '#94a3b8' }}>{initials(teamName)}</span>
+        <span style={{ fontSize: 56, fontWeight: 800, color: '#94a3b8' }}>{initials(teamName)}</span>
       )}
     </div>
   )
@@ -90,9 +96,9 @@ function CrestCard({
 
 function BrandBlock({ brandLogoSrc }: { brandLogoSrc: string | null }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', width: '100%', height: 72, alignItems: 'center' }}>
+    <div style={{ display: 'flex', justifyContent: 'center', width: '100%', height: 64, alignItems: 'center' }}>
       {brandLogoSrc ? (
-        <img src={brandLogoSrc} alt="" width={360} height={72} style={{ objectFit: 'contain' }} />
+        <img src={brandLogoSrc} alt="" width={300} height={64} style={{ objectFit: 'contain' }} />
       ) : (
         <span style={{ fontSize: 28, fontWeight: 800, color: TEXT, letterSpacing: -0.5 }}>NextPlay Predictor</span>
       )}
@@ -106,7 +112,7 @@ function BrandedFallbackHero() {
       <div style={{ fontSize: 36, fontWeight: 800, color: TEXT, letterSpacing: -0.5, textAlign: 'center' }}>
         One Match Challenge
       </div>
-      <div style={{ fontSize: 22, fontWeight: 600, color: MUTED, textAlign: 'center', maxWidth: 720 }}>
+      <div style={{ fontSize: 20, fontWeight: 600, color: MUTED, textAlign: 'center', maxWidth: CONTENT_MAX_W }}>
         Predict the winner and margin
       </div>
       <div style={{ width: 120, height: 4, borderRadius: 4, background: RED, marginTop: 8 }} />
@@ -116,9 +122,9 @@ function BrandedFallbackHero() {
 
 function MatchOgCard({ payload }: { payload: MatchOgPayload }) {
   const { home, away, kickoff, homeLogoSrc, awayLogoSrc, brandLogoSrc, crowd, hasMatch } = payload
-  const headlineSize = hasMatch ? headlineFontSize(home, away) : 40
-  const crestBox = 310
-  const crestInner = crestBox - 56
+  const headlineSize = hasMatch ? headlineFontSize(home, away) : 34
+  const crestBox = CREST_BOX
+  const crestInner = CREST_INNER
 
   return (
     <div
@@ -128,12 +134,12 @@ function MatchOgCard({ payload }: { payload: MatchOgPayload }) {
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        justifyContent: hasMatch ? 'flex-start' : 'center',
+        justifyContent: 'center',
         background: '#f8fafc',
         color: TEXT,
         fontFamily:
           'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-        padding: '36px 56px 44px',
+        padding: `32px ${SAFE_PAD_X}px`,
       }}
     >
       <div
@@ -141,8 +147,10 @@ function MatchOgCard({ payload }: { payload: MatchOgPayload }) {
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
+          justifyContent: 'center',
           width: '100%',
-          gap: 22,
+          maxWidth: CONTENT_MAX_W,
+          gap: 18,
         }}
       >
         <BrandBlock brandLogoSrc={brandLogoSrc} />
@@ -155,15 +163,17 @@ function MatchOgCard({ payload }: { payload: MatchOgPayload }) {
                 flexDirection: 'row',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: 16,
-                maxWidth: 1100,
+                gap: 12,
+                maxWidth: CONTENT_MAX_W,
                 textAlign: 'center',
+                paddingLeft: 8,
+                paddingRight: 8,
               }}
             >
               <span style={{ fontSize: headlineSize, fontWeight: 800, color: TEXT, letterSpacing: -0.5 }}>{home}</span>
               <span
                 style={{
-                  fontSize: Math.max(26, Math.round(headlineSize * 0.55)),
+                  fontSize: Math.max(22, Math.round(headlineSize * 0.55)),
                   fontWeight: 800,
                   color: RED,
                   letterSpacing: '0.06em',
@@ -188,15 +198,15 @@ function MatchOgCard({ payload }: { payload: MatchOgPayload }) {
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                gap: 8,
-                marginTop: 10,
+                gap: 6,
+                marginTop: 4,
               }}
             >
-              <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <CalendarIcon />
-                <span style={{ fontSize: 22, fontWeight: 700, color: RED, letterSpacing: '0.02em' }}>Kickoff</span>
+                <span style={{ fontSize: 20, fontWeight: 700, color: RED, letterSpacing: '0.02em' }}>Kickoff</span>
               </div>
-              <div style={{ fontSize: 26, fontWeight: 600, color: MUTED }}>{kickoff}</div>
+              <div style={{ fontSize: 24, fontWeight: 600, color: MUTED }}>{kickoff}</div>
               {crowd ? (
                 <CrowdLine crowd={crowd} />
               ) : null}
@@ -233,12 +243,13 @@ function CrestRow({
         alignItems: 'center',
         justifyContent: 'center',
         width: '100%',
-        gap: 28,
-        marginTop: 6,
+        maxWidth: CONTENT_MAX_W,
+        gap: 16,
+        marginTop: 4,
       }}
     >
       <CrestCard logoSrc={homeLogoSrc} teamName={home} crestBox={crestBox} crestInner={crestInner} />
-      <div style={{ fontSize: 44, fontWeight: 800, color: RED, letterSpacing: '0.08em' }}>VS</div>
+      <div style={{ fontSize: 34, fontWeight: 800, color: RED, letterSpacing: '0.06em' }}>VS</div>
       <CrestCard logoSrc={awayLogoSrc} teamName={away} crestBox={crestBox} crestInner={crestInner} />
     </div>
   )
