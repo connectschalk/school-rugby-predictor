@@ -4,6 +4,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import CommunityMarginDistributionChart from '@/components/community-predictor/CommunityMarginDistributionChart'
 import { OneMatchFinalResultSummary } from '@/components/one-match/OneMatchFinalResultSummary'
 import { OneMatchResultsRankedList } from '@/components/one-match/OneMatchResultsRankedList'
 import { getTeamLogo, RugbyBallIcon } from '@/components/export/team-logo'
@@ -16,6 +17,8 @@ import {
   type OneMatchPredictionRow,
 } from '@/lib/one-match-challenge'
 import { getOneMatchChallengeBySlug } from '@/lib/one-match-challenge-lookup'
+import { buildCommunityStatsOkFromMarginPicks } from '@/lib/community-predictor'
+import { fetchPredictorAppPickForFixture, type PredictorAppChartPick } from '@/lib/fixture-model-for-match'
 import { getSchoolTeamLogoPath } from '@/lib/school-team-logos'
 import { supabase } from '@/lib/supabase'
 import { getLightTint, getTeamColor } from '@/lib/teamColors'
@@ -84,6 +87,12 @@ function TeamCrestImg({ teamName, className = 'h-11 w-11' }: { teamName: string;
   )
 }
 
+function formatPctLabel(n: number): string {
+  if (!Number.isFinite(n)) return '0'
+  const r = Math.round(n * 10) / 10
+  return Number.isInteger(r) ? String(r) : r.toFixed(1)
+}
+
 export default function OneMatchChallengePage() {
   const params = useParams()
   const slug = typeof params.slug === 'string' ? params.slug : ''
@@ -107,6 +116,8 @@ export default function OneMatchChallengePage() {
   const [myBrowserToken, setMyBrowserToken] = useState('')
   const [savedPredictionId, setSavedPredictionId] = useState<string | null>(null)
   const [lastSavedBrowserToken, setLastSavedBrowserToken] = useState('')
+
+  const [predictorAppPick, setPredictorAppPick] = useState<PredictorAppChartPick | null>(null)
 
   const match = challenge ? unwrapGm(challenge) : null
 
@@ -215,6 +226,24 @@ export default function OneMatchChallengePage() {
     }
   }, [match, predictions, slug])
 
+  useEffect(() => {
+    if (!match) {
+      setPredictorAppPick(null)
+      return
+    }
+    let cancelled = false
+    void fetchPredictorAppPickForFixture(supabase, {
+      homeTeamName: match.home_team,
+      awayTeamName: match.away_team,
+      kickoffTime: match.kickoff_time,
+    }).then((pick) => {
+      if (!cancelled) setPredictorAppPick(pick)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [match])
+
   const predictionsOpen = useMemo(() => {
     if (!match) return false
     if (match.status === 'completed' || match.status === 'cancelled') return false
@@ -262,9 +291,28 @@ export default function OneMatchChallengePage() {
     () => sortedLockedPreviewPredictions.filter((p) => p.predicted_winner === 'away'),
     [sortedLockedPreviewPredictions]
   )
-  const previewTotal = sortedLockedPreviewPredictions.length
-  const homePercent = previewTotal > 0 ? Math.round((homeLockedPredictions.length / previewTotal) * 100) : 0
-  const awayPercent = previewTotal > 0 ? 100 - homePercent : 0
+
+  const previewMarginStats = useMemo(() => {
+    if (!match) return null
+    const picks = sortedLockedPreviewPredictions.map((p) => ({
+      side: p.predicted_winner,
+      margin: p.predicted_margin,
+    }))
+    return buildCommunityStatsOkFromMarginPicks(
+      {
+        id: match.id,
+        home_team: match.home_team,
+        away_team: match.away_team,
+        kickoff_time: match.kickoff_time,
+        status: match.status,
+        home_score: match.home_score,
+        away_score: match.away_score,
+      },
+      picks,
+      { viewerPick: null }
+    )
+  }, [match, sortedLockedPreviewPredictions])
+
   const homeTint = getLightTint(getTeamColor(match?.home_team ?? '') ?? '#9ca3af')
   const awayTint = getLightTint(getTeamColor(match?.away_team ?? '') ?? '#9ca3af')
 
@@ -636,98 +684,121 @@ export default function OneMatchChallengePage() {
               <p className="py-6 text-center text-sm font-medium text-amber-900">Predictions closed</p>
             ) : null}
             {iLocked ? (
-              <div className="space-y-3">
-                {sortedLockedPreviewPredictions.length === 0 ? (
-                  <p className="py-6 text-center text-sm text-gray-500">No locked predictions yet.</p>
-                ) : (
-                  <>
-                    <div className="space-y-2">
-                      <p className="text-center text-sm font-semibold text-gray-700">
-                        {match.home_team} {homePercent}% <span className="text-gray-400">|</span> {match.away_team} {awayPercent}%
-                      </p>
-                      <div className="flex h-3 overflow-hidden rounded-full border border-gray-200 bg-gray-100">
-                        <div style={{ width: `${homePercent}%`, backgroundColor: homeTint }} />
-                        <div style={{ width: `${awayPercent}%`, backgroundColor: awayTint }} />
-                      </div>
+              <div className="space-y-5">
+                <div>
+                  <h2 className="text-center text-lg font-black tracking-tight text-gray-900">Preview Predictions</h2>
+                  <p className="mx-auto mt-2 max-w-md text-center text-sm text-gray-600">
+                    Bars show the percentage of users who picked each margin range.
+                  </p>
+                </div>
+
+                {previewMarginStats ? (
+                  <div className="rounded-2xl border border-gray-200 bg-white px-3 py-4 shadow-sm sm:px-5 sm:py-6">
+                    <div className="flex flex-wrap items-center justify-center gap-3 text-xs text-gray-700 sm:text-sm">
+                      <span className="rounded-full bg-gray-900 px-3 py-1 font-semibold text-white">
+                        Home {formatPctLabel(previewMarginStats.home_prediction_pct)}%
+                      </span>
+                      <span className="rounded-full bg-red-700 px-3 py-1 font-semibold text-white">
+                        Away {formatPctLabel(previewMarginStats.away_prediction_pct)}%
+                      </span>
                     </div>
+                    <CommunityMarginDistributionChart
+                      stats={previewMarginStats}
+                      viewerAvatar={null}
+                      predictorAppPick={predictorAppPick}
+                      showFooterCaption={false}
+                      rootClassName="mt-4"
+                    />
+                  </div>
+                ) : null}
 
-                    {homeLockedPredictions.length > 0 ? (
-                      <div className="space-y-2">
-                        <p className="px-1 text-xs font-semibold uppercase tracking-wide text-gray-500">{match.home_team} picks</p>
-                        {homeLockedPredictions.map((p) => {
-                          const isMe = p.browser_token === myBrowserToken
-                          const selectedTeamColor = isMe ? getTeamColor(match.home_team) : undefined
-                          return (
-                            <div
-                              key={p.id}
-                              className={`flex min-w-0 items-center justify-between gap-3 rounded-xl px-4 py-3 text-sm shadow-sm transition-all duration-150 ${
-                                isMe ? 'border border-red-200 bg-red-50' : 'border border-gray-100 bg-white'
-                              }`}
-                              style={
-                                isMe && selectedTeamColor
-                                  ? {
-                                      backgroundColor: getLightTint(selectedTeamColor),
-                                      borderColor: `${selectedTeamColor}40`,
-                                    }
-                                  : undefined
-                              }
-                            >
-                              <span className="min-w-0 truncate font-semibold text-gray-900">{p.display_name}</span>
-                              <span className="shrink-0 text-right text-gray-600">
-                                <span className="font-medium text-gray-800">{match.home_team}</span>
-                                <span className="text-gray-400"> · </span>
-                                <span className="tabular-nums text-gray-800">{p.predicted_margin}</span>
-                              </span>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    ) : null}
+                <div className="space-y-3">
+                  {sortedLockedPreviewPredictions.length === 0 ? (
+                    <p className="py-2 text-center text-sm text-gray-500">No locked predictions yet.</p>
+                  ) : (
+                    <>
+                      {homeLockedPredictions.length > 0 ? (
+                        <div className="space-y-2">
+                          <p className="px-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                            {match.home_team} picks
+                          </p>
+                          {homeLockedPredictions.map((p) => {
+                            const isMe = p.browser_token === myBrowserToken
+                            const selectedTeamColor = isMe ? getTeamColor(match.home_team) : undefined
+                            return (
+                              <div
+                                key={p.id}
+                                className={`flex min-w-0 items-center justify-between gap-3 rounded-xl px-4 py-3 text-sm shadow-sm transition-all duration-150 ${
+                                  isMe ? 'border border-red-200 bg-red-50' : 'border border-gray-100 bg-white'
+                                }`}
+                                style={
+                                  isMe && selectedTeamColor
+                                    ? {
+                                        backgroundColor: getLightTint(selectedTeamColor),
+                                        borderColor: `${selectedTeamColor}40`,
+                                      }
+                                    : undefined
+                                }
+                              >
+                                <span className="min-w-0 truncate font-semibold text-gray-900">{p.display_name}</span>
+                                <span className="shrink-0 text-right text-gray-600">
+                                  <span className="font-medium text-gray-800">{match.home_team}</span>
+                                  <span className="text-gray-400"> · </span>
+                                  <span className="tabular-nums text-gray-800">{p.predicted_margin}</span>
+                                </span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      ) : null}
 
-                    {homeLockedPredictions.length > 0 && awayLockedPredictions.length > 0 ? (
-                      <p className="overflow-hidden text-center text-xs font-semibold uppercase tracking-wide text-gray-400">
-                        <span className="before:mr-2 before:text-gray-300 before:content-['────────'] after:ml-2 after:text-gray-300 after:content-['────────']">
-                          {match.away_team} picks
-                        </span>
-                      </p>
-                    ) : null}
+                      {homeLockedPredictions.length > 0 && awayLockedPredictions.length > 0 ? (
+                        <p className="overflow-hidden text-center text-xs font-semibold uppercase tracking-wide text-gray-400">
+                          <span className="before:mr-2 before:text-gray-300 before:content-['────────'] after:ml-2 after:text-gray-300 after:content-['────────']">
+                            {match.away_team} picks
+                          </span>
+                        </p>
+                      ) : null}
 
-                    {awayLockedPredictions.length > 0 ? (
-                      <div className="space-y-2">
-                        {homeLockedPredictions.length === 0 ? (
-                          <p className="px-1 text-xs font-semibold uppercase tracking-wide text-gray-500">{match.away_team} picks</p>
-                        ) : null}
-                        {awayLockedPredictions.map((p) => {
-                          const isMe = p.browser_token === myBrowserToken
-                          const selectedTeamColor = isMe ? getTeamColor(match.away_team) : undefined
-                          return (
-                            <div
-                              key={p.id}
-                              className={`flex min-w-0 items-center justify-between gap-3 rounded-xl px-4 py-3 text-sm shadow-sm transition-all duration-150 ${
-                                isMe ? 'border border-red-200 bg-red-50' : 'border border-gray-100 bg-white'
-                              }`}
-                              style={
-                                isMe && selectedTeamColor
-                                  ? {
-                                      backgroundColor: getLightTint(selectedTeamColor),
-                                      borderColor: `${selectedTeamColor}40`,
-                                    }
-                                  : undefined
-                              }
-                            >
-                              <span className="min-w-0 truncate font-semibold text-gray-900">{p.display_name}</span>
-                              <span className="shrink-0 text-right text-gray-600">
-                                <span className="font-medium text-gray-800">{match.away_team}</span>
-                                <span className="text-gray-400"> · </span>
-                                <span className="tabular-nums text-gray-800">{p.predicted_margin}</span>
-                              </span>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    ) : null}
-                  </>
-                )}
+                      {awayLockedPredictions.length > 0 ? (
+                        <div className="space-y-2">
+                          {homeLockedPredictions.length === 0 ? (
+                            <p className="px-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                              {match.away_team} picks
+                            </p>
+                          ) : null}
+                          {awayLockedPredictions.map((p) => {
+                            const isMe = p.browser_token === myBrowserToken
+                            const selectedTeamColor = isMe ? getTeamColor(match.away_team) : undefined
+                            return (
+                              <div
+                                key={p.id}
+                                className={`flex min-w-0 items-center justify-between gap-3 rounded-xl px-4 py-3 text-sm shadow-sm transition-all duration-150 ${
+                                  isMe ? 'border border-red-200 bg-red-50' : 'border border-gray-100 bg-white'
+                                }`}
+                                style={
+                                  isMe && selectedTeamColor
+                                    ? {
+                                        backgroundColor: getLightTint(selectedTeamColor),
+                                        borderColor: `${selectedTeamColor}40`,
+                                      }
+                                    : undefined
+                                }
+                              >
+                                <span className="min-w-0 truncate font-semibold text-gray-900">{p.display_name}</span>
+                                <span className="shrink-0 text-right text-gray-600">
+                                  <span className="font-medium text-gray-800">{match.away_team}</span>
+                                  <span className="text-gray-400"> · </span>
+                                  <span className="tabular-nums text-gray-800">{p.predicted_margin}</span>
+                                </span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      ) : null}
+                    </>
+                  )}
+                </div>
               </div>
             ) : null}
           </div>

@@ -7,6 +7,141 @@ function isBucket(s: string): s is CommunityMarginBucket {
   return (BUCKETS as readonly string[]).includes(s)
 }
 
+/** Map winning margin (points) to community fixed bucket (same buckets as RPC / pool picks). */
+export function marginToCommunityBucket(margin: number): CommunityMarginBucket {
+  const m = Math.max(0, Math.trunc(margin))
+  if (m <= 5) return '5'
+  if (m <= 10) return '10'
+  if (m <= 15) return '15'
+  return '20+'
+}
+
+export type WinnerMarginPick = { side: 'home' | 'away'; margin: number }
+
+export type CommunityMatchSlice = {
+  id: string
+  home_team: string
+  away_team: string
+  kickoff_time: string
+  status: string
+  home_score: number | null
+  away_score: number | null
+}
+
+function parseActualWinnerFromScores(
+  homeScore: number | null,
+  awayScore: number | null
+): 'home' | 'away' | 'draw' | null {
+  if (homeScore == null || awayScore == null) return null
+  if (homeScore > awayScore) return 'home'
+  if (awayScore > homeScore) return 'away'
+  return 'draw'
+}
+
+/** Signed community average label from home/away winner+margins (pool / one-match). */
+export function communityAverageLabelFromSignedPicks(
+  homeTeam: string,
+  awayTeam: string,
+  margins: WinnerMarginPick[]
+): string | null {
+  if (!margins.length) return null
+  let signedSum = 0
+  for (const x of margins) {
+    signedSum += x.side === 'home' ? -x.margin : x.margin
+  }
+  const avg = signedSum / margins.length
+  if (Math.abs(avg) < 0.25) return 'Draw / even'
+  if (avg < 0) return `${homeTeam} by ${Math.round(Math.abs(avg))}`
+  return `${awayTeam} by ${Math.round(avg)}`
+}
+
+/**
+ * Build {@link CommunityStatsOk} from arbitrary winner+margins (pool revealed picks, one-match locked picks).
+ * Single aggregation path for margin buckets and percentages.
+ */
+export function buildCommunityStatsOkFromMarginPicks(
+  match: CommunityMatchSlice,
+  picks: WinnerMarginPick[],
+  options?: {
+    viewerPick?: WinnerMarginPick | null
+  }
+): CommunityStatsOk {
+  const hs = match.home_score
+  const ascr = match.away_score
+  const completed = match.status === 'completed'
+  const actualWinner = completed ? parseActualWinnerFromScores(hs, ascr) : null
+  const actualMargin =
+    completed && hs != null && ascr != null ? Math.abs(Math.trunc(hs - ascr)) : null
+
+  const normalized = picks
+    .map((p) => ({
+      side: p.side,
+      margin: Math.max(0, Math.trunc(Number(p.margin))),
+    }))
+    .filter((p) => (p.side === 'home' || p.side === 'away') && Number.isFinite(p.margin))
+
+  const total = normalized.length
+  let homeC = 0
+  let awayC = 0
+  const bucketTally = new Map<string, number>()
+  for (const p of normalized) {
+    if (p.side === 'home') homeC += 1
+    else awayC += 1
+    const b = marginToCommunityBucket(p.margin)
+    const key = `${p.side}:${b}`
+    bucketTally.set(key, (bucketTally.get(key) ?? 0) + 1)
+  }
+
+  const bucket_rows: CommunityBucketRow[] = []
+  for (const side of ['home', 'away'] as const) {
+    for (const bucket of BUCKETS) {
+      const c = bucketTally.get(`${side}:${bucket}`) ?? 0
+      const pct = total > 0 ? Math.round((c / total) * 1000) / 10 : 0
+      bucket_rows.push({
+        side,
+        bucket,
+        percentage: pct,
+        team_name: side === 'home' ? match.home_team : match.away_team,
+      })
+    }
+  }
+
+  let homePct = total > 0 ? Math.round((homeC / total) * 1000) / 10 : 0
+  let awayPct = total > 0 ? Math.round((awayC / total) * 1000) / 10 : 0
+  if (total === 0) {
+    homePct = 0
+    awayPct = 0
+  }
+
+  const vp = options?.viewerPick
+  const uw = vp?.side === 'away' ? 'away' : vp?.side === 'home' ? 'home' : null
+  const um =
+    uw === 'home' || uw === 'away' ? Math.max(0, Math.trunc(Number(vp!.margin))) : null
+
+  return {
+    allowed: true,
+    reason: null,
+    match_id: match.id,
+    home_team: match.home_team,
+    away_team: match.away_team,
+    kickoff_time: match.kickoff_time,
+    status: match.status,
+    home_score: hs,
+    away_score: ascr,
+    actual_winner: actualWinner,
+    actual_margin: actualMargin,
+    total_predictions: total,
+    home_prediction_count: homeC,
+    away_prediction_count: awayC,
+    home_prediction_pct: homePct,
+    away_prediction_pct: awayPct,
+    bucket_rows,
+    community_average_label: communityAverageLabelFromSignedPicks(match.home_team, match.away_team, normalized),
+    user_locked_winner: uw,
+    user_locked_margin: um,
+  }
+}
+
 /** One margin bucket tally (aggregated from user_predictions only). */
 export type CommunityBucketRow = {
   side: 'home' | 'away'
