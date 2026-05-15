@@ -35,7 +35,6 @@ const MUTED = '#52525b'
 const SAFE_PAD_X = 110
 const CONTENT_MAX_W = 900
 const TITLE_MAX_W = 760
-const TITLE_INSET_X = 12
 const CREST_BOX = 200
 const CREST_INNER = 156
 /** Keeps crest + VS cluster off the horizontal crop zone */
@@ -152,7 +151,15 @@ function MatchOgCard({ payload }: { payload: MatchOgPayload }) {
         <BrandBlock brandLogoSrc={brandLogoSrc} />
 
         {hasMatch ? (
-          <>
+          <div
+            style={{
+              width: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 18,
+            }}
+          >
             <CrestRow
               home={home}
               away={away}
@@ -164,19 +171,14 @@ function MatchOgCard({ payload }: { payload: MatchOgPayload }) {
 
             <div
               style={{
-                width: TITLE_MAX_W,
+                width: '100%',
+                maxWidth: TITLE_MAX_W,
                 display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                paddingLeft: TITLE_INSET_X,
-                paddingRight: TITLE_INSET_X,
-                boxSizing: 'border-box',
+                justifyContent: 'center',
               }}
             >
-              <div
+              <span
                 style={{
-                  width: TITLE_MAX_W - TITLE_INSET_X * 2,
-                  maxWidth: '100%',
                   fontSize: titleSize,
                   fontWeight: 800,
                   color: TEXT,
@@ -184,10 +186,11 @@ function MatchOgCard({ payload }: { payload: MatchOgPayload }) {
                   lineHeight: 1.3,
                   textAlign: 'center',
                   whiteSpace: 'normal',
+                  maxWidth: TITLE_MAX_W,
                 }}
               >
                 {matchTitle}
-              </div>
+              </span>
             </div>
 
             <div
@@ -197,16 +200,16 @@ function MatchOgCard({ payload }: { payload: MatchOgPayload }) {
                 alignItems: 'center',
                 gap: 6,
                 marginTop: 6,
-                width: TITLE_MAX_W,
-                maxWidth: '100%',
+                width: '100%',
+                maxWidth: TITLE_MAX_W,
               }}
             >
-              <div style={{ fontSize: 22, fontWeight: 600, color: MUTED, textAlign: 'center', lineHeight: 1.35 }}>
+              <span style={{ fontSize: 22, fontWeight: 600, color: MUTED, textAlign: 'center', lineHeight: 1.35 }}>
                 {kickoff}
-              </div>
+              </span>
               {crowd ? <CrowdLine crowd={crowd} /> : null}
             </div>
-          </>
+          </div>
         ) : (
           <BrandedFallbackHero />
         )}
@@ -332,6 +335,7 @@ async function buildBrandedFallbackPayload(): Promise<MatchOgPayload> {
 export default async function OpenGraphImage({ params }: Props) {
   const { slug: rawSlug } = await params
   const slug = normalizeOneMatchSlug(rawSlug)
+  console.log("OG CLEAN LAYOUT ACTIVE")
 
   try {
     const payload = await buildMatchOgPayload(slug)
