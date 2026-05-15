@@ -1,5 +1,6 @@
 import { ImageResponse } from 'next/og'
 import { fetchOneMatchOgBySlug, formatOneMatchKickoffOg } from '@/lib/one-match-og'
+import { normalizeOneMatchSlug } from '@/lib/one-match-challenge-lookup'
 import { fetchImageAsDataUrl } from '@/lib/og-image-data-url'
 import { getPublicSiteUrl } from '@/lib/site-url'
 
@@ -9,7 +10,6 @@ export const alt = 'Match preview'
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'
 
-/** Cache for crawlers (WhatsApp, Facebook); slug-specific via path. */
 export const revalidate = 300
 
 const OG_CACHE_CONTROL = 'public, max-age=300, s-maxage=300, stale-while-revalidate=86400'
@@ -100,6 +100,20 @@ function BrandBlock({ brandLogoSrc }: { brandLogoSrc: string | null }) {
   )
 }
 
+function BrandedFallbackHero() {
+  return (
+    <>
+      <div style={{ fontSize: 36, fontWeight: 800, color: TEXT, letterSpacing: -0.5, textAlign: 'center' }}>
+        One Match Challenge
+      </div>
+      <div style={{ fontSize: 22, fontWeight: 600, color: MUTED, textAlign: 'center', maxWidth: 720 }}>
+        Predict the winner and margin
+      </div>
+      <div style={{ width: 120, height: 4, borderRadius: 4, background: RED, marginTop: 8 }} />
+    </>
+  )
+}
+
 function MatchOgCard({ payload }: { payload: MatchOgPayload }) {
   const { home, away, kickoff, homeLogoSrc, awayLogoSrc, brandLogoSrc, crowd, hasMatch } = payload
   const headlineSize = hasMatch ? headlineFontSize(home, away) : 40
@@ -114,7 +128,7 @@ function MatchOgCard({ payload }: { payload: MatchOgPayload }) {
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        justifyContent: 'flex-start',
+        justifyContent: hasMatch ? 'flex-start' : 'center',
         background: '#f8fafc',
         color: TEXT,
         fontFamily:
@@ -134,82 +148,110 @@ function MatchOgCard({ payload }: { payload: MatchOgPayload }) {
         <BrandBlock brandLogoSrc={brandLogoSrc} />
 
         {hasMatch ? (
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 16,
-              maxWidth: 1100,
-              textAlign: 'center',
-            }}
-          >
-            <span style={{ fontSize: headlineSize, fontWeight: 800, color: TEXT, letterSpacing: -0.5 }}>{home}</span>
-            <span
+          <>
+            <div
               style={{
-                fontSize: Math.max(26, Math.round(headlineSize * 0.55)),
-                fontWeight: 800,
-                color: RED,
-                letterSpacing: '0.06em',
+                display: 'flex',
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 16,
+                maxWidth: 1100,
+                textAlign: 'center',
               }}
             >
-              VS
-            </span>
-            <span style={{ fontSize: headlineSize, fontWeight: 800, color: TEXT, letterSpacing: -0.5 }}>{away}</span>
-          </div>
+              <span style={{ fontSize: headlineSize, fontWeight: 800, color: TEXT, letterSpacing: -0.5 }}>{home}</span>
+              <span
+                style={{
+                  fontSize: Math.max(26, Math.round(headlineSize * 0.55)),
+                  fontWeight: 800,
+                  color: RED,
+                  letterSpacing: '0.06em',
+                }}
+              >
+                VS
+              </span>
+              <span style={{ fontSize: headlineSize, fontWeight: 800, color: TEXT, letterSpacing: -0.5 }}>{away}</span>
+            </div>
+
+            <CrestRow
+              home={home}
+              away={away}
+              homeLogoSrc={homeLogoSrc}
+              awayLogoSrc={awayLogoSrc}
+              crestBox={crestBox}
+              crestInner={crestInner}
+            />
+
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 8,
+                marginTop: 10,
+              }}
+            >
+              <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <CalendarIcon />
+                <span style={{ fontSize: 22, fontWeight: 700, color: RED, letterSpacing: '0.02em' }}>Kickoff</span>
+              </div>
+              <div style={{ fontSize: 26, fontWeight: 600, color: MUTED }}>{kickoff}</div>
+              {crowd ? (
+                <CrowdLine crowd={crowd} />
+              ) : null}
+            </div>
+          </>
         ) : (
-          <NotFoundTitle />
+          <BrandedFallbackHero />
         )}
-
-        {hasMatch ? (
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '100%',
-              gap: 28,
-              marginTop: 6,
-            }}
-          >
-            <CrestCard logoSrc={homeLogoSrc} teamName={home} crestBox={crestBox} crestInner={crestInner} />
-            <div style={{ fontSize: 44, fontWeight: 800, color: RED, letterSpacing: '0.08em' }}>VS</div>
-            <CrestCard logoSrc={awayLogoSrc} teamName={away} crestBox={crestBox} crestInner={crestInner} />
-          </div>
-        ) : null}
-
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: 8,
-            marginTop: 10,
-          }}
-        >
-          <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <CalendarIcon />
-            <span style={{ fontSize: 22, fontWeight: 700, color: RED, letterSpacing: '0.02em' }}>Kickoff</span>
-          </div>
-          <div style={{ fontSize: 26, fontWeight: 600, color: MUTED }}>{kickoff}</div>
-          {crowd ? (
-            <div style={{ fontSize: 20, fontWeight: 500, color: '#64748b', marginTop: 6 }}>{crowd}</div>
-          ) : null}
-        </div>
       </div>
     </div>
   )
 }
 
-function NotFoundTitle() {
-  return <div style={{ fontSize: 40, fontWeight: 800, color: TEXT, letterSpacing: -0.4 }}>Match not found</div>
+function CrestRow({
+  home,
+  away,
+  homeLogoSrc,
+  awayLogoSrc,
+  crestBox,
+  crestInner,
+}: {
+  home: string
+  away: string
+  homeLogoSrc: string | null
+  awayLogoSrc: string | null
+  crestBox: number
+  crestInner: number
+}) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '100%',
+        gap: 28,
+        marginTop: 6,
+      }}
+    >
+      <CrestCard logoSrc={homeLogoSrc} teamName={home} crestBox={crestBox} crestInner={crestInner} />
+      <div style={{ fontSize: 44, fontWeight: 800, color: RED, letterSpacing: '0.08em' }}>VS</div>
+      <CrestCard logoSrc={awayLogoSrc} teamName={away} crestBox={crestBox} crestInner={crestInner} />
+    </div>
+  )
+}
+
+function CrowdLine({ crowd }: { crowd: string }) {
+  return <div style={{ fontSize: 20, fontWeight: 500, color: '#64748b', marginTop: 6 }}>{crowd}</div>
 }
 
 async function buildMatchOgPayload(slug: string): Promise<MatchOgPayload> {
   const base = getPublicSiteUrl()
-  const match = await fetchOneMatchOgBySlug(slug)
+  const normalizedSlug = normalizeOneMatchSlug(slug)
+  const match = await fetchOneMatchOgBySlug(normalizedSlug)
 
   const home = match?.home_team ?? ''
   const away = match?.away_team ?? ''
@@ -220,6 +262,15 @@ async function buildMatchOgPayload(slug: string): Promise<MatchOgPayload> {
     match?.home_team_logo ? fetchImageAsDataUrl(match.home_team_logo) : Promise.resolve(null),
     match?.away_team_logo ? fetchImageAsDataUrl(match.away_team_logo) : Promise.resolve(null),
   ])
+
+  console.info('[one-match-og-image]', {
+    requestedSlug: slug,
+    normalizedSlug,
+    hasMatch: Boolean(match),
+    homeLogoLoaded: Boolean(homeLogoSrc),
+    awayLogoLoaded: Boolean(awayLogoSrc),
+    brandLogoLoaded: Boolean(brandLogoSrc),
+  })
 
   return {
     home,
@@ -243,23 +294,31 @@ function renderOgImage(payload: MatchOgPayload) {
   })
 }
 
+async function buildBrandedFallbackPayload(): Promise<MatchOgPayload> {
+  const base = getPublicSiteUrl()
+  const brandLogoSrc = await fetchImageAsDataUrl(`${base}/nextplay-predictor.png`)
+  return {
+    home: '',
+    away: '',
+    kickoff: 'School rugby predictions',
+    homeLogoSrc: null,
+    awayLogoSrc: null,
+    brandLogoSrc,
+    crowd: null,
+    hasMatch: false,
+  }
+}
+
 export default async function OpenGraphImage({ params }: Props) {
   const { slug: rawSlug } = await params
-  const slug = decodeURIComponent(rawSlug)
+  const slug = normalizeOneMatchSlug(rawSlug)
 
   try {
     const payload = await buildMatchOgPayload(slug)
     return renderOgImage(payload)
-  } catch {
-    return renderOgImage({
-      home: '',
-      away: '',
-      kickoff: 'School rugby predictions',
-      homeLogoSrc: null,
-      awayLogoSrc: null,
-      brandLogoSrc: null,
-      crowd: null,
-      hasMatch: false,
-    })
+  } catch (err) {
+    console.error('[one-match-og-image] render error', { slug, err })
+    const fallback = await buildBrandedFallbackPayload()
+    return renderOgImage(fallback)
   }
 }

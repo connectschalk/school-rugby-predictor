@@ -15,6 +15,7 @@ import {
   rankPredictionsForResults,
   type OneMatchPredictionRow,
 } from '@/lib/one-match-challenge'
+import { getOneMatchChallengeBySlug } from '@/lib/one-match-challenge-lookup'
 import { getSchoolTeamLogoPath } from '@/lib/school-team-logos'
 import { supabase } from '@/lib/supabase'
 import { getLightTint, getTeamColor } from '@/lib/teamColors'
@@ -157,23 +158,10 @@ export default function OneMatchChallengePage() {
     setBusy(true)
     setLoadError('')
     setPredictionsLoadError('')
-    const { data: ch, error: chErr } = await supabase
-      .from('one_match_challenges')
-      .select(
-        'id, slug, match_id, game_matches ( id, home_team, away_team, kickoff_time, status, home_score, away_score )'
-      )
-      .eq('slug', slug)
-      .eq('is_active', true)
-      .maybeSingle()
 
-    if (chErr) {
-      setLoadError(chErr.message)
-      setChallenge(null)
-      setPredictions([])
-      setBusy(false)
-      return
-    }
-    if (!ch) {
+    const lookup = await getOneMatchChallengeBySlug(slug, { logContext: 'client', supabase })
+
+    if (!lookup) {
       setChallenge(null)
       setPredictions([])
       setLoadError('This challenge is not available.')
@@ -181,7 +169,12 @@ export default function OneMatchChallengePage() {
       return
     }
 
-    const row = ch as ChallengeRow
+    const row: ChallengeRow = {
+      id: lookup.challenge.id,
+      slug: lookup.challenge.slug,
+      match_id: lookup.challenge.match_id,
+      game_matches: lookup.match,
+    }
     setChallenge(row)
 
     const tokenForRpc = typeof window !== 'undefined' ? getOrCreateBrowserToken(slug) : ''

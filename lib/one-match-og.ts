@@ -1,5 +1,6 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Metadata } from 'next'
+import { getOneMatchChallengeBySlug, createOneMatchAnonClient, normalizeOneMatchSlug } from '@/lib/one-match-challenge-lookup'
 import { getSchoolTeamLogoPath } from '@/lib/school-team-logos'
 import { absoluteOneMatchChallengeUrl, absoluteOneMatchOgImageUrl, getPublicSiteUrl } from '@/lib/site-url'
 
@@ -10,15 +11,6 @@ export type OneMatchOgMatch = {
   home_team_logo: string | null
   away_team_logo: string | null
   crowd_line: string | null
-}
-
-type GmRow = { home_team: string; away_team: string; kickoff_time: string }
-
-function unwrapGm(row: { game_matches: unknown }): GmRow | null {
-  const g = row.game_matches as GmRow | GmRow[] | null
-  if (!g) return null
-  if (Array.isArray(g)) return g[0] ?? null
-  return g
 }
 
 function absoluteLogoFromSchoolMap(base: string, teamName: string): string | null {
@@ -75,27 +67,26 @@ export function formatOneMatchKickoffOg(iso: string): string {
 }
 
 export async function fetchOneMatchOgBySlug(slug: string): Promise<OneMatchOgMatch | null> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  if (!url || !key || !slug?.trim()) return null
+  const normalizedSlug = normalizeOneMatchSlug(slug)
+  const lookup = await getOneMatchChallengeBySlug(normalizedSlug, { logContext: 'og-fetch' })
+  if (!lookup) return null
 
-  const supabase = createClient(url, key)
-  const { data, error } = await supabase
-    .from('one_match_challenges')
-    .select('id, game_matches ( home_team, away_team, kickoff_time )')
-    .eq('slug', slug.trim())
-    .eq('is_active', true)
-    .maybeSingle()
-
-  if (error || !data) return null
-  const row = data as { id: string; game_matches: unknown }
-  const gm = unwrapGm(row)
-  if (!gm) return null
-
+  const gm = lookup.match
   const base = getPublicSiteUrl()
   const home_team_logo = absoluteLogoFromSchoolMap(base, gm.home_team)
   const away_team_logo = absoluteLogoFromSchoolMap(base, gm.away_team)
-  const crowd_line = await fetchCrowdLine(supabase, row.id, gm.home_team, gm.away_team)
+
+  console.info('[one-match-og]', {
+    slug: normalizedSlug,
+    homeLogo: home_team_logo ? 'found' : 'missing',
+    awayLogo: away_team_logo ? 'found' : 'missing',
+  })
+
+  const supabase = createOneMatchAnonClient()
+  const crowd_line =
+    supabase != null
+      ? await fetchCrowdLine(supabase, lookup.challenge.id, gm.home_team, gm.away_team)
+      : null
 
   return {
     home_team: gm.home_team,
@@ -108,7 +99,7 @@ export async function fetchOneMatchOgBySlug(slug: string): Promise<OneMatchOgMat
 }
 
 export async function buildOneMatchShareMetadata(slug: string): Promise<Metadata> {
-  const trimmed = slug.trim()
+  const trimmed = normalizeOneMatchSlug(slug)
   const match = await fetchOneMatchOgBySlug(trimmed)
   const home_team = match?.home_team ?? 'Home'
   const away_team = match?.away_team ?? 'Away'

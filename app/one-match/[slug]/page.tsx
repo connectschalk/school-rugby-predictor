@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import OneMatchChallengePage from './OneMatchChallengeClient'
+import { getOneMatchChallengeBySlug } from '@/lib/one-match-challenge-lookup'
 import { buildOneMatchShareMetadata } from '@/lib/one-match-og'
 
 type PageProps = {
@@ -12,6 +13,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 }
 
 /** Renders the One Match challenge (match card, final score summary, tabs, results). */
-export default function OneMatchSlugPage() {
+export default async function OneMatchSlugPage({ params }: PageProps) {
+  const { slug } = await params
+  await getOneMatchChallengeBySlug(slug, { logContext: 'page' })
   return <OneMatchChallengePage />
 }
