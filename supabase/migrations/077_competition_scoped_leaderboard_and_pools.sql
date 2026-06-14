@@ -48,6 +48,8 @@ grant select on public.predict_score_competition_leaderboard to anon, authentica
 -- my_pools: include competition_id for client-side / RPC filtering
 -- ---------------------------------------------------------------------------
 
+drop function if exists public.my_pools();
+
 create or replace function public.my_pools()
 returns table (
   id uuid,
@@ -94,6 +96,7 @@ grant execute on function public.my_pools() to authenticated;
 -- ---------------------------------------------------------------------------
 
 drop function if exists public.search_public_pools(text, integer);
+drop function if exists public.search_public_pools(text, integer, uuid);
 
 create or replace function public.search_public_pools(
   p_query text default null,
