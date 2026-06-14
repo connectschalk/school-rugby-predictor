@@ -1,6 +1,17 @@
 'use client'
 
+import {
+  formatKickoffJohannesburg,
+  fromAdminJohannesburgInput,
+  isKickoffTodayJohannesburg,
+  toAdminJohannesburgInput,
+} from '@/lib/admin-kickoff-johannesburg'
 import { supabase } from '@/lib/supabase'
+
+export {
+  fromAdminJohannesburgInput,
+  toAdminJohannesburgInput,
+} from '@/lib/admin-kickoff-johannesburg'
 
 export async function adminCompetitionApiToken(): Promise<string | null> {
   const {
@@ -23,34 +34,15 @@ export async function adminCompetitionFetch(
   return fetch(path, { ...init, headers })
 }
 
+/** UTC ISO → datetime-local value in Africa/Johannesburg. */
 export function isoToDatetimeLocalInput(iso: string): string {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+  return toAdminJohannesburgInput(iso)
 }
 
 export function formatKickoffDisplay(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString(undefined, {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  } catch {
-    return iso
-  }
+  return formatKickoffJohannesburg(iso)
 }
 
 export function isKickoffToday(iso: string): boolean {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return false
-  const now = new Date()
-  return (
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate()
-  )
+  return isKickoffTodayJohannesburg(iso)
 }

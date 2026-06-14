@@ -3,6 +3,10 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  fromAdminJohannesburgInput,
+  toAdminJohannesburgInput,
+} from '@/lib/admin-kickoff-johannesburg'
 import { rpcScorePredictionsForMatch } from '@/lib/score-predictions-for-match'
 import { supabase } from '@/lib/supabase'
 import { fetchUserIsAdmin } from '@/lib/admin-access'
@@ -27,19 +31,12 @@ import {
 } from '@/lib/team-name-match'
 
 function isoToDatetimeLocalInput(iso: string): string {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+  return toAdminJohannesburgInput(iso)
 }
 
 /** Empty string → null. Invalid datetime → null and caller should reject. */
 function datetimeLocalToIsoOrNull(s: string): string | null {
-  const t = s.trim()
-  if (!t) return null
-  const d = new Date(t)
-  if (Number.isNaN(d.getTime())) return null
-  return d.toISOString()
+  return fromAdminJohannesburgInput(s)
 }
 
 type RowPreviewStatus = 'Matched' | 'Needs confirmation' | 'Unknown'

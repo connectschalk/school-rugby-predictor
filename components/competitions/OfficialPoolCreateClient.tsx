@@ -6,6 +6,10 @@ import type { User } from '@supabase/supabase-js'
 import { competitionCardTitle, type Competition } from '@/lib/competitions'
 import { buildPoolJoinPath } from '@/lib/pool-invite-path'
 import {
+  formatPoolJoinCodeDisplay,
+  validatePoolJoinCodeInput,
+} from '@/lib/pool-join-code'
+import {
   canUserCreatePoolInCompetition,
   countUserAdminPoolsForCompetition,
   createPool,
@@ -26,17 +30,20 @@ export default function OfficialPoolCreateClient({ competition }: Props) {
   const [authReady, setAuthReady] = useState(false)
   const [myAdminPoolCount, setMyAdminPoolCount] = useState(0)
   const [createName, setCreateName] = useState('')
+  const [createJoinCode, setCreateJoinCode] = useState('')
   const [createPublic, setCreatePublic] = useState(false)
   const [creating, setCreating] = useState(false)
   const [message, setMessage] = useState('')
   const [createdPool, setCreatedPool] = useState<PoolRow | null>(null)
   const [inviteCopied, setInviteCopied] = useState(false)
+  const [codeCopied, setCodeCopied] = useState(false)
 
   const title = competitionCardTitle(competition.slug, competition.name)
   const schoolsCompetitionId =
     competition.slug === SCHOOLS_COMPETITION_SLUG ? competition.id : null
   const canCreate = myAdminPoolCount < MAX_POOLS_PER_COMPETITION
   const nameValid = createName.trim().length >= 3
+  const joinCodeError = createJoinCode.trim() ? validatePoolJoinCodeInput(createJoinCode) : null
 
   useEffect(() => {
     let cancelled = false
@@ -74,8 +81,20 @@ export default function OfficialPoolCreateClient({ competition }: Props) {
     })
   }, [user, competition.id, schoolsCompetitionId])
 
+  useEffect(() => {
+    if (!inviteCopied) return
+    const id = window.setTimeout(() => setInviteCopied(false), 4000)
+    return () => window.clearTimeout(id)
+  }, [inviteCopied])
+
+  useEffect(() => {
+    if (!codeCopied) return
+    const id = window.setTimeout(() => setCodeCopied(false), 4000)
+    return () => window.clearTimeout(id)
+  }, [codeCopied])
+
   async function onCreate() {
-    if (!nameValid || !canCreate) return
+    if (!nameValid || !canCreate || joinCodeError) return
     if (!user) {
       setMessage('Log in to create a pool.')
       return
@@ -88,6 +107,7 @@ export default function OfficialPoolCreateClient({ competition }: Props) {
         name: createName.trim(),
         isPublic: createPublic,
         competitionId: competition.id,
+        joinCode: createJoinCode.trim() || null,
       })
       if (error || !pool) {
         setMessage(error?.message ?? 'Could not create pool.')
@@ -95,6 +115,7 @@ export default function OfficialPoolCreateClient({ competition }: Props) {
       }
       setCreatedPool(pool)
       setCreateName('')
+      setCreateJoinCode('')
       setCreatePublic(false)
       setMyAdminPoolCount((c) => c + 1)
     } finally {
@@ -104,12 +125,22 @@ export default function OfficialPoolCreateClient({ competition }: Props) {
 
   async function copyInvite() {
     if (!createdPool || !user || typeof window === 'undefined') return
-    const url = `${window.location.origin}${buildPoolJoinPath(createdPool.invite_token, user.id)}`
+    const url = `${window.location.origin}${buildPoolJoinPath(createdPool.invite_token, user.id, competition.slug)}`
     try {
       await navigator.clipboard.writeText(url)
       setInviteCopied(true)
     } catch {
       setMessage('Could not copy invite link.')
+    }
+  }
+
+  async function copyJoinCode() {
+    if (!createdPool?.join_code || typeof window === 'undefined') return
+    try {
+      await navigator.clipboard.writeText(formatPoolJoinCodeDisplay(createdPool.join_code))
+      setCodeCopied(true)
+    } catch {
+      setMessage('Could not copy pool code.')
     }
   }
 
@@ -150,15 +181,28 @@ export default function OfficialPoolCreateClient({ competition }: Props) {
 
         <h1 className="mt-8 text-2xl font-black tracking-tight">Create a pool</h1>
         <p className="mt-2 text-sm text-gray-400">
-          Name your pool and invite your group. Official fixtures are included automatically.
+          Name your pool, pick a short code, and invite your group. Official fixtures are included automatically.
         </p>
 
         {createdPool ? (
           <div className="mt-8 space-y-4 rounded-2xl border border-emerald-500/30 bg-emerald-950/20 p-6">
             <p className="text-sm font-semibold text-emerald-300">Pool &ldquo;{createdPool.name}&rdquo; created</p>
             <p className="text-sm leading-relaxed text-gray-300">
-              Official fixtures are included automatically for this competition.
+              Share the invite link or pool code so friends can find and join your pool.
             </p>
+            <div className="rounded-xl border border-white/10 bg-[#111318] px-4 py-3 text-center">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Pool code</p>
+              <p className="mt-1 text-xl font-black tracking-wide text-white">
+                {formatPoolJoinCodeDisplay(createdPool.join_code)}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void copyJoinCode()}
+              className="w-full rounded-xl border border-white/15 bg-[#111318] px-4 py-3 text-sm font-semibold text-white hover:bg-[#161a22]"
+            >
+              {codeCopied ? 'Pool code copied' : 'Copy pool code'}
+            </button>
             <button
               type="button"
               onClick={() => void copyInvite()}
@@ -167,10 +211,10 @@ export default function OfficialPoolCreateClient({ competition }: Props) {
               {inviteCopied ? 'Invite link copied' : 'Copy invite link'}
             </button>
             <Link
-              href={`/competitions/${competition.slug}`}
+              href={`/competitions/${competition.slug}/pools`}
               className="block text-center text-sm font-medium text-gray-400 hover:text-white"
             >
-              Back to {title}
+              Go to pools
             </Link>
           </div>
         ) : (
@@ -191,6 +235,25 @@ export default function OfficialPoolCreateClient({ competition }: Props) {
               />
             </div>
 
+            <div>
+              <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Pool code</label>
+              <input
+                type="text"
+                value={createJoinCode}
+                onChange={(e) => setCreateJoinCode(e.target.value)}
+                placeholder="e.g. soccer1, cw2026, kudu2026"
+                disabled={!canCreate || creating}
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                className="mt-2 w-full rounded-xl border border-white/10 bg-[#0a0a0b] px-4 py-3 text-sm text-white placeholder:text-gray-600 disabled:opacity-50"
+              />
+              <p className="mt-1.5 text-xs text-gray-500">
+                4–20 letters and numbers. Leave blank to auto-generate.
+              </p>
+              {joinCodeError ? <p className="mt-1 text-xs text-red-400">{joinCodeError}</p> : null}
+            </div>
+
             <label className="flex cursor-pointer items-start gap-3 text-sm text-gray-300">
               <input
                 type="checkbox"
@@ -202,7 +265,7 @@ export default function OfficialPoolCreateClient({ competition }: Props) {
               <span>
                 <span className="font-semibold text-white">Public pool</span>
                 <span className="mt-0.5 block text-xs text-gray-500">
-                  Searchable in pool search. Turn off for invite-only.
+                  Searchable by name. Private pools can still be found by exact pool code.
                 </span>
               </span>
             </label>
@@ -211,7 +274,7 @@ export default function OfficialPoolCreateClient({ competition }: Props) {
 
             <button
               type="button"
-              disabled={!canCreate || creating || !nameValid}
+              disabled={!canCreate || creating || !nameValid || Boolean(joinCodeError)}
               onClick={() => void onCreate()}
               className="w-full rounded-xl bg-red-600 px-4 py-3.5 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-50"
             >

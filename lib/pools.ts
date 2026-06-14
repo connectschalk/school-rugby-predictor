@@ -4,6 +4,11 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 import { getCompetitionBySlug, SCHOOLS_COMPETITION_SLUG } from '@/lib/competitions'
 import { isUuid } from '@/lib/pool-invite-path'
+import {
+  isPoolJoinCodeTakenError,
+  normalizePoolJoinCodeInput,
+  POOL_JOIN_CODE_TAKEN_MESSAGE,
+} from '@/lib/pool-join-code'
 import type { GameMatch } from '@/lib/public-prediction-game'
 
 export type GameMatchForPoolPicks = GameMatch & { prediction_cutoff_time?: string | null }
@@ -15,6 +20,7 @@ export type PoolRow = {
   created_by: string
   is_public: boolean
   invite_token: string
+  join_code: string
   is_closed: boolean
   competition_id?: string | null
   created_at: string
@@ -68,7 +74,12 @@ export function canUserCreatePoolInCompetition(
 
 export async function createPool(
   client: SupabaseClient,
-  params: { name: string; isPublic: boolean; competitionId?: string | null }
+  params: {
+    name: string
+    isPublic: boolean
+    competitionId?: string | null
+    joinCode?: string | null
+  }
 ): Promise<{ pool: PoolRow | null; error: Error | null }> {
   let competitionId = params.competitionId ?? null
   if (!competitionId) {
@@ -76,15 +87,65 @@ export async function createPool(
     competitionId = competition?.id ?? null
   }
 
-  const { data, error } = await client.rpc('create_pool', {
+  const joinCodeRaw = params.joinCode?.trim() ?? ''
+  const rpcParams: Record<string, string | boolean | null> = {
     p_name: params.name.trim(),
     p_is_public: params.isPublic,
     p_competition_id: competitionId,
-  })
+    p_join_code: joinCodeRaw ? normalizePoolJoinCodeInput(joinCodeRaw) : null,
+  }
 
-  if (error) return { pool: null, error: new Error(error.message) }
+  const { data, error } = await client.rpc('create_pool', rpcParams)
+
+  if (error) {
+    const msg = error.message ?? 'Could not create pool.'
+    if (isPoolJoinCodeTakenError(msg)) {
+      return { pool: null, error: new Error(POOL_JOIN_CODE_TAKEN_MESSAGE) }
+    }
+    return { pool: null, error: new Error(msg) }
+  }
   if (!data) return { pool: null, error: new Error('Could not create pool.') }
-  return { pool: data as PoolRow, error: null }
+
+  const pool = normalizePoolRow(data as Record<string, unknown>)
+  if (pool.invite_token && pool.join_code) return { pool, error: null }
+
+  const { pools, error: reloadErr } = await fetchMyPools(client, pool.admin_user_id)
+  if (reloadErr) return { pool: null, error: new Error(reloadErr.message) }
+  const refreshed = pools.find((p) => p.id === pool.id)
+  if (!refreshed?.invite_token || !refreshed.join_code) {
+    return { pool: null, error: new Error('Pool created but invite details are missing.') }
+  }
+  return { pool: refreshed, error: null }
+}
+
+function normalizePoolRow(data: Record<string, unknown>): PoolRow {
+  return {
+    id: String(data.id ?? ''),
+    name: String(data.name ?? ''),
+    admin_user_id: String(data.admin_user_id ?? ''),
+    created_by: String(data.created_by ?? ''),
+    is_public: Boolean(data.is_public),
+    invite_token: String(data.invite_token ?? '').trim(),
+    join_code: String(data.join_code ?? '').trim().toLowerCase(),
+    is_closed: Boolean(data.is_closed),
+    competition_id: data.competition_id != null ? String(data.competition_id) : null,
+    created_at: String(data.created_at ?? ''),
+    updated_at: String(data.updated_at ?? ''),
+  }
+}
+
+export type PoolSearchRow = {
+  id: string
+  name: string
+  join_code: string
+  admin_user_id: string
+  admin_display_name: string | null
+  competition_id: string | null
+  competition_slug: string
+  competition_name: string
+  is_public: boolean
+  member_count: number
+  match_kind: 'join_code' | 'invite_token' | 'name' | string
 }
 
 export type FixtureGroupRow = {
@@ -208,6 +269,7 @@ export async function fetchMyPools(
     created_by: row.created_by,
     is_public: row.is_public,
     invite_token: row.invite_token,
+    join_code: String(row.join_code ?? '').trim().toLowerCase(),
     is_closed: row.is_closed,
     competition_id: row.competition_id != null ? String(row.competition_id) : null,
     created_at: row.created_at,
@@ -240,6 +302,12 @@ export type PoolInvitePreview = {
   id: string
   name: string
   is_public: boolean
+  is_closed: boolean
+  competition_id: string | null
+  competition_slug: string
+  competition_name: string
+  competition_logo_url: string | null
+  invite_token: string
   /** sharer = valid ?from= uuid; admin = pool admin profile; anonymous = no display names */
   inviter_kind: 'sharer' | 'admin' | 'anonymous'
   inviter_display_name: string | null
@@ -254,7 +322,31 @@ export type PoolInviteViewerState = {
   has_pending_request: boolean
 }
 
-export async function fetchPoolByInviteToken(
+function parsePoolInviteRow(raw: Record<string, unknown>): PoolInvitePreview {
+  const kindRaw = String(raw.inviter_kind ?? 'anonymous')
+  const inviter_kind = kindRaw === 'sharer' || kindRaw === 'admin' ? kindRaw : 'anonymous'
+  return {
+    id: String(raw.pool_id ?? raw.id ?? ''),
+    name: String(raw.pool_name ?? raw.name ?? ''),
+    is_public: Boolean(raw.is_public),
+    is_closed: Boolean(raw.is_closed),
+    competition_id: raw.competition_id != null ? String(raw.competition_id) : null,
+    competition_slug: String(raw.competition_slug ?? SCHOOLS_COMPETITION_SLUG),
+    competition_name: String(raw.competition_name ?? 'NextPlay Schools'),
+    competition_logo_url:
+      raw.competition_logo_url == null ? null : String(raw.competition_logo_url),
+    invite_token: String(raw.invite_token ?? ''),
+    inviter_kind,
+    inviter_display_name: raw.inviter_display_name == null ? null : String(raw.inviter_display_name),
+    inviter_avatar_url: raw.inviter_avatar_url == null ? null : String(raw.inviter_avatar_url),
+    inviter_avatar_letter:
+      raw.inviter_avatar_letter == null ? null : String(raw.inviter_avatar_letter),
+    inviter_avatar_colour:
+      raw.inviter_avatar_colour == null ? null : String(raw.inviter_avatar_colour),
+  }
+}
+
+export async function fetchPoolInviteByToken(
   client: SupabaseClient,
   token: string,
   invitedByUserId?: string | null
@@ -266,8 +358,8 @@ export async function fetchPoolByInviteToken(
 
   const invited = invitedByUserId && isUuid(invitedByUserId) ? invitedByUserId.trim() : null
 
-  const { data, error } = await client.rpc('get_pool_by_invite_token', {
-    p_invite_token: trimmed,
+  const { data, error } = await client.rpc('get_pool_invite_by_token', {
+    p_token: trimmed,
     p_invited_by: invited,
   })
 
@@ -276,19 +368,17 @@ export async function fetchPoolByInviteToken(
   const rows = (data as Record<string, unknown>[] | null) ?? []
   const raw = rows[0]
   if (!raw) return { pool: null, error: null }
-  const kindRaw = String(raw.inviter_kind ?? 'anonymous')
-  const inviter_kind =
-    kindRaw === 'sharer' || kindRaw === 'admin' ? kindRaw : 'anonymous'
-  const pool: PoolInvitePreview = {
-    id: String(raw.id ?? ''),
-    name: String(raw.name ?? ''),
-    is_public: Boolean(raw.is_public),
-    inviter_kind,
-    inviter_display_name: raw.inviter_display_name == null ? null : String(raw.inviter_display_name),
-    inviter_avatar_url: raw.inviter_avatar_url == null ? null : String(raw.inviter_avatar_url),
-    inviter_avatar_letter: raw.inviter_avatar_letter == null ? null : String(raw.inviter_avatar_letter),
-    inviter_avatar_colour: raw.inviter_avatar_colour == null ? null : String(raw.inviter_avatar_colour),
-  }
+  return { pool: parsePoolInviteRow(raw), error: null }
+}
+
+export async function fetchPoolByInviteToken(
+  client: SupabaseClient,
+  token: string,
+  invitedByUserId?: string | null
+) {
+  const { pool, error } = await fetchPoolInviteByToken(client, token, invitedByUserId)
+  if (error) return { pool: null as PoolInvitePreview | null, error }
+  if (!pool || pool.is_closed) return { pool: null, error: null }
   return { pool, error: null }
 }
 
@@ -327,15 +417,34 @@ export async function searchPublicPools(
     params.p_competition_id = competitionId
   }
   const { data, error } = await client.rpc('search_public_pools', params)
-  return { rows: (data as Record<string, unknown>[] | null) ?? [], error }
+  const rows: PoolSearchRow[] = ((data as Record<string, unknown>[] | null) ?? []).map((raw) => ({
+    id: String(raw.id ?? ''),
+    name: String(raw.name ?? ''),
+    join_code: String(raw.join_code ?? '').toLowerCase(),
+    admin_user_id: String(raw.admin_user_id ?? ''),
+    admin_display_name:
+      raw.admin_display_name == null ? null : String(raw.admin_display_name),
+    competition_id: raw.competition_id != null ? String(raw.competition_id) : null,
+    competition_slug: String(raw.competition_slug ?? SCHOOLS_COMPETITION_SLUG),
+    competition_name: String(raw.competition_name ?? 'NextPlay Schools'),
+    is_public: Boolean(raw.is_public),
+    member_count: Number(raw.member_count ?? 0),
+    match_kind: String(raw.match_kind ?? 'name'),
+  }))
+  return { rows, error }
 }
 
-export async function requestJoinPool(client: SupabaseClient, poolId: string, inviteToken?: string) {
-  // Must match public.request_pool_join(p_pool_id uuid, p_invite_token text). Build keys in that order
-  // (avoid shorthand / alphabetical object keys that produce p_invite_token first in JSON).
+export async function requestJoinPool(
+  client: SupabaseClient,
+  poolId: string,
+  options?: { inviteToken?: string; joinCode?: string }
+) {
   const params: Record<string, string | null> = {}
   params.p_pool_id = poolId
-  params.p_invite_token = inviteToken ?? null
+  params.p_invite_token = options?.inviteToken ?? null
+  params.p_join_code = options?.joinCode
+    ? normalizePoolJoinCodeInput(options.joinCode)
+    : null
   const { data, error } = await client.rpc('request_pool_join', params)
   return { row: (data as PoolJoinRequestRow | null) ?? null, error }
 }

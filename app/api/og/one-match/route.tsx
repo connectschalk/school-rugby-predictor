@@ -1,13 +1,13 @@
 import { ImageResponse } from '@vercel/og'
 import { getPublicSiteUrl } from '@/lib/site-url'
-import { PLATFORM_LOGO_SRC } from '@/lib/platform-branding'
+import { PLATFORM_OG_IMAGE_SRC } from '@/lib/platform-branding'
 
 export const runtime = 'edge'
 
 /** OG card: NextPlay Predictor platform logo only (no team crests). */
 export async function GET() {
   const base = getPublicSiteUrl()
-  const logoUrl = `${base}${PLATFORM_LOGO_SRC}`
+  const logoUrl = `${base}${PLATFORM_OG_IMAGE_SRC}`
 
   return new ImageResponse(
     (
@@ -22,7 +22,7 @@ export async function GET() {
         }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={logoUrl} alt="" width={520} height={156} style={{ objectFit: 'contain' }} />
+        <img src={logoUrl} alt="" width={280} height={304} style={{ objectFit: 'contain' }} />
       </div>
     ),
     { width: 1200, height: 630 }

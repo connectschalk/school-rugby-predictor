@@ -5,6 +5,10 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import * as XLSX from 'xlsx'
+import {
+  formatInstantAsJohannesburgWallClock,
+  parseJohannesburgKickoff,
+} from '@/lib/admin-kickoff-johannesburg'
 import { splitCsvLine } from '@/lib/parse-game-matches-bulk'
 import { getCompetitionBySlug } from '@/lib/competitions'
 import { rpcScorePredictionsForMatch } from '@/lib/score-predictions-for-match'
@@ -89,22 +93,17 @@ function pad2(n: number): string {
   return String(n).padStart(2, '0')
 }
 
-function formatLocalDateTimeForKickoff(d: Date): string {
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
-}
-
 function cellStr(v: unknown): string {
   if (v == null) return ''
   if (v instanceof Date) {
     if (Number.isNaN(v.getTime())) return ''
-    return formatLocalDateTimeForKickoff(v)
+    return formatInstantAsJohannesburgWallClock(v)
   }
   if (typeof v === 'number' && Number.isFinite(v)) {
     if (v > 20000 && v < 100000 && XLSX.SSF?.parse_date_code) {
       const dc = XLSX.SSF.parse_date_code(v)
       if (dc) {
-        const dt = new Date(dc.y, dc.m - 1, dc.d, dc.H, dc.M, dc.S)
-        if (!Number.isNaN(dt.getTime())) return formatLocalDateTimeForKickoff(dt)
+        return `${dc.y}-${pad2(dc.m)}-${pad2(dc.d)} ${pad2(dc.H)}:${pad2(dc.M)}`
       }
     }
     return String(v)
@@ -112,48 +111,9 @@ function cellStr(v: unknown): string {
   return String(v).trim()
 }
 
-/** Parse admin upload kickoff strings (CSV/XLSX). Exported for manual fixture forms. */
+/** Parse admin upload kickoff strings (CSV/XLSX) as Africa/Johannesburg. */
 export function parseCompetitionImportKickoff(raw: string): string | null {
-  const trimmed = raw.trim()
-  if (!trimmed) return null
-
-  const isoLocal = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{1,2}):(\d{2})/)
-  if (isoLocal) {
-    const y = Number(isoLocal[1])
-    const m = Number(isoLocal[2])
-    const d = Number(isoLocal[3])
-    const hh = Number(isoLocal[4])
-    const mm = Number(isoLocal[5])
-    const dt = new Date(y, m - 1, d, hh, mm, 0, 0)
-    if (Number.isNaN(dt.getTime())) return null
-    return dt.toISOString()
-  }
-
-  const dmy = trimmed.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})(?:[T\s]+(\d{1,2}):(\d{2}))?$/)
-  if (dmy) {
-    const d = Number(dmy[1])
-    const m = Number(dmy[2])
-    const y = Number(dmy[3])
-    const hh = dmy[4] != null ? Number(dmy[4]) : 15
-    const mm = dmy[5] != null ? Number(dmy[5]) : 0
-    const dt = new Date(y, m - 1, d, hh, mm, 0, 0)
-    if (Number.isNaN(dt.getTime())) return null
-    return dt.toISOString()
-  }
-
-  const ymdOnly = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-  if (ymdOnly) {
-    const y = Number(ymdOnly[1])
-    const m = Number(ymdOnly[2])
-    const d = Number(ymdOnly[3])
-    const dt = new Date(y, m - 1, d, 15, 0, 0, 0)
-    if (Number.isNaN(dt.getTime())) return null
-    return dt.toISOString()
-  }
-
-  const parsed = new Date(trimmed)
-  if (Number.isNaN(parsed.getTime())) return null
-  return parsed.toISOString()
+  return parseJohannesburgKickoff(raw)
 }
 
 export function adminImportKickoffDisplay(row: AdminImportRow): string {

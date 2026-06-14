@@ -1,13 +1,20 @@
 'use client'
 
+import Image from 'next/image'
 import Link from 'next/link'
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { User } from '@supabase/supabase-js'
 import LetterAvatar from '@/components/LetterAvatar'
-import { buildPoolJoinPath, isUuid, POOL_INVITE_FROM_PARAM } from '@/lib/pool-invite-path'
+import { competitionLogoSrc } from '@/lib/competition-branding'
 import {
-  fetchPoolByInviteToken,
+  buildPoolJoinPath,
+  isUuid,
+  normalizePoolInviteCompetitionSlug,
+  POOL_INVITE_FROM_PARAM,
+} from '@/lib/pool-invite-path'
+import {
+  fetchPoolInviteByToken,
   fetchPoolInviteViewerState,
   requestJoinPool,
   type PoolInvitePreview,
@@ -27,7 +34,14 @@ function inviterSubtitle(pool: PoolInvitePreview): string {
   return 'You were invited by a pool admin.'
 }
 
-export default function PoolInviteLanding({ inviteToken }: { inviteToken: string }) {
+type Props = {
+  inviteToken: string
+  /** Slug from the URL route; mismatches redirect to the pool's competition. */
+  routeCompetitionSlug?: string | null
+}
+
+export default function PoolInviteLanding({ inviteToken, routeCompetitionSlug }: Props) {
+  const router = useRouter()
   const searchParams = useSearchParams()
   const fromRaw = searchParams.get(POOL_INVITE_FROM_PARAM)?.trim() ?? ''
   const invitedByParam = isUuid(fromRaw) ? fromRaw : null
@@ -44,9 +58,14 @@ export default function PoolInviteLanding({ inviteToken }: { inviteToken: string
   const [requestErr, setRequestErr] = useState('')
 
   const token = inviteToken.trim()
-  const returnPath = useMemo(() => buildPoolJoinPath(token, invitedByParam), [token, invitedByParam])
+  const canonicalSlug = pool ? normalizePoolInviteCompetitionSlug(pool.competition_slug) : null
+  const returnPath = useMemo(
+    () => buildPoolJoinPath(token, invitedByParam, canonicalSlug ?? routeCompetitionSlug),
+    [token, invitedByParam, canonicalSlug, routeCompetitionSlug]
+  )
   const loginHref = `/login?next=${encodeURIComponent(returnPath)}`
   const signupHref = `/signup?next=${encodeURIComponent(returnPath)}`
+  const poolsHref = canonicalSlug ? `/competitions/${canonicalSlug}/pools` : '/pools'
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -65,7 +84,7 @@ export default function PoolInviteLanding({ inviteToken }: { inviteToken: string
     if (!token) return
     setLoadingPool(true)
     setLoadError('')
-    const { pool: p, error } = await fetchPoolByInviteToken(supabase, token, invitedByParam)
+    const { pool: p, error } = await fetchPoolInviteByToken(supabase, token, invitedByParam)
     setLoadingPool(false)
     if (error) {
       setLoadError(error.message)
@@ -101,12 +120,21 @@ export default function PoolInviteLanding({ inviteToken }: { inviteToken: string
     void loadViewerState()
   }, [loadViewerState])
 
+  useEffect(() => {
+    if (!pool || pool.is_closed) return
+    const poolSlug = normalizePoolInviteCompetitionSlug(pool.competition_slug)
+    const routeSlug = routeCompetitionSlug?.trim().toLowerCase() || null
+    if (routeSlug === poolSlug) return
+    const target = buildPoolJoinPath(pool.invite_token || token, invitedByParam, poolSlug)
+    router.replace(target)
+  }, [pool, routeCompetitionSlug, token, invitedByParam, router])
+
   async function onRequestJoin() {
-    if (!pool) return
+    if (!pool || pool.is_closed) return
     setRequestBusy(true)
     setRequestErr('')
     setSuccessMsg('')
-    const { error } = await requestJoinPool(supabase, pool.id, token)
+    const { error } = await requestJoinPool(supabase, pool.id, { inviteToken: token })
     setRequestBusy(false)
     if (error) {
       setRequestErr(error.message)
@@ -130,7 +158,7 @@ export default function PoolInviteLanding({ inviteToken }: { inviteToken: string
         <InviteShell>
           <h1 className="text-xl font-black tracking-tight text-gray-900">Invite link</h1>
           <p className="mt-4 text-sm text-gray-700">This invite link is no longer valid.</p>
-          <BackToPools className="mt-8" />
+          <BackToPools href="/pools" className="mt-8" />
         </InviteShell>
       </main>
     )
@@ -144,13 +172,39 @@ export default function PoolInviteLanding({ inviteToken }: { inviteToken: string
     )
   }
 
-  if (loadError || !pool) {
+  if (loadError) {
+    return (
+      <main className="mx-auto max-w-lg px-4 py-12 md:px-6">
+        <InviteShell>
+          <h1 className="text-xl font-black tracking-tight text-gray-900">Invite link</h1>
+          <p className="mt-4 text-sm text-gray-700">Could not load this invite. Please try again.</p>
+          <p className="mt-2 text-xs text-gray-500">{loadError}</p>
+          <BackToPools href={poolsHref} className="mt-8" />
+        </InviteShell>
+      </main>
+    )
+  }
+
+  if (!pool) {
     return (
       <main className="mx-auto max-w-lg px-4 py-12 md:px-6">
         <InviteShell>
           <h1 className="text-xl font-black tracking-tight text-gray-900">Invite link</h1>
           <p className="mt-4 text-sm text-gray-700">This invite link is no longer valid.</p>
-          <BackToPools className="mt-8" />
+          <BackToPools href="/pools" className="mt-8" />
+        </InviteShell>
+      </main>
+    )
+  }
+
+  if (pool.is_closed) {
+    return (
+      <main className="mx-auto max-w-lg px-4 py-10 md:px-6 md:py-14">
+        <InviteShell>
+          <CompetitionHeader pool={pool} />
+          <h1 className="mt-6 text-center text-xl font-black tracking-tight text-gray-900">Pool closed</h1>
+          <p className="mt-4 text-center text-sm text-gray-700">This pool is closed and is not accepting new members.</p>
+          <BackToPools href={poolsHref} className="mt-8" />
         </InviteShell>
       </main>
     )
@@ -165,9 +219,12 @@ export default function PoolInviteLanding({ inviteToken }: { inviteToken: string
   return (
     <main className="mx-auto max-w-lg px-4 py-10 md:px-6 md:py-14">
       <InviteShell>
-        <p className="text-center text-[11px] font-bold uppercase tracking-[0.2em] text-gray-500">Pool invite</p>
+        <CompetitionHeader pool={pool} />
+        <p className="mt-6 text-center text-[11px] font-bold uppercase tracking-[0.2em] text-gray-500">
+          Pool invite
+        </p>
         <h1 className="mt-3 text-center text-2xl font-black leading-tight tracking-tight text-gray-900 md:text-3xl">
-          You’ve been invited to join a prediction pool
+          Join {pool.competition_name}
         </h1>
 
         <div className="mt-8 rounded-2xl border border-gray-200 bg-gray-50/80 px-4 py-5 text-center">
@@ -192,11 +249,6 @@ export default function PoolInviteLanding({ inviteToken }: { inviteToken: string
           Pools are private prediction groups where members compete on match predictions and pool-only
           leaderboards.
         </p>
-        <ul className="mt-4 list-inside list-disc space-y-1.5 text-sm text-gray-700">
-          <li>Join the pool</li>
-          <li>Predict weekly school rugby scores</li>
-          <li>Compete on the private leaderboard</li>
-        </ul>
 
         <p
           className={`mt-5 rounded-xl px-3 py-2.5 text-sm ${
@@ -209,15 +261,6 @@ export default function PoolInviteLanding({ inviteToken }: { inviteToken: string
             ? 'This pool is private. Your request will be sent to the pool admin for approval.'
             : 'Request to join — the pool admin approves new members.'}
         </p>
-
-        <details className="mt-6 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm">
-          <summary className="cursor-pointer font-semibold text-gray-900">How pools work</summary>
-          <p className="mt-3 text-gray-600">
-            A pool admin picks fixture groups and invites members. You predict scores on the same games as
-            the rest of the pool. Only members see private pool leaderboards and pool picks; your global
-            predictions still work on the main Predict page.
-          </p>
-        </details>
 
         <div className="mt-8 border-t border-gray-100 pt-6">
           {!user ? (
@@ -244,9 +287,9 @@ export default function PoolInviteLanding({ inviteToken }: { inviteToken: string
             <p className="text-sm text-gray-500">Checking your membership…</p>
           ) : viewerState?.is_member ? (
             <div className="space-y-4 text-center">
-              <p className="text-sm font-semibold text-emerald-800">You’re already in this pool.</p>
+              <p className="text-sm font-semibold text-emerald-800">You&apos;re already in this pool.</p>
               <Link
-                href="/pools"
+                href={poolsHref}
                 className="inline-flex w-full items-center justify-center rounded-xl bg-gray-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-black"
               >
                 Go to pool
@@ -273,9 +316,24 @@ export default function PoolInviteLanding({ inviteToken }: { inviteToken: string
           )}
         </div>
 
-        <BackToPools className="mt-10" />
+        <BackToPools href={poolsHref} className="mt-10" />
       </InviteShell>
     </main>
+  )
+}
+
+function CompetitionHeader({ pool }: { pool: PoolInvitePreview }) {
+  const logoSrc = competitionLogoSrc({
+    slug: pool.competition_slug,
+    logo_url: pool.competition_logo_url,
+  })
+  return (
+    <div className="flex flex-col items-center text-center">
+      <div className="relative h-14 w-14 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+        <Image src={logoSrc} alt="" fill className="object-contain p-1.5" sizes="56px" />
+      </div>
+      <p className="mt-3 text-sm font-semibold text-gray-900">{pool.competition_name}</p>
+    </div>
   )
 }
 
@@ -287,11 +345,11 @@ function InviteShell({ children }: { children: ReactNode }) {
   )
 }
 
-function BackToPools({ className = '' }: { className?: string }) {
+function BackToPools({ href, className = '' }: { href: string; className?: string }) {
   return (
     <div className={`text-center ${className}`}>
       <Link
-        href="/pools"
+        href={href}
         className="inline-flex items-center justify-center rounded-full border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-800 transition hover:bg-gray-50"
       >
         Back to Pools

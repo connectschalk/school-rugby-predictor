@@ -23,16 +23,7 @@ export type CompetitionFixturesPanelProps = {
   showProvinceFilters?: boolean
 }
 
-function formatKickoffShort(iso: string) {
-  const d = new Date(iso)
-  return d.toLocaleString(undefined, {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
+import { formatKickoffJohannesburg } from '@/lib/admin-kickoff-johannesburg'
 
 function statusLabel(status: GameMatch['status']) {
   if (status === 'completed') return 'Final'
@@ -58,7 +49,7 @@ function FixtureRow({
       <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
         <span>{statusLabel(match.status)}</span>
         <div className="mt-0.5 font-medium normal-case text-slate-700">
-          {formatKickoffShort(match.kickoff_time)}
+          {formatKickoffJohannesburg(match.kickoff_time)}
         </div>
       </div>
       <div className="flex min-w-0 items-center gap-1.5 font-semibold text-slate-900">

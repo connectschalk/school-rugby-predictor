@@ -37,3 +37,19 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   }
   return btoa(binary)
 }
+
+/** Read a file from /public for OG generation at build time (no network). */
+export async function readPublicImageAsDataUrl(publicPath: string): Promise<string | null> {
+  const relative = publicPath.replace(/^\//, '')
+  try {
+    const { readFile } = await import('node:fs/promises')
+    const { join } = await import('node:path')
+    const buf = await readFile(join(process.cwd(), 'public', relative))
+    const ext = relative.split('.').pop()?.toLowerCase()
+    const mime =
+      ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : 'image/png'
+    return `data:${mime};base64,${buf.toString('base64')}`
+  } catch {
+    return null
+  }
+}

@@ -4,7 +4,7 @@ import { Suspense, useMemo } from 'react'
 import { useParams } from 'next/navigation'
 import PoolInviteLanding from '@/components/pools/PoolInviteLanding'
 
-function JoinPoolInner() {
+function CompetitionJoinInner() {
   const params = useParams()
   const token = useMemo(() => {
     const raw = params.token
@@ -16,11 +16,16 @@ function JoinPoolInner() {
     }
   }, [params.token])
 
-  return <PoolInviteLanding inviteToken={token} />
+  const routeCompetitionSlug = useMemo(() => {
+    const raw = params.competitionSlug
+    const s = typeof raw === 'string' ? raw : Array.isArray(raw) ? raw[0] : ''
+    return (s ?? '').trim().toLowerCase()
+  }, [params.competitionSlug])
+
+  return <PoolInviteLanding inviteToken={token} routeCompetitionSlug={routeCompetitionSlug} />
 }
 
-/** Legacy `/pools/join/[token]` — resolves pool by token and redirects to competition URL when found. */
-export default function PoolJoinPage() {
+export default function CompetitionPoolJoinPage() {
   return (
     <Suspense
       fallback={
@@ -29,7 +34,7 @@ export default function PoolJoinPage() {
         </main>
       }
     >
-      <JoinPoolInner />
+      <CompetitionJoinInner />
     </Suspense>
   )
 }

@@ -1,6 +1,10 @@
 'use client'
 
 import Link from 'next/link'
+import {
+  fromAdminJohannesburgInput,
+  toAdminJohannesburgInput,
+} from '@/lib/admin-kickoff-johannesburg'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -45,18 +49,11 @@ type SaveSummary = { inserted: number; updated: number; deleted: number }
 
 function toLocalInput(iso: string | null | undefined): string {
   if (!iso) return ''
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+  return toAdminJohannesburgInput(iso)
 }
 
 function fromLocalInput(v: string): string | null {
-  const t = v.trim()
-  if (!t) return null
-  const d = new Date(t)
-  if (Number.isNaN(d.getTime())) return null
-  return d.toISOString()
+  return fromAdminJohannesburgInput(v)
 }
 
 function newLocalRow(): SheetRow {

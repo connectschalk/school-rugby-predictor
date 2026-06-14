@@ -49,6 +49,7 @@ import {
   type PoolGroupsPreview,
   type PoolJoinRequestRow,
   type PoolRow,
+  type PoolSearchRow,
   type PoolTeamRow,
 } from '@/lib/pools'
 import {
@@ -59,6 +60,10 @@ import {
   type PoolPreviewMatch,
 } from '@/lib/pool-creation-preview'
 import { buildPoolJoinPath } from '@/lib/pool-invite-path'
+import {
+  formatPoolJoinCodeDisplay,
+  validatePoolJoinCodeInput,
+} from '@/lib/pool-join-code'
 import { getCompetitionBySlug, SCHOOLS_COMPETITION_SLUG } from '@/lib/competitions'
 import { fetchGameMatchesForPoolPreview, type GameMatch } from '@/lib/public-prediction-game'
 import { supabase } from '@/lib/supabase'
@@ -91,10 +96,11 @@ export default function ManagePoolsPage() {
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
   const [inviteCopied, setInviteCopied] = useState(false)
+  const [codeCopied, setCodeCopied] = useState(false)
 
   const [myPools, setMyPools] = useState<PoolRow[]>([])
   const [selectedPoolId, setSelectedPoolId] = useState<string | null>(null)
-  const [publicRows, setPublicRows] = useState<Record<string, unknown>[]>([])
+  const [publicRows, setPublicRows] = useState<PoolSearchRow[]>([])
   const [joinRequests, setJoinRequests] = useState<PoolJoinRequestRow[]>([])
   const [poolPreviewMatches, setPoolPreviewMatches] = useState<PoolPreviewMatch[]>([])
   const [fixtureAliasMap, setFixtureAliasMap] = useState<Map<string, string[]>>(() => new Map())
@@ -113,6 +119,7 @@ export default function ManagePoolsPage() {
   const [leaderRows, setLeaderRows] = useState<PoolLeaderboardRow[]>([])
 
   const [createName, setCreateName] = useState('')
+  const [createJoinCode, setCreateJoinCode] = useState('')
   const [createPublic, setCreatePublic] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [creating, setCreating] = useState(false)
@@ -174,6 +181,9 @@ export default function ManagePoolsPage() {
     [createSelectedGroupIds, fixtureGroups]
   )
   const createNameValid = createName.trim().length >= 1
+  const createJoinCodeError = createJoinCode.trim()
+    ? validatePoolJoinCodeInput(createJoinCode)
+    : null
   const createScopeValid =
     createGroupIds.length > 0 || createSelectedTeamNames.some((t) => t.trim().length > 0)
   const visibleFixtureGroups = useMemo(
@@ -701,12 +711,17 @@ export default function ManagePoolsPage() {
       setMessage(POOL_CREATION_LIMIT_MESSAGE)
       return
     }
+    if (createJoinCodeError) {
+      setMessage(createJoinCodeError)
+      return
+    }
     setCreating(true)
     setMessage('')
     try {
       const { pool, error } = await createPool(supabase, {
         name: nameTrim,
         isPublic: createPublic,
+        joinCode: createJoinCode.trim() || null,
       })
       if (error || !pool) {
         setMessage(error?.message ?? 'Could not create pool.')
@@ -725,12 +740,15 @@ export default function ManagePoolsPage() {
         return
       }
       setCreateName('')
+      setCreateJoinCode('')
       setCreatePublic(false)
       setCreateSelectedGroupIds([])
       setCreateSelectedTeamNames([])
       await loadPools()
       setSelectedPoolId(pool.id)
-      setMessage('Pool created.')
+      setMessage(
+        `Pool created. Share code ${formatPoolJoinCodeDisplay(pool.join_code)} or copy the invite link.`
+      )
     } finally {
       setCreating(false)
     }
@@ -751,12 +769,14 @@ export default function ManagePoolsPage() {
     setPublicRows(rows)
   }
 
-  async function onRequestJoin(poolId: string) {
+  async function onRequestJoin(poolId: string, joinCode?: string) {
     if (!canJoinPool) {
       setMessage(`You have reached the limit of ${MAX_USER_MEMBERSHIPS} pools.`)
       return
     }
-    const { error } = await requestJoinPool(supabase, poolId)
+    const { error } = await requestJoinPool(supabase, poolId, {
+      joinCode: joinCode || undefined,
+    })
     if (error) {
       setMessage(error.message)
       return
@@ -835,12 +855,22 @@ export default function ManagePoolsPage() {
 
   async function copyInviteLink() {
     if (!selectedPool || typeof window === 'undefined' || !user) return
-    const url = `${window.location.origin}${buildPoolJoinPath(selectedPool.invite_token, user.id)}`
+    const url = `${window.location.origin}${buildPoolJoinPath(selectedPool.invite_token, user.id, SCHOOLS_COMPETITION_SLUG)}`
     try {
       await navigator.clipboard.writeText(url)
       setInviteCopied(true)
     } catch {
       setMessage('Could not copy invite link.')
+    }
+  }
+
+  async function copyJoinCode() {
+    if (!selectedPool?.join_code || typeof window === 'undefined') return
+    try {
+      await navigator.clipboard.writeText(formatPoolJoinCodeDisplay(selectedPool.join_code))
+      setCodeCopied(true)
+    } catch {
+      setMessage('Could not copy pool code.')
     }
   }
 
@@ -972,9 +1002,9 @@ export default function ManagePoolsPage() {
 
       <section className="mt-10">
         <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-black uppercase tracking-wide text-gray-900">Join a pool</h2>
+          <h2 className="text-lg font-black uppercase tracking-wide text-gray-900">Join / search pool</h2>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-gray-600">
-            Find a pool by name or join with a code from your organiser (invite links open the join flow).{' '}
+            Enter a pool code, pool name, or paste an invite token. Invite links still open the join flow.{' '}
             {isUserAdmin ? 'Admins can join unlimited pools.' : `You can belong to up to ${MAX_USER_MEMBERSHIPS} pools.`}
           </p>
           {hasReachedMembershipLimit ? (
@@ -986,7 +1016,7 @@ export default function ManagePoolsPage() {
               value={searchQuery}
               disabled={!canJoinPool}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search pool name…"
+              placeholder="Enter pool code or pool name"
               className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm disabled:bg-gray-100"
             />
             <button
@@ -999,23 +1029,27 @@ export default function ManagePoolsPage() {
             </button>
           </div>
           <div className="mt-4 space-y-2">
-            {publicRows.map((r) => {
-              const id = String(r.id ?? '')
-              const name = String(r.name ?? 'Pool')
-              return (
-                <div key={id} className="flex items-center justify-between rounded-xl border border-gray-200 px-4 py-3">
-                  <p className="text-sm font-semibold text-gray-900">{name}</p>
-                  <button
-                    type="button"
-                    disabled={!canJoinPool}
-                    onClick={() => void onRequestJoin(id)}
-                    className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-bold text-gray-900 hover:bg-gray-50 disabled:opacity-50"
-                  >
-                    Request join
-                  </button>
+            {publicRows.map((r) => (
+              <div key={r.id} className="flex items-center justify-between rounded-xl border border-gray-200 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-900">{r.name}</p>
+                  <p className="text-xs text-gray-500">
+                    {formatPoolJoinCodeDisplay(r.join_code)}
+                    {r.competition_name ? ` · ${r.competition_name}` : ''}
+                    {r.admin_display_name ? ` · ${r.admin_display_name}` : ''}
+                    {!r.is_public ? ' · Private' : ''}
+                  </p>
                 </div>
-              )
-            })}
+                <button
+                  type="button"
+                  disabled={!canJoinPool}
+                  onClick={() => void onRequestJoin(r.id, r.join_code)}
+                  className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-bold text-gray-900 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Request join
+                </button>
+              </div>
+            ))}
           </div>
         </div>
       </section>
@@ -1042,6 +1076,25 @@ export default function ManagePoolsPage() {
                 disabled={!canCreatePool}
                 className="mt-2 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm disabled:bg-gray-100"
               />
+              <label className="mt-4 block text-xs font-black uppercase tracking-[0.2em] text-gray-400">
+                Pool code
+              </label>
+              <input
+                type="text"
+                value={createJoinCode}
+                onChange={(e) => setCreateJoinCode(e.target.value)}
+                placeholder="e.g. boishaai1, cw2026 — optional"
+                disabled={!canCreatePool}
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                className="mt-2 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm disabled:bg-gray-100"
+              />
+              {createJoinCodeError ? (
+                <p className="mt-1 text-xs text-red-700">{createJoinCodeError}</p>
+              ) : (
+                <p className="mt-1 text-xs text-gray-500">4–20 letters and numbers. Auto-generated if blank.</p>
+              )}
               <label className="mt-4 flex cursor-pointer items-start gap-3 text-sm text-gray-800">
                 <input
                   type="checkbox"
@@ -1053,7 +1106,7 @@ export default function ManagePoolsPage() {
                 <span>
                   <span className="font-semibold">Public pool</span>
                   <span className="mt-0.5 block text-xs font-normal text-gray-500">
-                    Searchable in pool search. Turn off for a private pool (invite link only).
+                    Searchable by name. Private pools can still be found by exact pool code.
                   </span>
                 </span>
               </label>
@@ -1083,7 +1136,7 @@ export default function ManagePoolsPage() {
             <button
               type="button"
               onClick={() => void onCreatePool()}
-              disabled={!canCreatePool || creating || !createNameValid || !createScopeValid}
+              disabled={!canCreatePool || creating || !createNameValid || !createScopeValid || Boolean(createJoinCodeError)}
               className="w-full rounded-xl bg-gray-900 py-3.5 text-sm font-black text-white shadow-lg transition hover:bg-black disabled:opacity-50 sm:w-auto sm:px-10"
             >
               {creating ? 'Saving…' : 'Save pool'}
@@ -1246,6 +1299,19 @@ export default function ManagePoolsPage() {
             <>
               <h2 className="text-lg font-black text-gray-900">{selectedPool.name}</h2>
               <div className="mt-3 flex flex-wrap items-center gap-3">
+                {selectedPool.join_code ? (
+                  <span className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-bold uppercase tracking-wide text-gray-800">
+                    {formatPoolJoinCodeDisplay(selectedPool.join_code)}
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => void copyJoinCode()}
+                  className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-900 transition hover:bg-gray-50"
+                >
+                  Copy pool code
+                </button>
+                {codeCopied ? <span className="text-sm font-medium text-emerald-800">Pool code copied.</span> : null}
                 <button
                   type="button"
                   onClick={() => void copyInviteLink()}

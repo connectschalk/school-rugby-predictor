@@ -7,6 +7,10 @@ import { supabase } from '@/lib/supabase'
 import { fetchUserIsAdmin } from '@/lib/admin-access'
 import { buildTeamAliasResolverMap } from '@/lib/team-aliases-db'
 import { normalizeTeamKey, type TeamRow } from '@/lib/team-name-match'
+import {
+  fromAdminJohannesburgInput,
+  toAdminJohannesburgInput,
+} from '@/lib/admin-kickoff-johannesburg'
 import { detectFixtureWarnings, type FixtureVerificationStatus } from '@/lib/fixture-review'
 
 type ReviewRow = {
@@ -50,19 +54,13 @@ type EditDraft = {
   admin_notes: string
 }
 
+
 function toLocalInput(iso: string): string {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+  return toAdminJohannesburgInput(iso)
 }
 
 function fromLocalInput(v: string): string | null {
-  const t = v.trim()
-  if (!t) return null
-  const d = new Date(t)
-  if (Number.isNaN(d.getTime())) return null
-  return d.toISOString()
+  return fromAdminJohannesburgInput(v)
 }
 
 export default function FixtureReviewPage() {

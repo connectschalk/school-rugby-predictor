@@ -32,11 +32,6 @@ const nextConfig: NextConfig = {
         permanent: false,
       },
       {
-        source: '/pools/join/:path*',
-        destination: `/competitions/${SCHOOLS}/pools/join/:path*`,
-        permanent: false,
-      },
-      {
         source: '/pools/invite/:path*',
         destination: `/competitions/${SCHOOLS}/pools/invite/:path*`,
         permanent: false,
@@ -58,10 +53,6 @@ const nextConfig: NextConfig = {
       {
         source: `/competitions/${SCHOOLS}/pools/create`,
         destination: '/pools/manage',
-      },
-      {
-        source: `/competitions/${SCHOOLS}/pools/join/:path*`,
-        destination: '/pools/join/:path*',
       },
       {
         source: `/competitions/${SCHOOLS}/pools/invite/:path*`,
