@@ -1,12 +1,13 @@
 import { ImageResponse } from '@vercel/og'
 import { getPublicSiteUrl } from '@/lib/site-url'
+import { PLATFORM_LOGO_SRC } from '@/lib/platform-branding'
 
 export const runtime = 'edge'
 
-/** OG card: School Rugby Predictor app logo only (no team crests). */
+/** OG card: NextPlay Predictor platform logo only (no team crests). */
 export async function GET() {
   const base = getPublicSiteUrl()
-  const logoUrl = `${base}/nextplay-predictor.png`
+  const logoUrl = `${base}${PLATFORM_LOGO_SRC}`
 
   return new ImageResponse(
     (

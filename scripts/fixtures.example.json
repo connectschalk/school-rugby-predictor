@@ -1,0 +1,10 @@
+[
+  {
+    "competition_slug": "craven-week",
+    "kickoff": "2026-07-14T10:00:00+02:00",
+    "home_team": "Example School A",
+    "away_team": "Example School B",
+    "venue": "Athlone Stadium",
+    "status": "scheduled"
+  }
+]

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useId, useState, Suspense } from 'react'
 import LetterAvatar from '@/components/LetterAvatar'
+import { PLATFORM_LOGO_ALT, PLATFORM_LOGO_SRC, PLATFORM_NAME } from '@/lib/platform-branding'
 import { safeInternalReturnPath } from '@/lib/auth-return-path'
 import { clearPostConfirmProfilePreview, readPostConfirmProfilePreview, type PostConfirmProfilePreview } from '@/lib/user-profile-metadata'
 import { supabase } from '@/lib/supabase'
@@ -90,15 +91,15 @@ function AccountConfirmedModal({
       >
         <div className="flex flex-col items-center text-center">
           <Image
-            src="/nextplay-predictor.png"
-            alt="School Rugby Predictor — NextPlay Predictor"
+            src={PLATFORM_LOGO_SRC}
+            alt={PLATFORM_LOGO_ALT}
             width={168}
             height={56}
             className="h-11 w-auto"
             priority
           />
           <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">
-            School Rugby Predictor
+            {PLATFORM_NAME}
           </p>
         </div>
 

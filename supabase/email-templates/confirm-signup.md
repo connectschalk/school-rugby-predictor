@@ -18,7 +18,7 @@ Configure in **Authentication → Email Templates → Confirm signup**.
   Welcome to NextPlay Predictor
 </h2>
 <p style="margin:0 0 16px;font-family:system-ui,sans-serif;font-size:15px;line-height:1.5;color:#374151;">
-  Thanks for joining <strong>School Rugby Predictor</strong> (NextPlay Predictor). Your
+  Thanks for joining <strong>NextPlay Predictor</strong>. Your
   <strong>display name</strong> and <strong>letter avatar</strong> are shown publicly on leaderboards and match banter — not your email.
 </p>
 <p style="margin:0 0 20px;font-family:system-ui,sans-serif;font-size:15px;line-height:1.5;color:#374151;">

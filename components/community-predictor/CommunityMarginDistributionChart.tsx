@@ -3,6 +3,7 @@
 import Image from 'next/image'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import LetterAvatar from '@/components/LetterAvatar'
+import { PLATFORM_LOGO_ALT, PLATFORM_LOGO_SRC } from '@/lib/platform-branding'
 import type { PredictorAppChartPick } from '@/lib/fixture-model-for-match'
 import type { CommunityBucketRow, CommunityMarginBucket, CommunityStatsOk } from '@/lib/community-predictor'
 
@@ -295,8 +296,8 @@ export default function CommunityMarginDistributionChart({
                   aria-label={predictorAppPick.tooltipTitle}
                 >
                   <Image
-                    src="/nextplay-predictor.png"
-                    alt=""
+                    src={PLATFORM_LOGO_SRC}
+                    alt={PLATFORM_LOGO_ALT}
                     width={24}
                     height={24}
                     className="h-6 w-6 object-contain"

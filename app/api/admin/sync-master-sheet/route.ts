@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { fetchUserIsAdmin } from '@/lib/admin-access'
+import { getCompetitionBySlug, SCHOOLS_COMPETITION_SLUG } from '@/lib/competitions'
 import { buildStructuredWarningsFromStrings, type SyncWarningItem } from '@/lib/sync-master-warnings'
 import { splitCsvLine } from '@/lib/parse-game-matches-bulk'
 import type { FixtureCsvRow } from '@/lib/parse-fixtures-sheet-csv'
@@ -63,6 +64,16 @@ function stripForbiddenWritePayload(body: Record<string, unknown>): Record<strin
     out[k] = v
   }
   return out
+}
+
+/** Schools sheet sync stamps `nextplay-schools` on new/updated rows when not already set. */
+function stampSchoolsCompetitionOnGameMatchPayload(
+  payload: Record<string, unknown>,
+  schoolsCompetitionId: string | null
+): Record<string, unknown> {
+  if (!schoolsCompetitionId) return payload
+  if (payload.competition_id != null && String(payload.competition_id).trim() !== '') return payload
+  return { ...payload, competition_id: schoolsCompetitionId }
 }
 
 function payloadForbiddenKeys(body: Record<string, unknown>): string[] {
@@ -1330,6 +1341,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 })
   }
 
+  const { competition: schoolsCompetition } = await getCompetitionBySlug(supabase, SCHOOLS_COMPETITION_SLUG)
+  const schoolsCompetitionId = schoolsCompetition?.id ?? null
+
   const errors: string[] = []
   let skipped_duplicates = 0
   let inserted_upcoming = 0
@@ -1880,7 +1894,10 @@ export async function POST(request: Request) {
         let fatalUpdateError = false
         for (const u of slice) {
           lastProcessedFixtureRow = u.pairOnDate
-          const payload = stripForbiddenWritePayload(u.body as Record<string, unknown>)
+          const payload = stampSchoolsCompetitionOnGameMatchPayload(
+            stripForbiddenWritePayload(u.body as Record<string, unknown>),
+            schoolsCompetitionId
+          )
           const oldGm = gameMatchById.get(u.id)
           const oldPk = oldGm ? uniqueKickoffPairKey(oldGm.kickoff_time, oldGm.home_team, oldGm.away_team) : ''
           const newPk = uniqueKickoffPairKeyFromPayload(payload)
@@ -1974,7 +1991,10 @@ export async function POST(request: Request) {
         console.info(`${SYNC_SHEET_LOG} batch game_matches inserts`, { batch: i, count: slice.length })
         let fatalInsertError = false
         for (const meta of slice) {
-          const payload = stripForbiddenWritePayload(meta.body as Record<string, unknown>)
+          const payload = stampSchoolsCompetitionOnGameMatchPayload(
+            stripForbiddenWritePayload(meta.body as Record<string, unknown>),
+            schoolsCompetitionId
+          )
           console.info(`${SYNC_SHEET_LOG} inserting new fixture`, {
             kind: meta.kind,
             dedupeKey: sheetFixtureNormFromBody(payload),

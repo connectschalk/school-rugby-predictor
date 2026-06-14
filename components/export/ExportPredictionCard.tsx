@@ -1,6 +1,7 @@
 'use client'
 
 import { forwardRef } from 'react'
+import { PLATFORM_LOGO_ALT, PLATFORM_LOGO_SRC } from '@/lib/platform-branding'
 import { TeamLogoCircle } from '@/components/export/team-logo'
 
 export type ExportCardFormat = 'square' | 'portrait'
@@ -69,8 +70,8 @@ const ExportPredictionCard = forwardRef<HTMLDivElement, ExportPredictionCardProp
           className={`mx-auto flex w-full max-w-[540px] flex-col rounded-3xl border border-gray-200 bg-white p-10 text-center shadow-sm ${className}`.trim()}
         >
           <img
-            src="/nextplay-predictor.png"
-            alt="NextPlay Predictor"
+            src={PLATFORM_LOGO_SRC}
+            alt={PLATFORM_LOGO_ALT}
             className="mx-auto h-14 w-auto max-w-full object-contain"
           />
           <p className="mt-4 text-center text-sm text-gray-500">{date}</p>
@@ -113,8 +114,8 @@ const ExportPredictionCard = forwardRef<HTMLDivElement, ExportPredictionCardProp
           className={`mx-auto flex w-full max-w-[500px] flex-col items-center rounded-2xl border border-gray-200 bg-white px-8 py-10 text-center shadow-sm ${className}`.trim()}
         >
           <img
-            src="/nextplay-predictor.png"
-            alt="NextPlay Predictor"
+            src={PLATFORM_LOGO_SRC}
+            alt={PLATFORM_LOGO_ALT}
             className="h-14 w-auto max-w-full object-contain"
           />
 
@@ -210,8 +211,8 @@ const ExportPredictionCard = forwardRef<HTMLDivElement, ExportPredictionCardProp
         className={`mx-auto flex w-full max-w-[500px] flex-col items-center rounded-2xl border border-gray-200 bg-white px-8 py-10 text-center shadow-sm ${className}`.trim()}
       >
         <img
-          src="/nextplay-predictor.png"
-          alt="NextPlay Predictor"
+          src={PLATFORM_LOGO_SRC}
+          alt={PLATFORM_LOGO_ALT}
           className="h-14 w-auto max-w-full object-contain object-center"
         />
 

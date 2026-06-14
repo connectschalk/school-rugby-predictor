@@ -20,6 +20,9 @@ import {
 import { teamProvinceMatchesFixtureGroup } from '@/lib/province-team-directory'
 import { getTeamsForProvince, provinceCodesForFixtureGroupSlug } from '@/lib/teams-sheet-province'
 import {
+  canUserCreatePoolInCompetition,
+  countUserAdminPoolsForCompetition,
+  createPool,
   deletePool,
   fetchFixtureGroups,
   fetchMyPools,
@@ -40,6 +43,8 @@ import {
   fetchFixtureGroupAliasesMap,
   fetchFixtureGroupTeamCounts,
   upsertPoolMatches,
+  MAX_POOLS_PER_COMPETITION,
+  POOL_CREATION_LIMIT_MESSAGE,
   type FixtureGroupRow,
   type PoolGroupsPreview,
   type PoolJoinRequestRow,
@@ -54,6 +59,7 @@ import {
   type PoolPreviewMatch,
 } from '@/lib/pool-creation-preview'
 import { buildPoolJoinPath } from '@/lib/pool-invite-path'
+import { getCompetitionBySlug, SCHOOLS_COMPETITION_SLUG } from '@/lib/competitions'
 import { fetchGameMatchesForPoolPreview, type GameMatch } from '@/lib/public-prediction-game'
 import { supabase } from '@/lib/supabase'
 
@@ -61,7 +67,7 @@ function teamVs(m: GameMatch) {
   return `${m.home_team} vs ${m.away_team}`
 }
 
-const MAX_USER_POOLS = 3
+const MAX_USER_MEMBERSHIPS = 3
 const GROUP_TYPE_ORDER = ['prestige', 'province', 'league', 'festival', 'custom'] as const
 const GROUP_TYPE_LABEL: Record<string, string> = {
   prestige: 'Prestige',
@@ -136,13 +142,28 @@ export default function ManagePoolsPage() {
   const [createClientGraph, setCreateClientGraph] = useState<PoolPreviewGraph | null>(null)
   const [teamsModalOpen, setTeamsModalOpen] = useState(false)
   const [scopeModalOpen, setScopeModalOpen] = useState(false)
+  const [schoolsCompetitionId, setSchoolsCompetitionId] = useState<string | null>(null)
   const [scopeGroupTeams, setScopeGroupTeams] = useState<Map<string, string[]>>(() => new Map())
 
   const selectedPool = useMemo(() => myPools.find((p) => p.id === selectedPoolId) ?? null, [myPools, selectedPoolId])
-  const totalPools = myPools.length
-  const canCreatePool = isUserAdmin || totalPools < MAX_USER_POOLS
-  const canJoinPool = isUserAdmin || totalPools < MAX_USER_POOLS
-  const hasReachedPoolLimit = !isUserAdmin && totalPools >= MAX_USER_POOLS
+  const totalMemberships = myPools.length
+  const adminSchoolsPoolCount =
+    user && schoolsCompetitionId
+      ? countUserAdminPoolsForCompetition(myPools, user.id, schoolsCompetitionId, schoolsCompetitionId)
+      : 0
+  const canCreatePool =
+    isUserAdmin ||
+    (schoolsCompetitionId != null &&
+      canUserCreatePoolInCompetition(myPools, user?.id ?? '', schoolsCompetitionId, {
+        isAppAdmin: isUserAdmin,
+        schoolsCompetitionId,
+      }))
+  const canJoinPool = isUserAdmin || totalMemberships < MAX_USER_MEMBERSHIPS
+  const hasReachedMembershipLimit = !isUserAdmin && totalMemberships >= MAX_USER_MEMBERSHIPS
+  const hasReachedCreateLimit =
+    !isUserAdmin &&
+    schoolsCompetitionId != null &&
+    adminSchoolsPoolCount >= MAX_POOLS_PER_COMPETITION
   const isSelectedPoolAdmin = Boolean(user && selectedPool && selectedPool.admin_user_id === user.id)
   const createGroupIds = useMemo(
     () =>
@@ -216,6 +237,12 @@ export default function ManagePoolsPage() {
     () => eventsAndLeaguesFlat.filter((g) => createGroupIds.includes(g.id)),
     [eventsAndLeaguesFlat, createGroupIds]
   )
+
+  useEffect(() => {
+    void getCompetitionBySlug(supabase, SCHOOLS_COMPETITION_SLUG).then(({ competition }) => {
+      setSchoolsCompetitionId(competition?.id ?? null)
+    })
+  }, [])
 
   useEffect(() => {
     if (!scopeModalOpen) return
@@ -354,10 +381,6 @@ export default function ManagePoolsPage() {
   }, [myPools])
 
   useEffect(() => {
-    void fetchGameMatchesForPoolPreview(supabase, 1200).then(({ data, error }) => {
-      if (error) setMessage(`Could not load fixtures for preview: ${error.message}`)
-      setPoolPreviewMatches((data as PoolPreviewMatch[]) ?? [])
-    })
     fetchFixtureGroups(supabase).then(({ rows, error }) => {
       setFixtureGroups(rows)
       if (error) {
@@ -393,6 +416,14 @@ export default function ManagePoolsPage() {
       setCanonicalTeamNames(canonicals)
     })()
   }, [])
+
+  useEffect(() => {
+    if (!schoolsCompetitionId) return
+    void fetchGameMatchesForPoolPreview(supabase, 1200, schoolsCompetitionId).then(({ data, error }) => {
+      if (error) setMessage(`Could not load fixtures for preview: ${error.message}`)
+      setPoolPreviewMatches((data as PoolPreviewMatch[]) ?? [])
+    })
+  }, [schoolsCompetitionId])
 
   useEffect(() => {
     poolPreviewMatchesRef.current = poolPreviewMatches
@@ -434,7 +465,7 @@ export default function ManagePoolsPage() {
       return
     }
     setCreatePreviewLoading(true)
-    previewPoolGroups(supabase, ids).then(({ preview, error }) => {
+    previewPoolGroups(supabase, ids, schoolsCompetitionId ?? undefined).then(({ preview, error }) => {
       if (error) {
         setMessage(error.message)
         setCreatePreview(null)
@@ -443,7 +474,7 @@ export default function ManagePoolsPage() {
       }
       setCreatePreviewLoading(false)
     })
-  }, [createGroupIds])
+  }, [createGroupIds, schoolsCompetitionId])
 
   const createClientPreviewKey = useMemo(
     () =>
@@ -531,7 +562,7 @@ export default function ManagePoolsPage() {
       return
     }
     setEditPreviewLoading(true)
-    previewPoolGroups(supabase, ids).then(({ preview, error }) => {
+    previewPoolGroups(supabase, ids, schoolsCompetitionId ?? undefined).then(({ preview, error }) => {
       if (error) {
         setMessage(error.message)
         setEditPreview(null)
@@ -540,7 +571,7 @@ export default function ManagePoolsPage() {
       }
       setEditPreviewLoading(false)
     })
-  }, [selectedGroupIds])
+  }, [selectedGroupIds, schoolsCompetitionId])
 
   const editClientPreviewKey = useMemo(
     () =>
@@ -666,15 +697,17 @@ export default function ManagePoolsPage() {
       setMessage('Choose at least one province, event, or team.')
       return
     }
-    if (!canCreatePool) return
+    if (!canCreatePool) {
+      setMessage(POOL_CREATION_LIMIT_MESSAGE)
+      return
+    }
     setCreating(true)
     setMessage('')
     try {
-      const { data, error } = await supabase.rpc('create_pool', {
-        p_name: nameTrim,
-        p_is_public: createPublic,
+      const { pool, error } = await createPool(supabase, {
+        name: nameTrim,
+        isPublic: createPublic,
       })
-      const pool = data as PoolRow | null
       if (error || !pool) {
         setMessage(error?.message ?? 'Could not create pool.')
         return
@@ -705,7 +738,7 @@ export default function ManagePoolsPage() {
 
   async function onSearchPools() {
     if (!canJoinPool) {
-      setMessage(`You have reached the limit of ${MAX_USER_POOLS} pools.`)
+      setMessage(`You have reached the limit of ${MAX_USER_MEMBERSHIPS} pools.`)
       return
     }
     setSearching(true)
@@ -720,7 +753,7 @@ export default function ManagePoolsPage() {
 
   async function onRequestJoin(poolId: string) {
     if (!canJoinPool) {
-      setMessage(`You have reached the limit of ${MAX_USER_POOLS} pools.`)
+      setMessage(`You have reached the limit of ${MAX_USER_MEMBERSHIPS} pools.`)
       return
     }
     const { error } = await requestJoinPool(supabase, poolId)
@@ -942,9 +975,9 @@ export default function ManagePoolsPage() {
           <h2 className="text-lg font-black uppercase tracking-wide text-gray-900">Join a pool</h2>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-gray-600">
             Find a pool by name or join with a code from your organiser (invite links open the join flow).{' '}
-            {isUserAdmin ? 'Admins can join unlimited pools.' : `You can belong to up to ${MAX_USER_POOLS} pools.`}
+            {isUserAdmin ? 'Admins can join unlimited pools.' : `You can belong to up to ${MAX_USER_MEMBERSHIPS} pools.`}
           </p>
-          {hasReachedPoolLimit ? (
+          {hasReachedMembershipLimit ? (
             <p className="mt-2 text-xs font-semibold text-red-700">You have reached the limit of 3 pools.</p>
           ) : null}
           <div className="mt-5 flex flex-col gap-2 sm:flex-row">
@@ -993,8 +1026,8 @@ export default function ManagePoolsPage() {
           Add teams and provinces or competitions in a few taps. The summary updates as you go — name your pool, build
           your mix, then save.
         </p>
-        {hasReachedPoolLimit ? (
-          <p className="mt-2 text-xs font-semibold text-red-700">You have reached the limit of 3 pools.</p>
+        {hasReachedCreateLimit ? (
+          <p className="mt-2 text-xs font-semibold text-red-700">{POOL_CREATION_LIMIT_MESSAGE}</p>
         ) : null}
 
         <div className="mt-6 grid gap-8 lg:grid-cols-2 lg:items-start">

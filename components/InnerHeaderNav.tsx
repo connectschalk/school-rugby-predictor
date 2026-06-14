@@ -2,6 +2,11 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
+import {
+  PLATFORM_HOME_HREF,
+  PLATFORM_LOGO_ALT,
+  PLATFORM_LOGO_SRC,
+} from '@/lib/platform-branding'
 import { usePathname, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
@@ -201,7 +206,7 @@ export default function InnerHeaderNav() {
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-x-4 gap-y-3 px-4 py-4 sm:px-6">
       <Link
-        href="/"
+        href={PLATFORM_HOME_HREF}
         className="flex shrink-0 items-center rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
         onClick={() => {
           closeMenu()
@@ -209,8 +214,8 @@ export default function InnerHeaderNav() {
         }}
       >
         <Image
-          src="/nextplay-predictor.png"
-          alt="NextPlay Predictor"
+          src={PLATFORM_LOGO_SRC}
+          alt={PLATFORM_LOGO_ALT}
           width={160}
           height={54}
           className="h-10 w-auto sm:h-11"

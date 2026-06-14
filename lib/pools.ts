@@ -2,6 +2,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 
+import { getCompetitionBySlug, SCHOOLS_COMPETITION_SLUG } from '@/lib/competitions'
 import { isUuid } from '@/lib/pool-invite-path'
 import type { GameMatch } from '@/lib/public-prediction-game'
 
@@ -15,8 +16,75 @@ export type PoolRow = {
   is_public: boolean
   invite_token: string
   is_closed: boolean
+  competition_id?: string | null
   created_at: string
   updated_at: string
+}
+
+export const MAX_POOLS_PER_COMPETITION = 3
+
+export const POOL_CREATION_LIMIT_MESSAGE = 'You can create up to 3 pools per competition.'
+
+/** Legacy pools with null competition_id count toward NextPlay Schools only. */
+export function poolMatchesCompetition(
+  pool: Pick<PoolRow, 'competition_id'>,
+  competitionId: string,
+  schoolsCompetitionId?: string | null
+): boolean {
+  const poolCompetitionId = pool.competition_id
+  if (poolCompetitionId) return poolCompetitionId === competitionId
+  return schoolsCompetitionId != null && competitionId === schoolsCompetitionId
+}
+
+export function countUserAdminPoolsForCompetition(
+  pools: PoolRow[],
+  userId: string,
+  competitionId: string,
+  schoolsCompetitionId?: string | null
+): number {
+  return pools.filter(
+    (p) =>
+      p.admin_user_id === userId &&
+      poolMatchesCompetition(p, competitionId, schoolsCompetitionId)
+  ).length
+}
+
+export function canUserCreatePoolInCompetition(
+  pools: PoolRow[],
+  userId: string,
+  competitionId: string,
+  options?: { isAppAdmin?: boolean; schoolsCompetitionId?: string | null }
+): boolean {
+  if (options?.isAppAdmin) return true
+  return (
+    countUserAdminPoolsForCompetition(
+      pools,
+      userId,
+      competitionId,
+      options?.schoolsCompetitionId
+    ) < MAX_POOLS_PER_COMPETITION
+  )
+}
+
+export async function createPool(
+  client: SupabaseClient,
+  params: { name: string; isPublic: boolean; competitionId?: string | null }
+): Promise<{ pool: PoolRow | null; error: Error | null }> {
+  let competitionId = params.competitionId ?? null
+  if (!competitionId) {
+    const { competition } = await getCompetitionBySlug(client, SCHOOLS_COMPETITION_SLUG)
+    competitionId = competition?.id ?? null
+  }
+
+  const { data, error } = await client.rpc('create_pool', {
+    p_name: params.name.trim(),
+    p_is_public: params.isPublic,
+    p_competition_id: competitionId,
+  })
+
+  if (error) return { pool: null, error: new Error(error.message) }
+  if (!data) return { pool: null, error: new Error('Could not create pool.') }
+  return { pool: data as PoolRow, error: null }
 }
 
 export type FixtureGroupRow = {
@@ -120,7 +188,11 @@ function num(v: unknown, fallback = 0): number {
 type MyPoolsRpcRow = PoolRow & { joined_at: string }
 
 /** Current user's pools via `public.my_pools` (security definer; uses auth.uid()). */
-export async function fetchMyPools(client: SupabaseClient, userId: string) {
+export async function fetchMyPools(
+  client: SupabaseClient,
+  userId: string,
+  competitionId?: string
+) {
   const { data, error } = await client.rpc('my_pools')
 
   if (error) {
@@ -129,7 +201,7 @@ export async function fetchMyPools(client: SupabaseClient, userId: string) {
 
   const rows = (data as MyPoolsRpcRow[] | null) ?? []
 
-  const pools: PoolRow[] = rows.map((row) => ({
+  let pools: PoolRow[] = rows.map((row) => ({
     id: row.id,
     name: row.name,
     admin_user_id: row.admin_user_id,
@@ -137,15 +209,28 @@ export async function fetchMyPools(client: SupabaseClient, userId: string) {
     is_public: row.is_public,
     invite_token: row.invite_token,
     is_closed: row.is_closed,
+    competition_id: row.competition_id != null ? String(row.competition_id) : null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   }))
 
-  const memberships: PoolMemberRow[] = rows.map((row) => ({
-    pool_id: row.id,
-    user_id: userId,
-    joined_at: row.joined_at,
-  }))
+  if (competitionId) {
+    const { competition: schoolsCompetition } = await getCompetitionBySlug(
+      client,
+      SCHOOLS_COMPETITION_SLUG
+    )
+    const schoolsCompetitionId = schoolsCompetition?.id ?? null
+    pools = pools.filter((p) => poolMatchesCompetition(p, competitionId, schoolsCompetitionId))
+  }
+
+  const poolIds = new Set(pools.map((p) => p.id))
+  const memberships: PoolMemberRow[] = rows
+    .filter((row) => poolIds.has(row.id))
+    .map((row) => ({
+      pool_id: row.id,
+      user_id: userId,
+      joined_at: row.joined_at,
+    }))
 
   return { pools, memberships, error: null }
 }
@@ -229,11 +314,19 @@ export async function fetchPoolInviteViewerState(client: SupabaseClient, token: 
   }
 }
 
-export async function searchPublicPools(client: SupabaseClient, query: string) {
-  const { data, error } = await client.rpc('search_public_pools', {
+export async function searchPublicPools(
+  client: SupabaseClient,
+  query: string,
+  competitionId?: string
+) {
+  const params: Record<string, string | number | null> = {
     p_query: query.trim() || null,
     p_limit: 30,
-  })
+  }
+  if (competitionId) {
+    params.p_competition_id = competitionId
+  }
+  const { data, error } = await client.rpc('search_public_pools', params)
   return { rows: (data as Record<string, unknown>[] | null) ?? [], error }
 }
 
@@ -353,7 +446,11 @@ export async function setPoolGroups(client: SupabaseClient, poolId: string, grou
   return { count: num(data), error }
 }
 
-export async function previewPoolGroups(client: SupabaseClient, groupIds: string[]) {
+export async function previewPoolGroups(
+  client: SupabaseClient,
+  groupIds: string[],
+  competitionId?: string
+) {
   const uniqueIds = [...new Set(groupIds.filter(Boolean))]
   if (uniqueIds.length === 0) {
     return {
@@ -389,9 +486,14 @@ export async function previewPoolGroups(client: SupabaseClient, groupIds: string
     }
   }
 
-  const rpcRes = await client.rpc('preview_pool_groups', {
+  const rpcParams: Record<string, string[] | string | null> = {
     p_group_ids: uniqueIds,
-  })
+  }
+  if (competitionId) {
+    rpcParams.p_competition_id = competitionId
+  }
+
+  const rpcRes = await client.rpc('preview_pool_groups', rpcParams)
 
   if (!rpcRes.error) {
     const row = ((rpcRes.data as Record<string, unknown>[] | null) ?? [])[0] ?? null
@@ -402,7 +504,7 @@ export async function previewPoolGroups(client: SupabaseClient, groupIds: string
   const [linksRes, groupsRes, coreTeamsRes] = await Promise.all([
     client
       .from('game_match_groups')
-      .select('group_id, fixture_groups(name), game_matches(id, home_team, away_team, kickoff_time, status)')
+      .select('group_id, fixture_groups(name), game_matches(id, home_team, away_team, kickoff_time, status, competition_id)')
       .in('group_id', uniqueIds),
     client.from('fixture_groups').select('id, name').in('id', uniqueIds),
     client.from('fixture_group_teams').select('group_id, team_name').in('group_id', uniqueIds),
@@ -438,6 +540,13 @@ export async function previewPoolGroups(client: SupabaseClient, groupIds: string
     }[] | null) ?? [])) {
     const gmRaw = Array.isArray(row.game_matches) ? row.game_matches[0] : row.game_matches
     if (!gmRaw?.id) continue
+    if (
+      competitionId &&
+      (gmRaw as { competition_id?: string | null }).competition_id &&
+      String((gmRaw as { competition_id?: string | null }).competition_id) !== competitionId
+    ) {
+      continue
+    }
     if ((gmRaw.status ?? '') === 'cancelled') continue
     const matchId = String(gmRaw.id)
     matchMap.set(matchId, {

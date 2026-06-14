@@ -2,7 +2,7 @@
 
 import type { ChangeEvent } from 'react'
 import Link from 'next/link'
-import { getSchoolTeamLogoPath } from '@/lib/school-team-logos'
+import { getCompetitionTeamLogoPath } from '@/lib/competition-team-logos'
 
 export const MATCH_CARD_MARGIN_MAX = 50
 
@@ -91,6 +91,8 @@ export type MatchCardProps = {
   onRequireAuth?: () => void
   isAdmin?: boolean
   onAdminModel?: () => void
+  /** When set, team crests resolve per competition (e.g. World Cup flags). */
+  competitionSlug?: string
 }
 
 export default function MatchCard({
@@ -115,9 +117,10 @@ export default function MatchCard({
   onRequireAuth,
   isAdmin = false,
   onAdminModel,
+  competitionSlug,
 }: MatchCardProps) {
-  const homeLogo = getSchoolTeamLogoPath(homeTeam)
-  const awayLogo = getSchoolTeamLogoPath(awayTeam)
+  const homeLogo = getCompetitionTeamLogoPath(competitionSlug, homeTeam)
+  const awayLogo = getCompetitionTeamLogoPath(competitionSlug, awayTeam)
   const homeSelected = winner === 'home'
   const awaySelected = winner === 'away'
 

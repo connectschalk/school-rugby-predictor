@@ -19,6 +19,7 @@ import {
 import { getOneMatchChallengeBySlug } from '@/lib/one-match-challenge-lookup'
 import { buildCommunityStatsOkFromMarginPicks } from '@/lib/community-predictor'
 import { fetchPredictorAppPickForFixture, type PredictorAppChartPick } from '@/lib/fixture-model-for-match'
+import { PLATFORM_LOGO_ALT, PLATFORM_LOGO_SRC } from '@/lib/platform-branding'
 import { getSchoolTeamLogoPath } from '@/lib/school-team-logos'
 import { supabase } from '@/lib/supabase'
 import { getLightTint, getTeamColor } from '@/lib/teamColors'
@@ -453,7 +454,7 @@ export default function OneMatchChallengePage() {
   if (!match || loadError) {
     return (
       <div className="min-h-screen bg-[#f6f7f9] px-4 py-16 text-center">
-        <Image src="/nextplay-predictor.png" alt="School Rugby Predictor" width={160} height={48} className="mx-auto h-auto w-40" />
+        <Image src={PLATFORM_LOGO_SRC} alt={PLATFORM_LOGO_ALT} width={160} height={48} className="mx-auto h-auto w-40" />
         <p className="mt-8 text-gray-700">{loadError || 'Challenge not found.'}</p>
         <Link href="/predict-score" className="mt-6 inline-block text-sm font-semibold text-red-800 underline">
           Go to Predict a Score
@@ -475,7 +476,7 @@ export default function OneMatchChallengePage() {
         <div className="mx-auto flex w-full max-w-xl flex-col items-center justify-center gap-2 pt-6 pb-4 text-center">
           <div className="rounded-lg bg-white px-4 py-2">
             <Link href="/" className="cursor-pointer transition hover:opacity-80">
-              <Image src="/nextplay-predictor.png" alt="School Rugby Predictor" width={200} height={60} priority className="h-10 w-auto object-contain sm:h-12" />
+              <Image src={PLATFORM_LOGO_SRC} alt={PLATFORM_LOGO_ALT} width={200} height={60} priority className="h-10 w-auto object-contain sm:h-12" />
             </Link>
           </div>
           <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">One match challenge</p>

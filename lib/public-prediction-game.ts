@@ -73,6 +73,37 @@ export type SeasonLeaderboardRow = {
   margin_points_average: number | null
 }
 
+/** Supabase view for per-competition season rankings (migration 077 / 081). */
+export const PREDICT_SCORE_COMPETITION_LEADERBOARD_VIEW = 'predict_score_competition_leaderboard'
+
+/** Shown when the competition leaderboard view has not been deployed yet. */
+export const COMPETITION_LEADERBOARD_VIEW_MISSING_MESSAGE =
+  'Competition leaderboard is not available yet. Apply Supabase migrations 075 through 081 (including predict_score_competition_leaderboard), then refresh the schema cache in the Supabase dashboard if needed.'
+
+export function isCompetitionLeaderboardViewMissingError(error: unknown): boolean {
+  const msg = (error instanceof Error ? error.message : String(error ?? '')).toLowerCase()
+  if (!msg.includes('predict_score_competition_leaderboard')) return false
+  return (
+    msg.includes('schema cache') ||
+    msg.includes('could not find') ||
+    msg.includes('does not exist') ||
+    msg.includes('pgrst205') ||
+    msg.includes('relation') && msg.includes('not exist')
+  )
+}
+
+export type CompetitionLeaderboardFetchResult = {
+  data: SeasonLeaderboardRow[]
+  error: Error | null
+  viewMissing: boolean
+}
+
+export type CompetitionLeaderboardSeasonsResult = {
+  seasons: number[]
+  error: Error | null
+  viewMissing: boolean
+}
+
 /** Sort by kickoff_time asc, then created_at asc, then home_team asc. */
 export function sortPlayableMatchesForPredictScore(matches: GameMatch[]): GameMatch[] {
   return [...matches].sort((a, b) => {
@@ -123,15 +154,42 @@ export async function fetchPlayableGameMatches(client: SupabaseClient) {
   return { data: sortPlayableMatchesForPredictScore(raw), error }
 }
 
+const PREDICT_SCORE_MATCH_SELECT =
+  'id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at, home_team_province, away_team_province, prediction_cutoff_time, verification_status'
+
 /** Predict Score hub: upcoming only, kickoff order, provinces for grouping (no pool / group filters). */
-export async function fetchUpcomingPredictScoreMatches(client: SupabaseClient) {
-  const { data, error } = await client
+export async function fetchUpcomingPredictScoreMatches(
+  client: SupabaseClient,
+  competitionId?: string
+) {
+  let query = client
     .from('game_matches')
-    .select(
-      'id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at, home_team_province, away_team_province, prediction_cutoff_time, verification_status'
-    )
+    .select(PREDICT_SCORE_MATCH_SELECT)
     .eq('status', 'upcoming')
     .order('kickoff_time', { ascending: true })
+
+  if (competitionId) {
+    query = query.eq('competition_id', competitionId)
+  }
+
+  const { data, error } = await query
+  return { data: (data as GameMatch[] | null) ?? [], error }
+}
+
+/** Upcoming fixtures for a single competition (predict page). */
+export async function fetchCompetitionUpcomingMatches(client: SupabaseClient, competitionId: string) {
+  return fetchUpcomingPredictScoreMatches(client, competitionId)
+}
+
+/** Read-only fixture list for a competition (upcoming, locked, completed). */
+export async function fetchCompetitionFixtures(client: SupabaseClient, competitionId: string, limit = 500) {
+  const { data, error } = await client
+    .from('game_matches')
+    .select(PREDICT_SCORE_MATCH_SELECT)
+    .eq('competition_id', competitionId)
+    .in('status', ['upcoming', 'locked', 'completed'])
+    .order('kickoff_time', { ascending: true })
+    .limit(limit)
 
   return { data: (data as GameMatch[] | null) ?? [], error }
 }
@@ -155,16 +213,25 @@ export async function fetchUserPredictionsForMatches(
 }
 
 /** All public fixtures for community hub (upcoming, locked, completed). */
-export async function fetchGameMatchesForCommunityHub(client: SupabaseClient, limit = 200) {
-  const { data, error } = await client
+export async function fetchGameMatchesForCommunityHub(
+  client: SupabaseClient,
+  limit = 200,
+  competitionId?: string
+) {
+  let query = client
     .from('game_matches')
     .select(
-      'id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at, is_featured, featured_order'
+      'id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at, is_featured, featured_order, home_team_province, away_team_province, prediction_cutoff_time'
     )
     .in('status', ['upcoming', 'locked', 'completed'])
     .order('kickoff_time', { ascending: false })
     .limit(limit)
 
+  if (competitionId) {
+    query = query.eq('competition_id', competitionId)
+  }
+
+  const { data, error } = await query
   return { data: (data as GameMatch[] | null) ?? [], error }
 }
 
@@ -172,10 +239,14 @@ export async function fetchGameMatchesForCommunityHub(client: SupabaseClient, li
  * Chronological window of matches with province / league fields for pool creation preview.
  * Ordered ascending by kickoff so future fixtures are not truncated when limiting.
  */
-export async function fetchGameMatchesForPoolPreview(client: SupabaseClient, limit = 1200) {
+export async function fetchGameMatchesForPoolPreview(
+  client: SupabaseClient,
+  limit = 1200,
+  competitionId?: string
+) {
   const since = new Date()
   since.setDate(since.getDate() - 2)
-  const { data, error } = await client
+  let query = client
     .from('game_matches')
     .select(
       'id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at, home_team_province, away_team_province, province_group, league_group, is_prestige_match, is_prestige, is_interprovincial, is_featured, featured_order'
@@ -185,6 +256,11 @@ export async function fetchGameMatchesForPoolPreview(client: SupabaseClient, lim
     .order('kickoff_time', { ascending: true })
     .limit(limit)
 
+  if (competitionId) {
+    query = query.eq('competition_id', competitionId)
+  }
+
+  const { data, error } = await query
   return { data: (data as GameMatch[] | null) ?? [], error }
 }
 
@@ -336,12 +412,14 @@ export async function fetchSeasonLeaderboard(client: SupabaseClient, season: num
 export async function fetchSeasonRecentMarginAverages(
   client: SupabaseClient,
   season: number,
-  recentCount = 5
+  recentCount = 5,
+  competitionId?: string
 ): Promise<{ data: Record<string, number | null>; error: Error | null }> {
-  const { data: matches, error: mErr } = await client
-    .from('game_matches')
-    .select('id, kickoff_time')
-    .eq('status', 'completed')
+  let matchQuery = client.from('game_matches').select('id, kickoff_time').eq('status', 'completed')
+  if (competitionId) {
+    matchQuery = matchQuery.eq('competition_id', competitionId)
+  }
+  const { data: matches, error: mErr } = await matchQuery
 
   if (mErr) {
     return { data: {}, error: mErr }
@@ -417,6 +495,78 @@ export async function fetchLeaderboardSeasons(client: SupabaseClient) {
     set.add(num(row.season))
   }
   return { seasons: [...set].sort((a, b) => b - a), error: null }
+}
+
+export async function fetchCompetitionLeaderboard(
+  client: SupabaseClient,
+  competitionId: string,
+  season: number
+): Promise<CompetitionLeaderboardFetchResult> {
+  const { data, error } = await client
+    .from(PREDICT_SCORE_COMPETITION_LEADERBOARD_VIEW)
+    .select('*')
+    .eq('competition_id', competitionId)
+    .eq('season', season)
+
+  if (error) {
+    const viewMissing = isCompetitionLeaderboardViewMissingError(error)
+    return { data: [] as SeasonLeaderboardRow[], error, viewMissing }
+  }
+
+  const rows = (data as Record<string, unknown>[] | null) ?? []
+  const mapped: SeasonLeaderboardRow[] = rows.map((r) => ({
+    season: num(r.season, season),
+    user_id: String(r.user_id),
+    display_name: r.display_name != null ? String(r.display_name) : null,
+    avatar_url: r.avatar_url != null ? String(r.avatar_url) : null,
+    avatar_letter: r.avatar_letter != null ? String(r.avatar_letter) : null,
+    avatar_colour: r.avatar_colour != null ? String(r.avatar_colour) : null,
+    total_points: num(r.total_points),
+    predictions_made: num(r.predictions_made),
+    avg_points_per_prediction:
+      r.avg_points_per_prediction === null || r.avg_points_per_prediction === undefined
+        ? null
+        : num(r.avg_points_per_prediction),
+    exact_margin_count: num(r.exact_margin_count),
+    correct_winner_count: num(r.correct_winner_count),
+    cumulative_margin_error: num(r.cumulative_margin_error),
+    average_margin_error:
+      r.average_margin_error === null || r.average_margin_error === undefined
+        ? null
+        : num(r.average_margin_error),
+    margin_points_total: num(r.margin_points_total),
+    margin_points_average:
+      r.margin_points_average === null || r.margin_points_average === undefined
+        ? null
+        : num(r.margin_points_average),
+  }))
+
+  return { data: mapped, error: null, viewMissing: false }
+}
+
+export async function fetchCompetitionLeaderboardSeasons(
+  client: SupabaseClient,
+  competitionId: string
+): Promise<CompetitionLeaderboardSeasonsResult> {
+  const { data, error } = await client
+    .from(PREDICT_SCORE_COMPETITION_LEADERBOARD_VIEW)
+    .select('season')
+    .eq('competition_id', competitionId)
+
+  if (error) {
+    const viewMissing = isCompetitionLeaderboardViewMissingError(error)
+    return { seasons: [] as number[], error, viewMissing }
+  }
+
+  if (!data?.length) {
+    return { seasons: [] as number[], error: null, viewMissing: false }
+  }
+
+  const set = new Set<number>()
+  for (const row of data as { season: unknown }[]) {
+    set.add(num(row.season))
+  }
+  return { seasons: [...set].sort((a, b) => b - a), error: null, viewMissing: false }
 }
 
 export async function fetchGameMatchById(client: SupabaseClient, matchId: string) {

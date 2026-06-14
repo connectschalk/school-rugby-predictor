@@ -1,180 +1,190 @@
 'use client'
 
+import Image from 'next/image'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import type { User } from '@supabase/supabase-js'
-import CommunityPicksIcon from '@/components/icons/CommunityPicksIcon'
+import {
+  competitionLogoSrc,
+  competitionModeBadge,
+  competitionTagline,
+} from '@/lib/competition-branding'
+import {
+  PLATFORM_LOGO_LANDING_DARK_SRC,
+  PLATFORM_NAME,
+} from '@/lib/platform-branding'
+import {
+  competitionCardTitle,
+  getActiveCompetitions,
+  type Competition,
+} from '@/lib/competitions'
 import { supabase } from '@/lib/supabase'
 import { trackEvent } from '@/lib/trackEvent'
 
-function PredictIconDot() {
-  return <span className="h-3 w-3 shrink-0 rounded-full bg-red-500" aria-hidden />
-}
+const FALLBACK_COMPETITIONS: Competition[] = [
+  {
+    id: 'fallback-schools',
+    slug: 'nextplay-schools',
+    name: 'NextPlay Schools',
+    description:
+      'Build your own school rugby pool. Choose your teams, invite your people, and follow the rankings.',
+    logo_url: '/competition-logos/school-rugby-predictor.png',
+    hero_image_url: null,
+    sport_type: 'rugby',
+    competition_mode: 'custom_pool_fixtures',
+    is_active: true,
+    display_order: 1,
+  },
+  {
+    id: 'fallback-craven',
+    slug: 'craven-week',
+    name: 'NextPlay Craven Week',
+    description:
+      'Predict the official Craven Week fixtures. Invite your group and compete on every match.',
+    logo_url: '/competition-logos/craven-week-rugby-predictor.png',
+    hero_image_url: null,
+    sport_type: 'rugby',
+    competition_mode: 'official_fixed_fixtures',
+    is_active: true,
+    display_order: 2,
+  },
+  {
+    id: 'fallback-soccer',
+    slug: 'soccer-world-cup',
+    name: 'NextPlay Soccer World Cup',
+    description:
+      'Create your World Cup pool and predict every match with your friends.',
+    logo_url: '/competition-logos/soccer-world-cup-predictor.png',
+    hero_image_url: null,
+    sport_type: 'soccer',
+    competition_mode: 'official_fixed_fixtures',
+    is_active: true,
+    display_order: 3,
+  },
+]
 
-function RankingsListIcon() {
+function CompetitionCard({ competition }: { competition: Competition }) {
+  const title = competitionCardTitle(competition.slug, competition.name)
+  const logoSrc = competitionLogoSrc(competition)
+  const tagline = competitionTagline(competition.slug)
+  const modeBadge = competitionModeBadge(competition.competition_mode)
+  const isOfficial = competition.competition_mode === 'official_fixed_fixtures'
+
   return (
-    <span className="inline-flex h-4 w-4 shrink-0 flex-col justify-center gap-[2px]" aria-hidden>
-      <span className="h-[2px] w-full rounded-full bg-red-500" />
-      <span className="h-[2px] w-full rounded-full bg-red-500" />
-      <span className="h-[2px] w-full rounded-full bg-red-500" />
-    </span>
+    <Link
+      href={`/competitions/${competition.slug}`}
+      onClick={() =>
+        trackEvent('navigation_click', 'landing', {
+          destination: `/competitions/${competition.slug}`,
+          competition: competition.slug,
+        })
+      }
+      className="group flex min-h-[320px] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#111318] text-left shadow-lg shadow-black/40 transition hover:border-red-600/50 hover:bg-[#161a22] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600"
+    >
+      <div className="border-b border-white/5 bg-white px-5 py-5 sm:px-6 sm:py-6">
+        <div className="flex h-14 items-center sm:h-16">
+          <Image
+            src={logoSrc}
+            alt=""
+            width={220}
+            height={64}
+            className="h-11 w-auto max-w-full object-contain object-left sm:h-12"
+          />
+        </div>
+      </div>
+
+      <div className="flex flex-1 flex-col p-5 sm:p-6">
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+              isOfficial
+                ? 'bg-red-600/20 text-red-400 ring-1 ring-red-600/30'
+                : 'bg-white/5 text-gray-400 ring-1 ring-white/10'
+            }`}
+          >
+            {modeBadge}
+          </span>
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+            {competition.sport_type}
+          </span>
+        </div>
+
+        <h2 className="mt-4 text-xl font-black tracking-tight text-white sm:text-2xl">{title}</h2>
+        <p className="mt-2 text-sm font-semibold text-red-400">{tagline}</p>
+        {competition.description ? (
+          <p className="mt-3 flex-1 text-sm leading-relaxed text-gray-400">{competition.description}</p>
+        ) : (
+          <div className="flex-1" />
+        )}
+
+        <span className="mt-6 inline-flex w-full items-center justify-center rounded-full bg-red-600 px-5 py-3 text-sm font-semibold text-white transition group-hover:bg-red-700 sm:w-auto sm:justify-start">
+          Enter {title.split(' ')[0]}
+        </span>
+      </div>
+    </Link>
   )
 }
 
 export default function HomePage() {
-  const pathname = usePathname()
-  const [user, setUser] = useState<User | null>(null)
-  const [authReady, setAuthReady] = useState(false)
-  const predictActive = pathname.startsWith('/predict-score')
-  const rankingsActive = pathname.startsWith('/user-rankings')
-  const poolsActive = pathname.startsWith('/pools')
-  const communityActive = pathname.startsWith('/community-predictor') || pathname.startsWith('/community-picks')
-  const activeDot = (
-    <span
-      className="absolute -bottom-0.5 left-1/2 h-2 w-2 -translate-x-1/2 rounded-full bg-red-600"
-      aria-hidden
-    />
-  )
+  const [competitions, setCompetitions] = useState<Competition[]>(FALLBACK_COMPETITIONS)
+  const [loadError, setLoadError] = useState('')
 
-  // 🔥 Track landing page visits
   useEffect(() => {
     trackEvent('page_view', 'landing')
   }, [])
 
   useEffect(() => {
     let cancelled = false
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!cancelled) {
-        setUser(session?.user ?? null)
-        setAuthReady(true)
+    void getActiveCompetitions(supabase).then(({ competitions: rows, error }) => {
+      if (cancelled) return
+      if (error) {
+        setLoadError(error)
+        return
       }
+      if (rows.length > 0) setCompetitions(rows)
     })
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
-    })
-
     return () => {
       cancelled = true
-      subscription.unsubscribe()
     }
   }, [])
 
   return (
-    <main className="min-h-screen bg-white text-black">
-      <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-6 py-10">
-        <section className="flex flex-1 items-center">
-          <div className="mx-auto w-full max-w-4xl text-center">
-            <img
-              src="/nextplay-predictor.png"
-              alt="School Rugby Predictor"
-              className="mx-auto h-24 w-auto md:h-28"
-            />
-            <h1 className="mt-8 text-4xl font-black tracking-tight text-gray-900 md:text-6xl">
-              Predict the margin. Climb the rankings.
-            </h1>
-            <p className="mx-auto mt-4 max-w-2xl text-base text-gray-600 md:text-lg">
-              Pick any school rugby match, predict the winning margin, and compete on accuracy.
-            </p>
+    <main className="min-h-screen bg-[#0a0a0b] text-white">
+      <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-4 py-10 sm:px-6">
+        <header className="flex flex-col items-center text-center">
+          <Image
+            src={PLATFORM_LOGO_LANDING_DARK_SRC}
+            alt={PLATFORM_NAME}
+            width={1024}
+            height={467}
+            priority
+            sizes="(max-width: 640px) 280px, (max-width: 1024px) 320px, 360px"
+            className="mx-auto h-auto w-full max-w-[280px] object-contain py-8 sm:max-w-[320px] sm:py-10 lg:max-w-[360px]"
+          />
+          <h1 className="max-w-2xl text-3xl font-black tracking-tight text-white sm:text-4xl md:text-5xl">
+            Choose your NextPlay environment
+          </h1>
+          <p className="mt-4 max-w-xl text-sm text-gray-400 sm:text-base">
+            Three competitions. Three doors. Pick yours, create a pool, and predict every margin.
+          </p>
+        </header>
 
-            <div className="mt-8 flex flex-col items-center gap-3">
-              <div className="flex w-full max-w-lg flex-col items-stretch justify-center gap-3 sm:max-w-none sm:flex-row sm:items-start sm:justify-center">
-                <div className="relative flex w-full flex-col items-center pb-3 sm:w-auto">
-                  <Link
-                    href="/predict-score"
-                    onClick={() => trackEvent('navigation_click', 'landing', { destination: '/predict-score' })}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-900 bg-[#111318] px-8 py-3.5 text-base font-semibold text-white transition hover:bg-[#1a1d24] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 sm:w-auto"
-                  >
-                    <PredictIconDot />
-                    Predict
-                  </Link>
-                  {predictActive ? activeDot : null}
-                </div>
-                <div className="relative flex w-full flex-col items-center pb-3 sm:w-auto">
-                  <Link
-                    href="/pools"
-                    onClick={() => trackEvent('navigation_click', 'landing', { destination: '/pools' })}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-300 bg-white px-8 py-3.5 text-base font-semibold text-gray-900 transition hover:border-gray-400 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 sm:w-auto"
-                  >
-                    Join a Pool
-                  </Link>
-                </div>
-              </div>
-
-              <div className="flex w-full flex-col items-center justify-center gap-3 sm:flex-row sm:flex-wrap">
-                <div className="relative flex w-full flex-col items-center pb-3 sm:w-auto">
-                  <Link
-                    href="/user-rankings"
-                    onClick={() => trackEvent('navigation_click', 'landing', { destination: '/user-rankings' })}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-300 bg-white px-8 py-3.5 text-base font-semibold text-gray-900 transition hover:border-gray-400 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 sm:w-auto"
-                  >
-                    <RankingsListIcon />
-                    Rankings
-                  </Link>
-                  {rankingsActive ? activeDot : null}
-                </div>
-                <div className="relative flex w-full flex-col items-center pb-3 sm:w-auto">
-                  <Link
-                    href="/pools"
-                    aria-current={poolsActive ? 'page' : undefined}
-                    onClick={() => trackEvent('navigation_click', 'landing', { destination: '/pools' })}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-300 bg-white px-8 py-3.5 text-base font-semibold text-gray-900 transition hover:border-gray-400 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 sm:w-auto"
-                  >
-                    Pools
-                  </Link>
-                  {poolsActive ? activeDot : null}
-                </div>
-                <div className="relative flex w-full flex-col items-center pb-3 sm:w-auto">
-                  <Link
-                    href="/community-predictor"
-                    onClick={() => trackEvent('navigation_click', 'landing', { destination: '/community-predictor' })}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-300 bg-white px-8 py-3.5 text-base font-semibold text-gray-900 transition hover:border-gray-400 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 sm:w-auto"
-                  >
-                    <CommunityPicksIcon />
-                    Community Picks
-                  </Link>
-                  {communityActive ? activeDot : null}
-                </div>
-              </div>
-            </div>
-
-            <p className="mt-12 text-center text-lg font-extrabold uppercase tracking-[0.28em] text-gray-500 md:text-xl">
-              PICK - PREDICT - CLIMB
-            </p>
-
-            {authReady && !user ? (
-              <div className="mt-6 text-center">
-                <p className="text-xs text-gray-500 md:text-sm">Save your picks and climb the rankings.</p>
-                <p className="mt-2 text-xs text-gray-600 md:text-sm">
-                  <Link
-                    href="/login"
-                    className="font-medium text-gray-900 underline decoration-gray-900 underline-offset-2"
-                  >
-                    Log in
-                  </Link>{' '}
-                  or{' '}
-                  <Link
-                    href="/signup"
-                    className="font-medium text-red-700 underline decoration-red-700 underline-offset-2"
-                  >
-                    Sign up
-                  </Link>
-                </p>
-              </div>
-            ) : null}
-          </div>
+        <section className="mt-12 grid flex-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 lg:gap-6">
+          {competitions.map((c) => (
+            <CompetitionCard key={c.id} competition={c} />
+          ))}
         </section>
 
-        <footer className="mt-8 flex flex-col items-center justify-center gap-4 text-center">
-          <a
-            href="mailto:info@thenextplay.co.za"
-            onClick={() => trackEvent('contact_click', 'landing')}
-            className="text-sm text-gray-500 hover:text-gray-700"
-          >
+        {loadError ? (
+          <p className="mt-4 text-center text-xs text-amber-400/90">
+            Showing default competitions (could not load from server).
+          </p>
+        ) : null}
+
+        <footer className="mt-10 flex flex-col items-center gap-2 text-center text-sm text-gray-500">
+          <Link href="/login" className="text-gray-400 underline-offset-2 hover:text-white hover:underline">
+            Log in
+          </Link>
+          <a href="mailto:info@thenextplay.co.za" className="hover:text-gray-300">
             info@thenextplay.co.za
           </a>
         </footer>
