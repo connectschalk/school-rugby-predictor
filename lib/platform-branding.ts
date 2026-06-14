@@ -10,6 +10,11 @@ export const PLATFORM_LOGO_SRC = '/nextplay-predictor.png'
 /** Square P mark — WhatsApp, Facebook, LinkedIn, X, iMessage Open Graph. */
 export const PLATFORM_OG_IMAGE_SRC = '/nextplay-predictor-logo.png'
 
+/** P mark for admin avatars and predictor position on community voting charts. */
+export const ADMIN_AVATAR_SRC = '/admin-avatar.png'
+
+export const PLATFORM_PREDICTOR_MARK_SRC = PLATFORM_OG_IMAGE_SRC
+
 export const PLATFORM_OG_IMAGE_WIDTH = 374
 export const PLATFORM_OG_IMAGE_HEIGHT = 406
 

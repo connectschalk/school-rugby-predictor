@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { isCompetitionNavActive } from '@/lib/competition-nav'
 
 type Props = {
   competitionSlug: string
@@ -9,12 +10,8 @@ type Props = {
   variant?: 'light' | 'dark'
 }
 
-const LINKS = [
-  { segment: 'predict', label: 'Predict' },
-  { segment: 'fixtures', label: 'Fixtures' },
-  { segment: 'pools', label: 'Pools' },
-  { segment: 'leaderboard', label: 'Leaderboard' },
-] as const
+/** Competition-local nav — fixtures and overview (main sections live in top header). */
+const LINKS = [{ segment: 'fixtures', label: 'Fixtures', target: 'fixtures' as const }] as const
 
 export default function CompetitionSubNav({
   competitionSlug,
@@ -45,9 +42,9 @@ export default function CompetitionSubNav({
         >
           {competitionName}
         </Link>
-        {LINKS.map(({ segment, label }) => {
+        {LINKS.map(({ segment, label, target }) => {
           const href = `${base}/${segment}`
-          const active = pathname === href || pathname.startsWith(`${href}/`)
+          const active = isCompetitionNavActive(pathname, target)
           return (
             <Link
               key={segment}

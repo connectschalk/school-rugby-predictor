@@ -3,10 +3,19 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import {
+  ADMIN_AVATAR_SRC,
   PLATFORM_HOME_HREF,
   PLATFORM_LOGO_ALT,
   PLATFORM_LOGO_SRC,
 } from '@/lib/platform-branding'
+import {
+  COMPETITION_SWITCHER_OPTIONS,
+  competitionSwitcherLabel,
+  getCompetitionScopedHref,
+  getEquivalentCompetitionPath,
+  isCompetitionNavActive,
+  resolveCompetitionSlugFromPathname,
+} from '@/lib/competition-nav'
 import { usePathname, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
@@ -45,8 +54,10 @@ export default function InnerHeaderNav() {
   const [isAdmin, setIsAdmin] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false)
+  const [competitionMenuOpen, setCompetitionMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const mobileMoreRef = useRef<HTMLDivElement>(null)
+  const competitionMenuRef = useRef<HTMLDivElement>(null)
   const userRef = useRef<User | null>(null)
 
   useEffect(() => {
@@ -156,8 +167,20 @@ export default function InnerHeaderNav() {
     return () => document.removeEventListener('pointerdown', onPointerDown)
   }, [mobileMoreOpen])
 
+  useEffect(() => {
+    if (!competitionMenuOpen) return
+    function onPointerDown(e: PointerEvent) {
+      if (competitionMenuRef.current && !competitionMenuRef.current.contains(e.target as Node)) {
+        setCompetitionMenuOpen(false)
+      }
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [competitionMenuOpen])
+
   const closeMenu = useCallback(() => setMenuOpen(false), [])
   const closeMobileMore = useCallback(() => setMobileMoreOpen(false), [])
+  const closeCompetitionMenu = useCallback(() => setCompetitionMenuOpen(false), [])
 
   const signOut = async () => {
     closeMenu()
@@ -191,11 +214,17 @@ export default function InnerHeaderNav() {
   const btnBase =
     'inline-flex items-center justify-center rounded-full border px-4 py-2 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700'
 
-  const rankingsActive = pathname.startsWith('/user-rankings')
-  const poolsActive = pathname.startsWith('/pools')
-  const predictActive = pathname.startsWith('/predict-score')
-  const communityActive =
-    pathname.startsWith('/community-predictor') || pathname.startsWith('/community-picks')
+  const rankingsActive = isCompetitionNavActive(pathname, 'leaderboard')
+  const poolsActive = isCompetitionNavActive(pathname, 'pools')
+  const predictActive = isCompetitionNavActive(pathname, 'predict')
+  const communityActive = isCompetitionNavActive(pathname, 'community')
+  const competitionSlug = resolveCompetitionSlugFromPathname(pathname)
+  const competitionLabel = competitionSwitcherLabel(competitionSlug)
+  const predictHref = getCompetitionScopedHref(pathname, 'predict', competitionSlug)
+  const communityHref = getCompetitionScopedHref(pathname, 'community', competitionSlug)
+  const rankingsHref = getCompetitionScopedHref(pathname, 'leaderboard', competitionSlug)
+  const poolsHref = getCompetitionScopedHref(pathname, 'pools', competitionSlug)
+  const howItWorksHref = `${predictHref}?how=1`
   const activeDot = (
     <span
       className="absolute -bottom-0.5 left-1/2 h-2 w-2 -translate-x-1/2 rounded-full bg-red-600"
@@ -205,29 +234,81 @@ export default function InnerHeaderNav() {
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-x-4 gap-y-3 px-4 py-4 sm:px-6">
-      <Link
-        href={PLATFORM_HOME_HREF}
-        className="flex shrink-0 items-center rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
-        onClick={() => {
-          closeMenu()
-          closeMobileMore()
-        }}
-      >
-        <Image
-          src={PLATFORM_LOGO_SRC}
-          alt={PLATFORM_LOGO_ALT}
-          width={160}
-          height={54}
-          className="h-10 w-auto sm:h-11"
-          priority
-        />
-      </Link>
+      <div className="flex min-w-0 shrink-0 items-center gap-2 sm:gap-3">
+        <Link
+          href={PLATFORM_HOME_HREF}
+          className="flex shrink-0 items-center rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
+          onClick={() => {
+            closeMenu()
+            closeMobileMore()
+            closeCompetitionMenu()
+          }}
+        >
+          <Image
+            src={PLATFORM_LOGO_SRC}
+            alt={PLATFORM_LOGO_ALT}
+            width={160}
+            height={54}
+            className="h-10 w-auto sm:h-11"
+            priority
+          />
+        </Link>
+
+        <div ref={competitionMenuRef} className="relative hidden sm:block">
+          <button
+            type="button"
+            aria-expanded={competitionMenuOpen}
+            aria-haspopup="listbox"
+            onClick={() => {
+              setMenuOpen(false)
+              setMobileMoreOpen(false)
+              setCompetitionMenuOpen((open) => !open)
+            }}
+            className="inline-flex max-w-[12rem] items-center gap-1.5 rounded-full border border-gray-300 bg-white px-3 py-1.5 text-left text-xs font-semibold text-gray-800 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 md:max-w-[14rem] md:text-sm"
+          >
+            <span className="truncate">{competitionLabel}</span>
+            <span className="text-gray-500" aria-hidden>
+              ▾
+            </span>
+          </button>
+          {competitionMenuOpen ? (
+            <div
+              role="listbox"
+              aria-label="Choose competition"
+              className="absolute left-0 z-50 mt-2 w-64 rounded-xl border border-gray-200 bg-white py-1 shadow-lg shadow-black/10"
+            >
+              {COMPETITION_SWITCHER_OPTIONS.map((option) => {
+                const selected = option.slug === competitionSlug
+                return (
+                  <button
+                    key={option.slug}
+                    type="button"
+                    role="option"
+                    aria-selected={selected}
+                    onClick={() => {
+                      closeCompetitionMenu()
+                      router.push(getEquivalentCompetitionPath(pathname, option.slug))
+                    }}
+                    className={`block w-full px-4 py-2.5 text-left text-sm ${
+                      selected
+                        ? 'bg-gray-100 font-bold text-gray-900'
+                        : 'font-medium text-gray-800 hover:bg-gray-50'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                )
+              })}
+            </div>
+          ) : null}
+        </div>
+      </div>
 
       <div className="flex min-w-0 flex-1 items-center justify-end gap-3 sm:gap-4">
         <nav className="flex items-center gap-3 sm:gap-4" aria-label="Main">
           <div className="relative flex flex-col items-center pb-3">
             <Link
-              href="/predict-score"
+              href={predictHref}
               className={predictClasses(predictActive)}
               onClick={() => {
                 closeMenu()
@@ -241,7 +322,7 @@ export default function InnerHeaderNav() {
           </div>
           <div className="relative hidden flex-col items-center pb-3 md:flex">
             <Link
-              href="/community-predictor"
+              href={communityHref}
               className={rankingsClasses(communityActive)}
               onClick={() => {
                 closeMenu()
@@ -255,7 +336,7 @@ export default function InnerHeaderNav() {
           </div>
           <div className="relative hidden flex-col items-center pb-3 md:flex">
             <Link
-              href="/user-rankings"
+              href={rankingsHref}
               className={rankingsClasses(rankingsActive)}
               onClick={() => {
                 closeMenu()
@@ -269,7 +350,7 @@ export default function InnerHeaderNav() {
           </div>
           <div className="relative hidden flex-col items-center pb-3 md:flex">
             <Link
-              href="/pools"
+              href={poolsHref}
               className={rankingsClasses(poolsActive)}
               onClick={() => {
                 closeMenu()
@@ -303,8 +384,29 @@ export default function InnerHeaderNav() {
           </button>
           {mobileMoreOpen ? (
             <div className="absolute right-0 z-50 mt-2 w-56 rounded-xl border border-gray-200 bg-white py-2 shadow-md shadow-black/10">
+              <p className="px-4 pb-2 pt-1 text-[10px] font-bold uppercase tracking-wide text-gray-500">
+                Competition
+              </p>
+              {COMPETITION_SWITCHER_OPTIONS.map((option) => (
+                <button
+                  key={option.slug}
+                  type="button"
+                  onClick={() => {
+                    closeMobileMore()
+                    router.push(getEquivalentCompetitionPath(pathname, option.slug))
+                  }}
+                  className={`block w-full px-4 py-2.5 text-left text-sm ${
+                    option.slug === competitionSlug
+                      ? 'bg-gray-100 font-bold text-gray-900'
+                      : 'font-medium text-gray-800 hover:bg-gray-50'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+              <div className="my-1 border-t border-gray-100" />
               <Link
-                href="/community-predictor"
+                href={communityHref}
                 className="flex items-center gap-2 px-4 py-3 text-sm font-semibold text-gray-900 hover:bg-gray-50"
                 onClick={closeMobileMore}
               >
@@ -312,7 +414,7 @@ export default function InnerHeaderNav() {
                 Community Picks
               </Link>
               <Link
-                href="/user-rankings"
+                href={rankingsHref}
                 className="flex items-center gap-2 px-4 py-3 text-sm font-semibold text-gray-900 hover:bg-gray-50"
                 onClick={closeMobileMore}
               >
@@ -320,7 +422,7 @@ export default function InnerHeaderNav() {
                 Rankings
               </Link>
               <Link
-                href="/pools"
+                href={poolsHref}
                 className="flex items-center gap-2 px-4 py-3 text-sm font-semibold text-gray-900 hover:bg-gray-50"
                 onClick={closeMobileMore}
               >
@@ -372,7 +474,7 @@ export default function InnerHeaderNav() {
                 <LetterAvatar
                   letter={profile?.avatar_letter}
                   colour={profile?.avatar_colour}
-                  avatarUrl={profile?.avatar_url}
+                  avatarUrl={isAdmin ? ADMIN_AVATAR_SRC : profile?.avatar_url}
                   firstName={profile?.first_name}
                   displayName={profile?.display_name}
                   name={displayName}
@@ -407,7 +509,7 @@ export default function InnerHeaderNav() {
                   </Link>
                   <Link
                     role="menuitem"
-                    href="/predict-score?how=1"
+                    href={howItWorksHref}
                     className="block px-4 py-2.5 text-sm font-medium text-gray-900 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-red-700"
                     onClick={closeMenu}
                   >

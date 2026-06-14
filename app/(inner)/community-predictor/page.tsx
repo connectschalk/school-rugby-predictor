@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { usePathname } from 'next/navigation'
 import type { User } from '@supabase/supabase-js'
 import { Calendar } from 'lucide-react'
 import CommunityDistributionPanel from '@/components/community-predictor/CommunityDistributionPanel'
@@ -20,6 +21,12 @@ import {
 } from '@/lib/public-prediction-game'
 import { matchGameAgainstTeamSearch } from '@/lib/team-aliases-db'
 import type { TeamRow } from '@/lib/team-name-match'
+import {
+  getCompetitionScopedHref,
+  parseCompetitionSlugFromPathname,
+  resolveCompetitionSlugFromPathname,
+} from '@/lib/competition-nav'
+import { getCompetitionBySlug, SCHOOLS_COMPETITION_SLUG } from '@/lib/competitions'
 import { supabase } from '@/lib/supabase'
 import { trackEvent } from '@/lib/trackEvent'
 
@@ -97,6 +104,7 @@ type UnlockModalProps = {
   showLockAll: boolean
   lockAllBusy: boolean
   lockAllError: string
+  predictHref: string
   onDismiss: () => void
   onLockAll: () => void
 }
@@ -106,6 +114,7 @@ function UnlockCommunityPicksModal({
   showLockAll,
   lockAllBusy,
   lockAllError,
+  predictHref,
   onDismiss,
   onLockAll,
 }: UnlockModalProps) {
@@ -161,7 +170,7 @@ function UnlockCommunityPicksModal({
         ) : null}
         <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
           <Link
-            href="/predict-score"
+            href={predictHref}
             className="inline-flex flex-1 items-center justify-center rounded-xl bg-gray-900 px-5 py-3 text-center text-sm font-bold text-white shadow-sm hover:bg-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
           >
             Go to Predict
@@ -190,6 +199,9 @@ function UnlockCommunityPicksModal({
 }
 
 export default function CommunityPicksPage() {
+  const pathname = usePathname()
+  const competitionSlug = resolveCompetitionSlugFromPathname(pathname)
+  const predictHref = getCompetitionScopedHref(pathname, 'predict', competitionSlug)
   const [user, setUser] = useState<User | null>(null)
   const [authReady, setAuthReady] = useState(false)
   const [matches, setMatches] = useState<GameMatch[]>([])
@@ -297,16 +309,27 @@ export default function CommunityPicksPage() {
     setLoading(true)
     setLoadError('')
     try {
+      const routeSlug = parseCompetitionSlugFromPathname(pathname)
+      const slugForFilter = routeSlug ?? SCHOOLS_COMPETITION_SLUG
+      const { competition } = await getCompetitionBySlug(supabase, slugForFilter)
+      const competitionId = competition?.id
+
+      let matchQuery = supabase
+        .from('game_matches')
+        .select(
+          'id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at, is_featured, featured_order'
+        )
+        .in('status', ['upcoming', 'locked', 'completed'])
+        .neq('status', 'cancelled')
+        .order('kickoff_time', { ascending: false })
+        .limit(1000)
+
+      if (competitionId) {
+        matchQuery = matchQuery.eq('competition_id', competitionId)
+      }
+
       const [gmRes, aliasRes, teamsRes] = await Promise.all([
-        supabase
-          .from('game_matches')
-          .select(
-            'id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at, is_featured, featured_order'
-          )
-          .in('status', ['upcoming', 'locked', 'completed'])
-          .neq('status', 'cancelled')
-          .order('kickoff_time', { ascending: false })
-          .limit(1000),
+        matchQuery,
         supabase.from('team_aliases').select('*'),
         supabase.from('teams').select('id, name'),
       ])
@@ -333,7 +356,7 @@ export default function CommunityPicksPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [pathname])
 
   useEffect(() => {
     void loadBase()
@@ -558,6 +581,7 @@ export default function CommunityPicksPage() {
         showLockAll={showLockAllInModal}
         lockAllBusy={lockAllModalBusy}
         lockAllError={lockAllModalError}
+        predictHref={predictHref}
         onDismiss={dismissOnboardingSession}
         onLockAll={handleModalLockAll}
       />
@@ -697,7 +721,7 @@ export default function CommunityPicksPage() {
                   Save your pick on Predict a Score, then tap <strong>Lock</strong> for this fixture.
                 </p>
                 <Link
-                  href="/predict-score"
+                  href={predictHref}
                   className="mt-8 inline-flex rounded-2xl bg-red-700 px-8 py-3.5 text-sm font-bold text-white shadow-md hover:bg-red-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-900"
                 >
                   Go to Predict

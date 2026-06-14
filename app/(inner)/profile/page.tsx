@@ -16,6 +16,8 @@ import {
   isDisplayNamePolicyDbError,
   validateDisplayName,
 } from '@/lib/display-name-filter'
+import { fetchUserIsAdmin } from '@/lib/admin-access'
+import { ADMIN_AVATAR_SRC } from '@/lib/platform-branding'
 import { supabase } from '@/lib/supabase'
 import { trackEvent } from '@/lib/trackEvent'
 import { repairUserProfileFromMetadataIfNeeded, type UserProfileRow } from '@/lib/user-profile-metadata'
@@ -33,6 +35,7 @@ export default function ProfilePage() {
   const [chosenColourHex, setChosenColourHex] = useState(DEFAULT_AVATAR_COLOUR)
   /** Preserved on save when set (e.g. `/admin-avatar.png`); not overwritten by letter/colour saves. */
   const [storedAvatarUrl, setStoredAvatarUrl] = useState<string | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
@@ -137,6 +140,20 @@ export default function ProfilePage() {
       subscription.unsubscribe()
     }
   }, [loadProfile])
+
+  useEffect(() => {
+    if (!user) {
+      setIsAdmin(false)
+      return
+    }
+    let cancelled = false
+    void fetchUserIsAdmin(supabase, user.id).then(({ isAdmin: nextIsAdmin }) => {
+      if (!cancelled) setIsAdmin(nextIsAdmin)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [user])
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
@@ -305,14 +322,18 @@ export default function ProfilePage() {
               <LetterAvatar
                 letter={chosenLetter}
                 colour={chosenColourHex}
-                avatarUrl={storedAvatarUrl}
+                avatarUrl={isAdmin ? ADMIN_AVATAR_SRC : storedAvatarUrl}
                 firstName={firstName}
                 displayName={displayName}
                 name={displayName.trim() || firstName.trim() || 'You'}
                 size={96}
               />
             </div>
-            {storedAvatarUrl ? (
+            {isAdmin ? (
+              <p className="mt-2 text-center text-xs text-gray-600">
+                Admin accounts use the NextPlay Predictor mark as their profile icon.
+              </p>
+            ) : storedAvatarUrl ? (
               <p className="mt-2 text-center text-xs text-gray-600">
                 A custom avatar image is set for your account. Saving keeps it along with your letter and colour
                 settings. To use only the letter circle again, set avatar_url to null for your row in Supabase.
