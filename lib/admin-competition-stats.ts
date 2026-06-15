@@ -62,6 +62,7 @@ export async function fetchAllCompetitionsForAdmin(
         hero_image_url: row.hero_image_url != null ? String(row.hero_image_url) : null,
         sport_type: String(row.sport_type ?? ''),
         competition_mode: mode,
+        scoring_mode: row.scoring_mode === 'soccer_exact_score' ? 'soccer_exact_score' : 'rugby_margin',
         is_active: Boolean(row.is_active),
         display_order: Number(row.display_order ?? 0),
       } satisfies Competition

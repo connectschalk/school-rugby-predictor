@@ -700,6 +700,7 @@ export default function CommunityPicksPage() {
               <div className="w-full max-w-full overflow-hidden">
                 <CommunityDistributionPanel
                   stats={stats as CommunityStatsOk}
+                  competitionSlug={competitionSlug}
                   viewerAvatar={
                     user
                       ? {

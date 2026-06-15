@@ -8,7 +8,7 @@ import {
   matchPredictionsClosed,
   predictionCutoffPassed,
 } from '@/lib/prediction-cutoff'
-import { getSchoolTeamLogoPath } from '@/lib/school-team-logos'
+import CompetitionTeamLogo from '@/components/CompetitionTeamLogo'
 
 export type SlipPick = {
   winner: 'home' | 'away' | null
@@ -31,6 +31,7 @@ type Props = {
   onRequireAuth?: () => void
   isAdmin?: boolean
   onAdminModel?: (match: GameMatch) => void
+  competitionSlug?: string | null
 }
 
 function formatKickoffShort(iso: string) {
@@ -50,19 +51,18 @@ function formatKickoffShort(iso: string) {
 function TeamLogoBlock({
   label,
   name,
-  logoSrc,
+  competitionSlug,
   selected,
   disabled,
   onSelect,
 }: {
   label: string
   name: string
-  logoSrc: string | null
+  competitionSlug?: string | null
   selected: boolean
   disabled: boolean
   onSelect: () => void
 }) {
-  const initial = name.trim().slice(0, 1).toUpperCase() || '?'
   return (
     <button
       type="button"
@@ -79,12 +79,12 @@ function TeamLogoBlock({
           selected ? 'bg-white/15 text-white ring-1 ring-white/30' : 'bg-white text-gray-700 ring-1 ring-gray-200'
         }`}
       >
-        {logoSrc ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={logoSrc} alt="" className="h-full w-full object-cover" />
-        ) : (
-          initial
-        )}
+        <CompetitionTeamLogo
+          competitionSlug={competitionSlug}
+          teamName={name}
+          size={40}
+          variant="badge"
+        />
       </span>
       <span className="min-w-0 flex-1">
         <span className="block text-[10px] font-semibold uppercase tracking-wide opacity-80">
@@ -112,6 +112,7 @@ export default function PredictionSlipRow({
   onRequireAuth,
   isAdmin = false,
   onAdminModel,
+  competitionSlug,
 }: Props) {
   const at = new Date()
   const cutoffPassed = predictionCutoffPassed(match, at)
@@ -127,8 +128,6 @@ export default function PredictionSlipRow({
 
   const homeSelected = winner === 'home'
   const awaySelected = winner === 'away'
-  const homeLogo = getSchoolTeamLogoPath(match.home_team)
-  const awayLogo = getSchoolTeamLogoPath(match.away_team)
 
   const hasSavedPrediction = Boolean(prediction)
   const closedByTime = signedIn && !timeAllowsEdit
@@ -195,7 +194,7 @@ export default function PredictionSlipRow({
           <TeamLogoBlock
             label="Home"
             name={match.home_team}
-            logoSrc={homeLogo}
+            competitionSlug={competitionSlug}
             selected={homeSelected}
             disabled={!editable && !guestCanAttempt}
             onSelect={() =>
@@ -205,7 +204,7 @@ export default function PredictionSlipRow({
           <TeamLogoBlock
             label="Away"
             name={match.away_team}
-            logoSrc={awayLogo}
+            competitionSlug={competitionSlug}
             selected={awaySelected}
             disabled={!editable && !guestCanAttempt}
             onSelect={() =>
@@ -331,7 +330,7 @@ export default function PredictionSlipRow({
         <TeamLogoBlock
           label="Home"
           name={match.home_team}
-          logoSrc={homeLogo}
+          competitionSlug={competitionSlug}
           selected={homeSelected}
           disabled={!editable && !guestCanAttempt}
           onSelect={() =>
@@ -341,7 +340,7 @@ export default function PredictionSlipRow({
         <TeamLogoBlock
           label="Away"
           name={match.away_team}
-          logoSrc={awayLogo}
+          competitionSlug={competitionSlug}
           selected={awaySelected}
           disabled={!editable && !guestCanAttempt}
           onSelect={() =>

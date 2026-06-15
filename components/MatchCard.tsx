@@ -2,7 +2,7 @@
 
 import type { ChangeEvent } from 'react'
 import Link from 'next/link'
-import { getCompetitionTeamLogoPath } from '@/lib/competition-team-logos'
+import CompetitionTeamLogo from '@/components/CompetitionTeamLogo'
 
 export const MATCH_CARD_MARGIN_MAX = 50
 
@@ -23,19 +23,18 @@ function formatKickoffShort(iso: string) {
 function TeamPickCell({
   label,
   name,
-  logoSrc,
+  competitionSlug,
   selected,
   disabled,
   onSelect,
 }: {
   label: string
   name: string
-  logoSrc: string | null
+  competitionSlug?: string
   selected: boolean
   disabled: boolean
   onSelect: () => void
 }) {
-  const initial = name.trim().slice(0, 1).toUpperCase() || '?'
   return (
     <button
       type="button"
@@ -52,12 +51,13 @@ function TeamPickCell({
           selected ? 'bg-white/15 text-white ring-1 ring-white/30' : 'bg-white text-slate-700 ring-1 ring-slate-200'
         }`}
       >
-        {logoSrc ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={logoSrc} alt="" className="h-full w-full object-cover" />
-        ) : (
-          initial
-        )}
+        <CompetitionTeamLogo
+          competitionSlug={competitionSlug}
+          teamName={name}
+          size={32}
+          variant="badge"
+          className={selected ? 'bg-transparent' : ''}
+        />
       </span>
       <span className="min-w-0 flex-1">
         <span className="block text-[9px] font-semibold uppercase tracking-wide opacity-80">{label}</span>
@@ -119,8 +119,6 @@ export default function MatchCard({
   onAdminModel,
   competitionSlug,
 }: MatchCardProps) {
-  const homeLogo = getCompetitionTeamLogoPath(competitionSlug, homeTeam)
-  const awayLogo = getCompetitionTeamLogoPath(competitionSlug, awayTeam)
   const homeSelected = winner === 'home'
   const awaySelected = winner === 'away'
 
@@ -182,7 +180,7 @@ export default function MatchCard({
           <TeamPickCell
             label="Home"
             name={homeTeam}
-            logoSrc={homeLogo}
+            competitionSlug={competitionSlug}
             selected={homeSelected}
             disabled={disablePickers}
             onSelect={() => tapSide('home')}
@@ -190,7 +188,7 @@ export default function MatchCard({
           <TeamPickCell
             label="Away"
             name={awayTeam}
-            logoSrc={awayLogo}
+            competitionSlug={competitionSlug}
             selected={awaySelected}
             disabled={disablePickers}
             onSelect={() => tapSide('away')}

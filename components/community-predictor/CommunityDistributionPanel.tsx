@@ -2,8 +2,9 @@
 
 import LetterAvatar from '@/components/LetterAvatar'
 import CommunityMarginDistributionChart from '@/components/community-predictor/CommunityMarginDistributionChart'
+import CommunityTopScorelines from '@/components/community-predictor/CommunityTopScorelines'
 import { formatCommunityMatchScheduleLine, type CommunityStatsOk } from '@/lib/community-predictor'
-import { getSchoolTeamLogoPath } from '@/lib/school-team-logos'
+import CompetitionTeamLogo from '@/components/CompetitionTeamLogo'
 
 function formatPctLabel(n: number): string {
   if (!Number.isFinite(n)) return '0'
@@ -21,17 +22,20 @@ type ViewerAvatar = {
 export default function CommunityDistributionPanel({
   stats,
   viewerAvatar,
+  competitionSlug,
 }: {
   stats: CommunityStatsOk
   viewerAvatar: ViewerAvatar | null
+  competitionSlug?: string | null
 }) {
-  const homeLogo = getSchoolTeamLogoPath(stats.home_team)
-  const awayLogo = getSchoolTeamLogoPath(stats.away_team)
-
   const yours =
-    stats.user_locked_winner != null && stats.user_locked_margin != null
-      ? `${stats.user_locked_winner === 'home' ? stats.home_team : stats.away_team} by ${stats.user_locked_margin}`
-      : null
+    stats.scoring_mode === 'soccer_exact_score'
+      ? stats.user_locked_home_score != null && stats.user_locked_away_score != null
+        ? `${stats.home_team} ${stats.user_locked_home_score} - ${stats.user_locked_away_score} ${stats.away_team}`
+        : null
+      : stats.user_locked_winner != null && stats.user_locked_margin != null
+        ? `${stats.user_locked_winner === 'home' ? stats.home_team : stats.away_team} by ${stats.user_locked_margin}`
+        : null
 
   const avgLine =
     stats.community_average_label != null
@@ -54,14 +58,13 @@ export default function CommunityDistributionPanel({
         <div className="mb-8 grid w-full grid-cols-3 items-center px-2 sm:px-6">
           <div className="flex min-w-0 flex-col items-end text-right">
             <div className="flex h-16 w-16 shrink-0 items-center justify-center sm:h-20 sm:w-20">
-              {homeLogo ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={homeLogo} alt="" className="h-full w-full object-contain" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center rounded-full border border-gray-300 text-xl font-black text-gray-700">
-                  {stats.home_team.slice(0, 1)}
-                </div>
-              )}
+              <CompetitionTeamLogo
+                competitionSlug={competitionSlug}
+                teamName={stats.home_team}
+                size={80}
+                variant="crest"
+                className="h-full w-full"
+              />
             </div>
             <div className="mt-2 line-clamp-2 font-semibold text-gray-900">{stats.home_team}</div>
             <div className="text-sm tracking-wide text-gray-500">HOME</div>
@@ -82,14 +85,13 @@ export default function CommunityDistributionPanel({
 
           <div className="flex min-w-0 flex-col items-start text-left">
             <div className="flex h-16 w-16 shrink-0 items-center justify-center sm:h-20 sm:w-20">
-              {awayLogo ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={awayLogo} alt="" className="h-full w-full object-contain" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center rounded-full border border-gray-300 text-xl font-black text-gray-700">
-                  {stats.away_team.slice(0, 1)}
-                </div>
-              )}
+              <CompetitionTeamLogo
+                competitionSlug={competitionSlug}
+                teamName={stats.away_team}
+                size={80}
+                variant="crest"
+                className="h-full w-full"
+              />
             </div>
             <div className="mt-2 line-clamp-2 font-semibold text-gray-900">{stats.away_team}</div>
             <div className="text-sm tracking-wide text-red-500">AWAY</div>
@@ -98,12 +100,28 @@ export default function CommunityDistributionPanel({
       </div>
 
       <div className="mt-6 flex flex-wrap items-center justify-center gap-3 text-xs text-gray-700 sm:text-sm">
-        <span className="rounded-full bg-gray-900 px-3 py-1 font-semibold text-white">
-          Home {formatPctLabel(stats.home_prediction_pct)}%
-        </span>
-        <span className="rounded-full bg-red-700 px-3 py-1 font-semibold text-white">
-          Away {formatPctLabel(stats.away_prediction_pct)}%
-        </span>
+        {stats.scoring_mode === 'soccer_exact_score' ? (
+          <>
+            <span className="rounded-full bg-gray-900 px-3 py-1 font-semibold text-white">
+              Home win {formatPctLabel(stats.home_prediction_pct)}%
+            </span>
+            <span className="rounded-full bg-gray-500 px-3 py-1 font-semibold text-white">
+              Draw {formatPctLabel(stats.draw_prediction_pct)}%
+            </span>
+            <span className="rounded-full bg-red-700 px-3 py-1 font-semibold text-white">
+              Away win {formatPctLabel(stats.away_prediction_pct)}%
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="rounded-full bg-gray-900 px-3 py-1 font-semibold text-white">
+              Home {formatPctLabel(stats.home_prediction_pct)}%
+            </span>
+            <span className="rounded-full bg-red-700 px-3 py-1 font-semibold text-white">
+              Away {formatPctLabel(stats.away_prediction_pct)}%
+            </span>
+          </>
+        )}
       </div>
       {yours && viewerAvatar ? (
         <div className="mt-3 flex items-center justify-center gap-2 text-sm text-gray-800">
@@ -122,7 +140,13 @@ export default function CommunityDistributionPanel({
         </div>
       ) : null}
 
-      <p className="mt-6 text-center text-sm font-semibold text-gray-900">{avgLine}</p>
+      <p className="mt-6 text-center text-sm font-semibold text-gray-900">
+        {stats.scoring_mode === 'soccer_exact_score'
+          ? stats.community_average_label
+            ? `Community average score: ${stats.community_average_label}`
+            : 'Community average score: —'
+          : avgLine}
+      </p>
       {actualLine || (yours && viewerAvatar) ? (
         <div className="mt-2 flex flex-wrap items-center justify-center gap-3 text-sm font-semibold text-gray-900">
           {actualLine ? (
@@ -148,7 +172,11 @@ export default function CommunityDistributionPanel({
         </div>
       ) : null}
 
-      <CommunityMarginDistributionChart stats={stats} viewerAvatar={viewerAvatar} predictorAppPick={null} />
+      {stats.scoring_mode === 'soccer_exact_score' ? (
+        <CommunityTopScorelines stats={stats} />
+      ) : (
+        <CommunityMarginDistributionChart stats={stats} viewerAvatar={viewerAvatar} predictorAppPick={null} />
+      )}
     </div>
   )
 }

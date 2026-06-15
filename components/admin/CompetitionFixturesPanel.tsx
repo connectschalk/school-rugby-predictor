@@ -9,7 +9,7 @@ import {
   isoToDatetimeLocalInput,
 } from '@/lib/admin-competition-api-client'
 import { adminFixtureVenue, type AdminFixtureRow } from '@/lib/admin-competition-stats'
-import CompetitionTeamLogo, { competitionUsesTeamLogos } from '@/components/admin/CompetitionTeamLogo'
+import CompetitionTeamLogo from '@/components/CompetitionTeamLogo'
 import { CRAVEN_WEEK_TEAM_NAMES } from '@/lib/craven-week-team-logos'
 import { SCHOOLS_COMPETITION_SLUG } from '@/lib/competitions'
 import { WORLD_CUP_TEAM_NAMES } from '@/lib/world-cup-team-logos'
@@ -62,7 +62,6 @@ function formFromFixture(f: AdminFixtureRow): FixtureForm {
 
 export default function CompetitionFixturesPanel({ competitionSlug, fixtures, onRefresh }: Props) {
   const isSchools = competitionSlug === SCHOOLS_COMPETITION_SLUG
-  const showTeamLogos = competitionUsesTeamLogos(competitionSlug)
   const teamPickerNames =
     competitionSlug === 'soccer-world-cup'
       ? WORLD_CUP_TEAM_NAMES
@@ -218,25 +217,21 @@ export default function CompetitionFixturesPanel({ competitionSlug, fixtures, on
                     <td className="py-2 pr-3 whitespace-nowrap">{formatKickoffDisplay(f.kickoff_time)}</td>
                     <td className="py-2 pr-3">
                       <span className="inline-flex items-center gap-1.5">
-                        {showTeamLogos ? (
-                          <CompetitionTeamLogo
-                            competitionSlug={competitionSlug}
-                            teamName={f.home_team}
-                            size={22}
-                          />
-                        ) : null}
+                        <CompetitionTeamLogo
+                          competitionSlug={competitionSlug}
+                          teamName={f.home_team}
+                          size={22}
+                        />
                         {f.home_team}
                       </span>
                     </td>
                     <td className="py-2 pr-3">
                       <span className="inline-flex items-center gap-1.5">
-                        {showTeamLogos ? (
-                          <CompetitionTeamLogo
-                            competitionSlug={competitionSlug}
-                            teamName={f.away_team}
-                            size={22}
-                          />
-                        ) : null}
+                        <CompetitionTeamLogo
+                          competitionSlug={competitionSlug}
+                          teamName={f.away_team}
+                          size={22}
+                        />
                         {f.away_team}
                       </span>
                     </td>
@@ -300,7 +295,7 @@ export default function CompetitionFixturesPanel({ competitionSlug, fixtures, on
                   onChange={(e) => setForm((s) => ({ ...s, home_team: e.target.value }))}
                   list={teamPickerNames ? 'competition-teams' : undefined}
                 />
-                {showTeamLogos && form.home_team ? (
+                {form.home_team ? (
                   <span className="mt-1 inline-flex items-center gap-1.5 text-xs text-gray-500">
                     <CompetitionTeamLogo
                       competitionSlug={competitionSlug}
@@ -319,7 +314,7 @@ export default function CompetitionFixturesPanel({ competitionSlug, fixtures, on
                   onChange={(e) => setForm((s) => ({ ...s, away_team: e.target.value }))}
                   list={teamPickerNames ? 'competition-teams' : undefined}
                 />
-                {showTeamLogos && form.away_team ? (
+                {form.away_team ? (
                   <span className="mt-1 inline-flex items-center gap-1.5 text-xs text-gray-500">
                     <CompetitionTeamLogo
                       competitionSlug={competitionSlug}

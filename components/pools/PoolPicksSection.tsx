@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import CompetitionTeamLogo from '@/components/CompetitionTeamLogo'
 import CommunityDistributionPanel from '@/components/community-predictor/CommunityDistributionPanel'
 import LetterAvatar from '@/components/LetterAvatar'
 import { buildPoolCommunityStatsOk, type PoolMatchPredictionViewerRow } from '@/lib/pool-picks-stats'
@@ -107,11 +108,13 @@ export default function PoolPicksSection({
   poolId,
   userId,
   isMember,
+  competitionSlug,
 }: {
   supabase: SupabaseClient
   poolId: string
   userId: string
   isMember: boolean
+  competitionSlug?: string | null
 }) {
   const [nowTick, setNowTick] = useState(() => Date.now())
   const [loadingGames, setLoadingGames] = useState(true)
@@ -467,7 +470,15 @@ export default function PoolPicksSection({
             <div className="w-full max-w-full min-w-0 overflow-hidden rounded-3xl border border-gray-200 bg-white p-6 shadow-lg shadow-black/10">
               <div className="grid min-w-0 grid-cols-3 gap-2 border-b border-gray-100 pb-6">
                 <div className="min-w-0 text-right">
-                  <p className="text-xs uppercase tracking-wide text-gray-500">Home</p>
+                  <div className="flex justify-end">
+                    <CompetitionTeamLogo
+                      competitionSlug={competitionSlug}
+                      teamName={match.home_team}
+                      size={56}
+                      variant="crest"
+                    />
+                  </div>
+                  <p className="mt-2 text-xs uppercase tracking-wide text-gray-500">Home</p>
                   <p className="mt-1 break-words font-semibold text-gray-900">{match.home_team}</p>
                 </div>
                 <div className="flex flex-col items-center justify-center text-center">
@@ -477,7 +488,13 @@ export default function PoolPicksSection({
                   </span>
                 </div>
                 <div className="min-w-0 text-left">
-                  <p className="text-xs uppercase tracking-wide text-red-600">Away</p>
+                  <CompetitionTeamLogo
+                    competitionSlug={competitionSlug}
+                    teamName={match.away_team}
+                    size={56}
+                    variant="crest"
+                  />
+                  <p className="mt-2 text-xs uppercase tracking-wide text-red-600">Away</p>
                   <p className="mt-1 break-words font-semibold text-gray-900">{match.away_team}</p>
                 </div>
               </div>
@@ -487,7 +504,11 @@ export default function PoolPicksSection({
             </div>
           ) : stats ? (
             <>
-              <CommunityDistributionPanel stats={stats} viewerAvatar={viewerAvatar} />
+              <CommunityDistributionPanel
+                stats={stats}
+                viewerAvatar={viewerAvatar}
+                competitionSlug={competitionSlug}
+              />
               <div className="mt-4 w-full max-w-full min-w-0 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
                 <p className="text-xs font-black uppercase tracking-wide text-gray-600">Pool picks</p>
                 <div className="mt-3 flex flex-col gap-4 sm:flex-row sm:justify-between">

@@ -13,6 +13,7 @@ import {
   fetchSeasonRecentMarginAverages,
   type SeasonLeaderboardRow,
 } from '@/lib/public-prediction-game'
+import { isSoccerExactScoreMode, type CompetitionScoringMode } from '@/lib/competitions'
 import {
   fetchEffectivePoolMatches,
   fetchMyPools,
@@ -23,8 +24,10 @@ import {
 import { supabase } from '@/lib/supabase'
 
 const DEFAULT_SEASON = new Date().getFullYear()
-const TOOLTIP_POINTS =
+const TOOLTIP_POINTS_RUGBY =
   'Total points = correct winner (1) + margin accuracy (up to 1.0) + closest margin bonus (0.5). Max 2.5 per game.'
+const TOOLTIP_POINTS_SOCCER =
+  'Max 4 points per match: 4 exact score, 2 correct result + goal difference, 1 correct result only.'
 const TOOLTIP_MARGIN_AVG = 'Lower is better. Your average distance from the actual margin.'
 const TOOLTIP_DELTA =
   'Season average minus your average margin error on your last 5 scored games (this season). Positive means recent games were closer to the actual margin than your season average.'
@@ -39,6 +42,7 @@ export type CompetitionLeaderboardPanelProps = {
   competitionId: string
   competitionSlug: string
   competitionName?: string
+  scoringMode?: CompetitionScoringMode
 }
 
 function rankCell(rank: number): string {
@@ -53,7 +57,10 @@ function marginAvgDisplay(v: number | null): string {
   return v.toFixed(2)
 }
 
-function sortHelperLabel(tab: LeaderTab): string {
+function sortHelperLabel(tab: LeaderTab, soccerMode: boolean): string {
+  if (soccerMode) {
+    return 'Ranked by total points, then exact scores, then correct results.'
+  }
   switch (tab) {
     case 'margin_avg':
       return 'Ranked by Average Margin Error (lower is better).'
@@ -111,11 +118,25 @@ function withCompetitionRanks<T>(rows: T[], scoreOf: (row: T) => number | null):
   return out
 }
 
-function leaderboardForTab(rows: SeasonLeaderboardRow[], tab: LeaderTab): SeasonLeaderboardRow[] {
+function leaderboardForTab(
+  rows: SeasonLeaderboardRow[],
+  tab: LeaderTab,
+  soccerMode: boolean
+): SeasonLeaderboardRow[] {
   const list = [...rows]
   switch (tab) {
     case 'points':
-      list.sort((a, b) => b.total_points - a.total_points || compareUserId(a, b))
+      if (soccerMode) {
+        list.sort(
+          (a, b) =>
+            b.total_points - a.total_points ||
+            b.exact_score_count - a.exact_score_count ||
+            b.correct_result_count - a.correct_result_count ||
+            compareUserId(a, b)
+        )
+      } else {
+        list.sort((a, b) => b.total_points - a.total_points || compareUserId(a, b))
+      }
       break
     case 'margin_total':
       list.sort(
@@ -139,7 +160,10 @@ export default function CompetitionLeaderboardPanel({
   competitionId,
   competitionSlug,
   competitionName,
+  scoringMode = 'rugby_margin',
 }: CompetitionLeaderboardPanelProps) {
+  const soccerMode = isSoccerExactScoreMode(scoringMode)
+  const tooltipPoints = soccerMode ? TOOLTIP_POINTS_SOCCER : TOOLTIP_POINTS_RUGBY
   const poolsPath = `/competitions/${competitionSlug}/pools`
   const [user, setUser] = useState<User | null>(null)
   const [section, setSection] = useState<RankingSection>('global')
@@ -152,7 +176,7 @@ export default function CompetitionLeaderboardPanel({
   const [season, setSeason] = useState(DEFAULT_SEASON)
   const [seasonOptions, setSeasonOptions] = useState<number[]>(() => [DEFAULT_SEASON])
   const [rows, setRows] = useState<SeasonLeaderboardRow[]>([])
-  const [tab, setTab] = useState<LeaderTab>('margin_avg')
+  const [tab, setTab] = useState<LeaderTab>(soccerMode ? 'points' : 'margin_avg')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [viewMissing, setViewMissing] = useState(false)
@@ -167,7 +191,10 @@ export default function CompetitionLeaderboardPanel({
         : rows,
     [rows, qualification]
   )
-  const displayRows = useMemo(() => leaderboardForTab(baseGlobalRows, tab), [baseGlobalRows, tab])
+  const displayRows = useMemo(
+    () => leaderboardForTab(baseGlobalRows, tab, soccerMode),
+    [baseGlobalRows, tab, soccerMode]
+  )
   const selectedPool = useMemo(
     () => myPools.find((p) => p.id === selectedPoolId) ?? null,
     [myPools, selectedPoolId]
@@ -423,9 +450,15 @@ export default function CompetitionLeaderboardPanel({
                 onChange={(e) => setTab(e.target.value as LeaderTab)}
                 className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm sm:min-w-[11rem] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-red-700"
               >
-                <option value="margin_avg">Average margin error</option>
-                <option value="points">Points</option>
-                <option value="margin_total">Cumulative margin error</option>
+                {soccerMode ? (
+                  <option value="points">Points</option>
+                ) : (
+                  <>
+                    <option value="margin_avg">Average margin error</option>
+                    <option value="points">Points</option>
+                    <option value="margin_total">Cumulative margin error</option>
+                  </>
+                )}
               </select>
             </label>
           </div>
@@ -454,7 +487,7 @@ export default function CompetitionLeaderboardPanel({
           ) : (
             <div className="mt-3 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
               <p className="border-b border-gray-100 bg-gray-50/80 px-3 py-2 text-[11px] text-gray-600 md:text-xs">
-                {sortHelperLabel(tab)}
+                {sortHelperLabel(tab, soccerMode)}
               </p>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[640px] border-collapse text-left text-sm">
@@ -462,22 +495,31 @@ export default function CompetitionLeaderboardPanel({
                     <tr className="border-b border-gray-200 bg-gray-100 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
                       <th className="py-2 pl-3 pr-2">Rank</th>
                       <th className="py-2 pr-2">Player</th>
-                      <th className="py-2 pr-2 text-right normal-case">
-                        <div className="inline-flex items-center justify-end gap-1">
-                          <span>Avg margin</span>
-                          <InfoTooltip label="Average margin error" content={TOOLTIP_MARGIN_AVG} />
-                        </div>
-                      </th>
-                      <th className="py-2 pr-2 text-right normal-case">
-                        <div className="inline-flex items-center justify-end gap-1">
-                          <span>Delta</span>
-                          <InfoTooltip label="Delta" content={TOOLTIP_DELTA} />
-                        </div>
-                      </th>
+                      {soccerMode ? (
+                        <>
+                          <th className="py-2 pr-2 text-right">Exact</th>
+                          <th className="py-2 pr-2 text-right">Results</th>
+                        </>
+                      ) : (
+                        <>
+                          <th className="py-2 pr-2 text-right normal-case">
+                            <div className="inline-flex items-center justify-end gap-1">
+                              <span>Avg margin</span>
+                              <InfoTooltip label="Average margin error" content={TOOLTIP_MARGIN_AVG} />
+                            </div>
+                          </th>
+                          <th className="py-2 pr-2 text-right normal-case">
+                            <div className="inline-flex items-center justify-end gap-1">
+                              <span>Delta</span>
+                              <InfoTooltip label="Delta" content={TOOLTIP_DELTA} />
+                            </div>
+                          </th>
+                        </>
+                      )}
                       <th className="py-2 pr-2 text-right normal-case">
                         <div className="inline-flex items-center justify-end gap-1">
                           <span>Points</span>
-                          <InfoTooltip label="Points" content={TOOLTIP_POINTS} />
+                          <InfoTooltip label="Points" content={tooltipPoints} />
                         </div>
                       </th>
                       <th className="py-2 pr-3 text-right">Picks</th>
@@ -515,14 +557,27 @@ export default function CompetitionLeaderboardPanel({
                               </span>
                             </div>
                           </td>
-                          <td className="py-2 pr-2 text-right font-bold tabular-nums">
-                            {marginAvgDisplay(r.average_margin_error)}
-                          </td>
-                          <td
-                            className={`py-2 pr-2 text-right text-sm font-medium tabular-nums ${deltaToneClass(delta.tone)}`}
-                          >
-                            {delta.text}
-                          </td>
+                          {soccerMode ? (
+                            <>
+                              <td className="py-2 pr-2 text-right font-bold tabular-nums">
+                                {r.exact_score_count}
+                              </td>
+                              <td className="py-2 pr-2 text-right font-bold tabular-nums">
+                                {r.correct_result_count}
+                              </td>
+                            </>
+                          ) : (
+                            <>
+                              <td className="py-2 pr-2 text-right font-bold tabular-nums">
+                                {marginAvgDisplay(r.average_margin_error)}
+                              </td>
+                              <td
+                                className={`py-2 pr-2 text-right text-sm font-medium tabular-nums ${deltaToneClass(delta.tone)}`}
+                              >
+                                {delta.text}
+                              </td>
+                            </>
+                          )}
                           <td className="py-2 pr-2 text-right text-xs tabular-nums text-gray-500">
                             {r.total_points}
                           </td>

@@ -1,7 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Metadata } from 'next'
 import { getOneMatchChallengeBySlug, createOneMatchAnonClient, normalizeOneMatchSlug } from '@/lib/one-match-challenge-lookup'
-import { getSchoolTeamLogoPath } from '@/lib/school-team-logos'
+import { getCompetitionTeamLogoPath } from '@/lib/competition-team-logos'
+import { SCHOOLS_COMPETITION_SLUG } from '@/lib/competitions'
 import { absoluteOneMatchChallengeUrl, absoluteOneMatchOgImageUrl, getPublicSiteUrl } from '@/lib/site-url'
 
 export type OneMatchOgMatch = {
@@ -14,7 +15,7 @@ export type OneMatchOgMatch = {
 }
 
 function absoluteLogoFromSchoolMap(base: string, teamName: string): string | null {
-  const path = getSchoolTeamLogoPath(teamName)
+  const path = getCompetitionTeamLogoPath(SCHOOLS_COMPETITION_SLUG, teamName)
   return path ? `${base}${path}` : null
 }
 

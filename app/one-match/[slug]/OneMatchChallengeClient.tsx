@@ -7,7 +7,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import CommunityMarginDistributionChart from '@/components/community-predictor/CommunityMarginDistributionChart'
 import { OneMatchFinalResultSummary } from '@/components/one-match/OneMatchFinalResultSummary'
 import { OneMatchResultsRankedList } from '@/components/one-match/OneMatchResultsRankedList'
-import { getTeamLogo, RugbyBallIcon } from '@/components/export/team-logo'
+import CompetitionTeamLogo from '@/components/CompetitionTeamLogo'
+import { RugbyBallIcon } from '@/components/export/team-logo'
 import {
   actualPointMargin,
   actualWinnerFromScores,
@@ -20,7 +21,7 @@ import { getOneMatchChallengeBySlug } from '@/lib/one-match-challenge-lookup'
 import { buildCommunityStatsOkFromMarginPicks } from '@/lib/community-predictor'
 import { fetchPredictorAppPickForFixture, type PredictorAppChartPick } from '@/lib/fixture-model-for-match'
 import { PLATFORM_LOGO_ALT, PLATFORM_LOGO_SRC } from '@/lib/platform-branding'
-import { getSchoolTeamLogoPath } from '@/lib/school-team-logos'
+import { SCHOOLS_COMPETITION_SLUG } from '@/lib/competitions'
 import { supabase } from '@/lib/supabase'
 import { getLightTint, getTeamColor } from '@/lib/teamColors'
 
@@ -67,23 +68,19 @@ function winnerLabel(m: GameMatchEmbed, side: 'home' | 'away') {
   return side === 'home' ? m.home_team : m.away_team
 }
 
-function teamLogoSrc(teamName: string): string {
-  return getSchoolTeamLogoPath(teamName) ?? getTeamLogo(teamName)
-}
-
 function TeamCrestImg({ teamName, className = 'h-11 w-11' }: { teamName: string; className?: string }) {
-  const [failed, setFailed] = useState(false)
-  if (!teamName.trim() || failed) {
+  const sizeMatch = className.match(/h-(\d+)/)
+  const size = sizeMatch ? Number(sizeMatch[1]) * 4 : 44
+  if (!teamName.trim()) {
     return <RugbyBallIcon className={`shrink-0 text-gray-700 ${className}`} />
   }
   return (
-    <img
-      src={teamLogoSrc(teamName)}
-      alt=""
-      className={`shrink-0 object-contain ${className}`}
-      loading="lazy"
-      decoding="async"
-      onError={() => setFailed(true)}
+    <CompetitionTeamLogo
+      competitionSlug={SCHOOLS_COMPETITION_SLUG}
+      teamName={teamName}
+      size={size}
+      variant="crest"
+      className={className}
     />
   )
 }

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { CompetitionScoringMode } from '@/lib/competitions'
 
 const BUCKETS = ['5', '10', '15', '20+'] as const
 export type CommunityMarginBucket = (typeof BUCKETS)[number]
@@ -65,7 +66,7 @@ export function buildCommunityStatsOkFromMarginPicks(
   options?: {
     viewerPick?: WinnerMarginPick | null
   }
-): CommunityStatsOk {
+): CommunityStatsOkRugby {
   const hs = match.home_score
   const ascr = match.away_score
   const completed = match.status === 'completed'
@@ -121,6 +122,7 @@ export function buildCommunityStatsOkFromMarginPicks(
   return {
     allowed: true,
     reason: null,
+    scoring_mode: 'rugby_margin',
     match_id: match.id,
     home_team: match.home_team,
     away_team: match.away_team,
@@ -161,9 +163,18 @@ export type CommunityStatsDenied = {
   status?: string
 }
 
-export type CommunityStatsOk = {
+export type CommunityScorelineRow = {
+  home_score: number
+  away_score: number
+  count: number
+  percentage: number
+  label: string
+}
+
+export type CommunityStatsBase = {
   allowed: true
   reason: null
+  scoring_mode: CompetitionScoringMode
   match_id: string
   home_team: string
   away_team: string
@@ -171,23 +182,33 @@ export type CommunityStatsOk = {
   status: string
   home_score: number | null
   away_score: number | null
-  /** From final scores when both set; else null. */
   actual_winner: 'home' | 'away' | 'draw' | null
-  /** abs(home_score - away_score) when both scores set; else null. */
   actual_margin: number | null
   total_predictions: number
   home_prediction_count: number
   away_prediction_count: number
-  /** Percent of all picks that chose home (0–100, one decimal from RPC). */
   home_prediction_pct: number
-  /** Percent of all picks that chose away (0–100, one decimal from RPC). */
   away_prediction_pct: number
-  bucket_rows: CommunityBucketRow[]
-  /** e.g. "Paarl Boys by 5", "Draw / even", or null if no picks. */
   community_average_label: string | null
+}
+
+export type CommunityStatsOkRugby = CommunityStatsBase & {
+  scoring_mode: 'rugby_margin'
+  bucket_rows: CommunityBucketRow[]
   user_locked_winner: 'home' | 'away' | null
   user_locked_margin: number | null
 }
+
+export type CommunityStatsOkSoccer = CommunityStatsBase & {
+  scoring_mode: 'soccer_exact_score'
+  draw_prediction_count: number
+  draw_prediction_pct: number
+  top_scorelines: CommunityScorelineRow[]
+  user_locked_home_score: number | null
+  user_locked_away_score: number | null
+}
+
+export type CommunityStatsOk = CommunityStatsOkRugby | CommunityStatsOkSoccer
 
 export type CommunityStatsResponse = CommunityStatsDenied | CommunityStatsOk
 
@@ -264,6 +285,30 @@ function parseBucketRows(raw: unknown): CommunityBucketRow[] {
   return out
 }
 
+function parseScorelineRows(raw: unknown): CommunityScorelineRow[] {
+  if (!Array.isArray(raw)) return []
+  const out: CommunityScorelineRow[] = []
+  for (const row of raw) {
+    if (!row || typeof row !== 'object') continue
+    const o = row as Record<string, unknown>
+    const home = parseNullableInt(o.home_score)
+    const away = parseNullableInt(o.away_score)
+    if (home == null || away == null) continue
+    out.push({
+      home_score: home,
+      away_score: away,
+      count: num(o.count),
+      percentage: num(o.percentage),
+      label: String(o.label ?? `${home}-${away}`),
+    })
+  }
+  return out
+}
+
+function parseScoringMode(v: unknown): CompetitionScoringMode {
+  return v === 'soccer_exact_score' ? 'soccer_exact_score' : 'rugby_margin'
+}
+
 export function parseCommunityStatsRpc(data: unknown): CommunityStatsResponse {
   if (!data || typeof data !== 'object') {
     return { allowed: false, reason: 'match_not_found' }
@@ -297,9 +342,12 @@ export function parseCommunityStatsRpc(data: unknown): CommunityStatsResponse {
   const avgRaw = o.community_average_label
   const hs = parseNullableInt(o.home_score)
   const ascr = parseNullableInt(o.away_score)
-  return {
-    allowed: true,
+  const scoringMode = parseScoringMode(o.scoring_mode)
+
+  const base = {
+    allowed: true as const,
     reason: null,
+    scoring_mode: scoringMode,
     match_id: String(o.match_id ?? ''),
     home_team: String(o.home_team ?? ''),
     away_team: String(o.away_team ?? ''),
@@ -314,8 +362,25 @@ export function parseCommunityStatsRpc(data: unknown): CommunityStatsResponse {
     away_prediction_count: awayC,
     home_prediction_pct: homePct,
     away_prediction_pct: awayPct,
-    bucket_rows: parseBucketRows(o.bucket_rows),
     community_average_label: avgRaw != null && String(avgRaw).trim() !== '' ? String(avgRaw) : null,
+  }
+
+  if (scoringMode === 'soccer_exact_score') {
+    return {
+      ...base,
+      scoring_mode: 'soccer_exact_score',
+      draw_prediction_count: num(o.draw_prediction_count),
+      draw_prediction_pct: num(o.draw_prediction_pct),
+      top_scorelines: parseScorelineRows(o.top_scorelines),
+      user_locked_home_score: parseNullableInt(o.user_locked_home_score),
+      user_locked_away_score: parseNullableInt(o.user_locked_away_score),
+    }
+  }
+
+  return {
+    ...base,
+    scoring_mode: 'rugby_margin',
+    bucket_rows: parseBucketRows(o.bucket_rows),
     user_locked_winner: o.user_locked_winner === 'away' ? 'away' : o.user_locked_winner === 'home' ? 'home' : null,
     user_locked_margin:
       o.user_locked_margin === null || o.user_locked_margin === undefined ? null : num(o.user_locked_margin),

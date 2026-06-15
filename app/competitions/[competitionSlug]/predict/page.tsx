@@ -12,6 +12,7 @@ export default async function CompetitionPredictPage({ params }: Props) {
       competitionId={competition.id}
       competitionSlug={competition.slug}
       competitionName={title}
+      scoringMode={competition.scoring_mode}
       showProvinceFilters={competition.competition_mode === 'custom_pool_fixtures'}
     />
   )

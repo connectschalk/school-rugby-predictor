@@ -15,7 +15,8 @@ import {
 } from '@/lib/public-prediction-game'
 import { fetchUserIsAdmin } from '@/lib/admin-access'
 import PredictionMarginModal from '@/components/predict-score/PredictionMarginModal'
-import { getSchoolTeamLogoPath } from '@/lib/school-team-logos'
+import CompetitionTeamLogo from '@/components/CompetitionTeamLogo'
+import { SCHOOLS_COMPETITION_SLUG } from '@/lib/competitions'
 import { supabase } from '@/lib/supabase'
 import { trackEvent } from '@/lib/trackEvent'
 
@@ -154,8 +155,6 @@ export default function PredictScoreMatchPage() {
     match.status === 'completed' && hs != null && as != null
       ? `${match.home_team} ${hs} – ${as} ${match.away_team}`
       : `${match.home_team} vs ${match.away_team}`
-  const homeLogo = getSchoolTeamLogoPath(match.home_team)
-  const awayLogo = getSchoolTeamLogoPath(match.away_team)
   const at = new Date()
   const closed = matchPredictionsClosed(match, at)
   const kickHm = formatKickoffHm(match.kickoff_time)
@@ -179,34 +178,22 @@ export default function PredictScoreMatchPage() {
         </p>
         <div className="mt-4 flex flex-col items-center gap-4 sm:flex-row sm:items-center sm:justify-center sm:gap-8">
           <div className="flex items-center gap-3">
-            {homeLogo ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={homeLogo}
-                alt=""
-                className="h-14 w-14 rounded-lg border border-gray-200 object-cover"
-              />
-            ) : (
-              <span className="flex h-14 w-14 items-center justify-center rounded-lg border border-gray-200 bg-teal-50 text-lg font-bold text-teal-900">
-                {match.home_team.trim().slice(0, 1).toUpperCase()}
-              </span>
-            )}
+            <CompetitionTeamLogo
+              competitionSlug={SCHOOLS_COMPETITION_SLUG}
+              teamName={match.home_team}
+              size={56}
+              variant="crest"
+            />
             <span className="text-lg font-bold text-gray-900">{match.home_team}</span>
           </div>
           <span className="text-sm font-black text-gray-400">VS</span>
           <div className="flex items-center gap-3">
-            {awayLogo ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={awayLogo}
-                alt=""
-                className="h-14 w-14 rounded-lg border border-gray-200 object-cover"
-              />
-            ) : (
-              <span className="flex h-14 w-14 items-center justify-center rounded-lg border border-gray-200 bg-teal-50 text-lg font-bold text-teal-900">
-                {match.away_team.trim().slice(0, 1).toUpperCase()}
-              </span>
-            )}
+            <CompetitionTeamLogo
+              competitionSlug={SCHOOLS_COMPETITION_SLUG}
+              teamName={match.away_team}
+              size={56}
+              variant="crest"
+            />
             <span className="text-lg font-bold text-gray-900">{match.away_team}</span>
           </div>
         </div>

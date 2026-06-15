@@ -5,6 +5,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import type { User } from '@supabase/supabase-js'
 import MatchCard, { MATCH_CARD_MARGIN_MAX } from '@/components/MatchCard'
+import SoccerMatchCard from '@/components/competitions/SoccerMatchCard'
 import ProvinceLogoMark from '@/components/ProvinceLogoMark'
 import PredictScoreAuthModal from '@/components/predict-score/PredictScoreAuthModal'
 import PredictionMarginModal from '@/components/predict-score/PredictionMarginModal'
@@ -12,13 +13,18 @@ import { fetchUserIsAdmin } from '@/lib/admin-access'
 import { canEditPredictionOnMatch, matchPredictionsClosed } from '@/lib/prediction-cutoff'
 import {
   defaultPick,
+  defaultSoccerPick,
   groupByDateOnly,
   groupByProvinceThenDate,
   parseMarginFromInput,
+  parseSoccerGoalsFromInput,
   predictionMap,
+  upsertSoccerUserPrediction,
   upsertUserPrediction,
   type PickState,
+  type SoccerPickState,
 } from '@/lib/predict-score-common'
+import { isSoccerExactScoreMode, type CompetitionScoringMode } from '@/lib/competitions'
 import { fetchEffectivePoolMatches, fetchMyPools } from '@/lib/pools'
 import {
   fetchCompetitionUpcomingMatches,
@@ -41,6 +47,7 @@ export type PredictScorePanelProps = {
   competitionId: string
   competitionSlug: string
   competitionName?: string
+  scoringMode?: CompetitionScoringMode
   /** Schools-style province crest filters (custom_pool_fixtures). */
   showProvinceFilters?: boolean
 }
@@ -62,13 +69,16 @@ export default function PredictScorePanel({
   competitionId,
   competitionSlug,
   competitionName,
+  scoringMode = 'rugby_margin',
   showProvinceFilters = true,
 }: PredictScorePanelProps) {
+  const soccerMode = isSoccerExactScoreMode(scoringMode)
   const [user, setUser] = useState<User | null>(null)
   const [authReady, setAuthReady] = useState(false)
   const [matches, setMatches] = useState<GameMatch[]>([])
   const [predictions, setPredictions] = useState<Map<string, UserPredictionRow>>(() => new Map())
   const [picksByMatch, setPicksByMatch] = useState<Record<string, PickState>>({})
+  const [soccerPicksByMatch, setSoccerPicksByMatch] = useState<Record<string, SoccerPickState>>({})
   const [loadError, setLoadError] = useState('')
   const [loading, setLoading] = useState(true)
   const [submitError, setSubmitError] = useState('')
@@ -200,11 +210,33 @@ export default function PredictScorePanel({
   }, [user, matches, matchIds, reloadPredictions])
 
   useEffect(() => {
+    if (soccerMode) {
+      setSoccerPicksByMatch((prev) => {
+        const next = { ...prev }
+        for (const m of matches) {
+          const p = predictions.get(m.id)
+          if (p?.predicted_home_score != null && p.predicted_away_score != null) {
+            next[m.id] = {
+              homeGoals: String(p.predicted_home_score),
+              awayGoals: String(p.predicted_away_score),
+            }
+          } else if (next[m.id] === undefined) {
+            next[m.id] = defaultSoccerPick()
+          }
+        }
+        return next
+      })
+      return
+    }
+
     setPicksByMatch((prev) => {
       const next = { ...prev }
       for (const m of matches) {
         const p = predictions.get(m.id)
-        if (p) {
+        if (
+          p?.predicted_winner === 'home' ||
+          p?.predicted_winner === 'away'
+        ) {
           next[m.id] = { winner: p.predicted_winner, margin: String(p.predicted_margin) }
         } else if (next[m.id] === undefined) {
           next[m.id] = defaultPick()
@@ -212,7 +244,7 @@ export default function PredictScorePanel({
       }
       return next
     })
-  }, [matches, predictions])
+  }, [matches, predictions, soccerMode])
 
   useEffect(() => {
     if (!flashSubmittedId) return
@@ -272,6 +304,20 @@ export default function PredictScorePanel({
     })
   }, [])
 
+  const setSoccerPick = useCallback((matchId: string, patch: Partial<SoccerPickState>) => {
+    setSoccerPicksByMatch((prev) => {
+      const cur = prev[matchId] ?? defaultSoccerPick()
+      const merged: SoccerPickState = { ...cur, ...patch }
+      if (typeof patch.homeGoals === 'string') {
+        merged.homeGoals = patch.homeGoals.replace(/\D/g, '').slice(0, 2)
+      }
+      if (typeof patch.awayGoals === 'string') {
+        merged.awayGoals = patch.awayGoals.replace(/\D/g, '').slice(0, 2)
+      }
+      return { ...prev, [matchId]: merged }
+    })
+  }, [])
+
   const upsertPrediction = useCallback(
     async (input: { matchId: string; predictedWinner: 'home' | 'away'; predictedMargin: number }) => {
       if (!user) return { error: new Error('Not signed in') as Error | null }
@@ -292,6 +338,33 @@ export default function PredictScorePanel({
       setSubmitError('Predictions are closed for this match.')
       return
     }
+
+    if (soccerMode) {
+      const slip = soccerPicksByMatch[matchId] ?? defaultSoccerPick()
+      const homeGoals = parseSoccerGoalsFromInput(slip.homeGoals)
+      const awayGoals = parseSoccerGoalsFromInput(slip.awayGoals)
+      if (homeGoals === null || awayGoals === null) {
+        setSubmitError('Enter home and away goals (0–20).')
+        return
+      }
+      setSubmitError('')
+      setSubmittingMatchId(matchId)
+      const { error } = await upsertSoccerUserPrediction(supabase, user, {
+        matchId,
+        predictedHomeScore: homeGoals,
+        predictedAwayScore: awayGoals,
+      })
+      if (error) {
+        setSubmitError(error.message)
+        setSubmittingMatchId(null)
+        return
+      }
+      await reloadPredictions(user.id, matchIds.length ? matchIds : [matchId])
+      setFlashSubmittedId(matchId)
+      setSubmittingMatchId(null)
+      return
+    }
+
     const slip = picksByMatch[matchId]
     if (!slip?.winner) {
       setSubmitError('Pick a winner for this match.')
@@ -341,6 +414,74 @@ export default function PredictScorePanel({
       await reloadPredictions(user.id, matchIds.length ? matchIds : [matchId])
     }
     setLockingMatchId(null)
+  }
+
+  const renderPredictMatchRow = (m: GameMatch) => {
+    const pred = predictions.get(m.id)
+    const closed = matchPredictionsClosed(m, atDate)
+    const editable = canEditPredictionOnMatch(m, atDate)
+    const rowBusy = submittingMatchId === m.id
+    const showLock = signedIn && Boolean(pred?.id) && !pred?.is_locked && editable && !closed
+
+    if (soccerMode) {
+      const pick = soccerPicksByMatch[m.id] ?? defaultSoccerPick()
+      return (
+        <div key={m.id} id={`predict-card-${m.id}`} className="scroll-mt-24">
+          <SoccerMatchCard
+            competitionSlug={competitionSlug}
+            homeTeam={m.home_team}
+            awayTeam={m.away_team}
+            kickoffTime={m.kickoff_time}
+            homeGoalsInput={pick.homeGoals}
+            awayGoalsInput={pick.awayGoals}
+            onHomeGoalsChange={(value) => setSoccerPick(m.id, { homeGoals: value })}
+            onAwayGoalsChange={(value) => setSoccerPick(m.id, { awayGoals: value })}
+            matchId={m.id}
+            signedIn={signedIn}
+            predictionsClosed={closed}
+            editable={editable}
+            predictionRowLocked={Boolean(pred?.is_locked)}
+            hasExistingSubmission={Boolean(pred?.id)}
+            submitting={rowBusy}
+            flashSubmitted={flashSubmittedId === m.id}
+            lockingPick={lockingMatchId === m.id}
+            onSubmit={() => void handleSubmitOne(m.id)}
+            onLockPick={showLock ? () => void handleLockOne(m.id) : undefined}
+            onRequireAuth={() => setAuthModalOpen(true)}
+          />
+        </div>
+      )
+    }
+
+    const pick = picksByMatch[m.id] ?? defaultPick()
+    return (
+      <div key={m.id} id={`predict-card-${m.id}`} className="scroll-mt-24">
+        <MatchCard
+          competitionSlug={competitionSlug}
+          homeTeam={m.home_team}
+          awayTeam={m.away_team}
+          kickoffTime={m.kickoff_time}
+          winner={pick.winner}
+          marginInput={pick.margin}
+          onSelectWinner={(side) => setPick(m.id, { winner: side })}
+          onMarginInputChange={(value) => setPick(m.id, { margin: value })}
+          matchId={m.id}
+          signedIn={signedIn}
+          predictionsClosed={closed}
+          editable={editable}
+          predictionRowLocked={Boolean(pred?.is_locked)}
+          hasExistingSubmission={Boolean(pred?.id)}
+          submitting={rowBusy}
+          flashSubmitted={flashSubmittedId === m.id}
+          lockingPick={lockingMatchId === m.id}
+          onSubmit={() => void handleSubmitOne(m.id)}
+          onLockPick={showLock ? () => void handleLockOne(m.id) : undefined}
+          onRequireAuth={() => setAuthModalOpen(true)}
+          isAdmin={isUserAdmin}
+          onAdminModel={isUserAdmin ? () => setMarginModalMatch(m) : undefined}
+        />
+      </div>
+    )
   }
 
   return (
@@ -546,44 +687,7 @@ export default function PredictScorePanel({
                   </div>
                 </div>
                 <div className="space-y-2">
-                  {day.matches.map((m) => {
-                    const pick = picksByMatch[m.id] ?? defaultPick()
-                    const pred = predictions.get(m.id)
-                    const closed = matchPredictionsClosed(m, atDate)
-                    const editable = canEditPredictionOnMatch(m, atDate)
-                    const rowBusy = submittingMatchId === m.id
-                    const showLock =
-                      signedIn && Boolean(pred?.id) && !pred?.is_locked && editable && !closed
-
-                    return (
-                      <div key={m.id} id={`predict-card-${m.id}`} className="scroll-mt-24">
-                        <MatchCard
-                          competitionSlug={competitionSlug}
-                          homeTeam={m.home_team}
-                          awayTeam={m.away_team}
-                          kickoffTime={m.kickoff_time}
-                          winner={pick.winner}
-                          marginInput={pick.margin}
-                          onSelectWinner={(side) => setPick(m.id, { winner: side })}
-                          onMarginInputChange={(value) => setPick(m.id, { margin: value })}
-                          matchId={m.id}
-                          signedIn={signedIn}
-                          predictionsClosed={closed}
-                          editable={editable}
-                          predictionRowLocked={Boolean(pred?.is_locked)}
-                          hasExistingSubmission={Boolean(pred?.id)}
-                          submitting={rowBusy}
-                          flashSubmitted={flashSubmittedId === m.id}
-                          lockingPick={lockingMatchId === m.id}
-                          onSubmit={() => void handleSubmitOne(m.id)}
-                          onLockPick={showLock ? () => void handleLockOne(m.id) : undefined}
-                          onRequireAuth={() => setAuthModalOpen(true)}
-                          isAdmin={isUserAdmin}
-                          onAdminModel={isUserAdmin ? () => setMarginModalMatch(m) : undefined}
-                        />
-                      </div>
-                    )
-                  })}
+                  {day.matches.map((m) => renderPredictMatchRow(m))}
                 </div>
               </div>
             ))}
@@ -609,48 +713,7 @@ export default function PredictScorePanel({
                     </div>
                   </div>
                   <div className="space-y-2">
-                    {day.matches.map((m) => {
-                      const pick = picksByMatch[m.id] ?? defaultPick()
-                      const pred = predictions.get(m.id)
-                      const closed = matchPredictionsClosed(m, atDate)
-                      const editable = canEditPredictionOnMatch(m, atDate)
-                      const rowBusy = submittingMatchId === m.id
-                      const showLock =
-                        signedIn &&
-                        Boolean(pred?.id) &&
-                        !pred?.is_locked &&
-                        editable &&
-                        !closed
-
-                      return (
-                        <div key={m.id} id={`predict-card-${m.id}`} className="scroll-mt-24">
-                          <MatchCard
-                            competitionSlug={competitionSlug}
-                            homeTeam={m.home_team}
-                            awayTeam={m.away_team}
-                            kickoffTime={m.kickoff_time}
-                            winner={pick.winner}
-                            marginInput={pick.margin}
-                            onSelectWinner={(side) => setPick(m.id, { winner: side })}
-                            onMarginInputChange={(value) => setPick(m.id, { margin: value })}
-                            matchId={m.id}
-                            signedIn={signedIn}
-                            predictionsClosed={closed}
-                            editable={editable}
-                            predictionRowLocked={Boolean(pred?.is_locked)}
-                            hasExistingSubmission={Boolean(pred?.id)}
-                            submitting={rowBusy}
-                            flashSubmitted={flashSubmittedId === m.id}
-                            lockingPick={lockingMatchId === m.id}
-                            onSubmit={() => void handleSubmitOne(m.id)}
-                            onLockPick={showLock ? () => void handleLockOne(m.id) : undefined}
-                            onRequireAuth={() => setAuthModalOpen(true)}
-                            isAdmin={isUserAdmin}
-                            onAdminModel={isUserAdmin ? () => setMarginModalMatch(m) : undefined}
-                          />
-                        </div>
-                      )
-                    })}
+                    {day.matches.map((m) => renderPredictMatchRow(m))}
                   </div>
                 </div>
               ))}

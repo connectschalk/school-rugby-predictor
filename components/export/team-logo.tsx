@@ -1,13 +1,16 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { getCompetitionTeamLogoPath } from '@/lib/competition-team-logos'
+import { SCHOOLS_COMPETITION_SLUG } from '@/lib/competitions'
 
 function normalizeTeamName(teamName: string) {
   return teamName.trim().toLowerCase().replace(/\s+/g, '-')
 }
 
+/** @deprecated Use getCompetitionTeamLogoPath with a competition slug. */
 export function getTeamLogo(teamName: string) {
-  return `/team-logos/${normalizeTeamName(teamName)}.png`
+  return getCompetitionTeamLogoPath(SCHOOLS_COMPETITION_SLUG, teamName) ?? `/team-logos/${normalizeTeamName(teamName)}.png`
 }
 
 export function RugbyBallIcon({ className = 'h-12 w-12 text-gray-700' }: { className?: string }) {
@@ -56,6 +59,7 @@ type TeamLogoCircleProps = {
   teamName: string
   /** Override logo URL (still uses rugby-ball fallback on error). */
   logoUrl?: string
+  competitionSlug?: string | null
   sizeClassName?: string
   imageSizeClassName?: string
 }
@@ -66,11 +70,15 @@ type TeamLogoCircleProps = {
 export function TeamLogoCircle({
   teamName,
   logoUrl,
+  competitionSlug,
   sizeClassName = 'h-32 w-32 md:h-36 md:w-36',
   imageSizeClassName = 'h-[82%] w-[82%]',
 }: TeamLogoCircleProps) {
   const [failed, setFailed] = useState(false)
-  const resolvedSrc = useMemo(() => logoUrl ?? getTeamLogo(teamName), [logoUrl, teamName])
+  const resolvedSrc = useMemo(
+    () => logoUrl ?? getCompetitionTeamLogoPath(competitionSlug, teamName) ?? getTeamLogo(teamName),
+    [logoUrl, competitionSlug, teamName]
+  )
 
   return (
     <div

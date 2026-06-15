@@ -34,6 +34,7 @@ type Props = {
   onRequireAuth?: () => void
   isAdmin?: boolean
   onAdminModel?: (match: GameMatch) => void
+  competitionSlug?: string | null
 }
 
 export default function PredictScoreSlipListSection({
@@ -59,6 +60,7 @@ export default function PredictScoreSlipListSection({
   onRequireAuth,
   isAdmin = false,
   onAdminModel,
+  competitionSlug,
 }: Props) {
   if (matches.length === 0) return null
 
@@ -96,6 +98,7 @@ export default function PredictScoreSlipListSection({
                 onRequireAuth={onRequireAuth}
                 isAdmin={isAdmin}
                 onAdminModel={onAdminModel}
+                competitionSlug={competitionSlug}
               />
             )
           })}

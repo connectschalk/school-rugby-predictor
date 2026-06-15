@@ -2,6 +2,8 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 export type CompetitionMode = 'custom_pool_fixtures' | 'official_fixed_fixtures'
 
+export type CompetitionScoringMode = 'rugby_margin' | 'soccer_exact_score'
+
 export type Competition = {
   id: string
   slug: string
@@ -11,11 +13,21 @@ export type Competition = {
   hero_image_url: string | null
   sport_type: string
   competition_mode: CompetitionMode
+  scoring_mode: CompetitionScoringMode
   is_active: boolean
   display_order: number
 }
 
 export const SCHOOLS_COMPETITION_SLUG = 'nextplay-schools'
+export const SOCCER_WORLD_CUP_SLUG = 'soccer-world-cup'
+
+function parseScoringMode(raw: unknown): CompetitionScoringMode {
+  return raw === 'soccer_exact_score' ? 'soccer_exact_score' : 'rugby_margin'
+}
+
+export function isSoccerExactScoreMode(mode: CompetitionScoringMode | string | null | undefined): boolean {
+  return mode === 'soccer_exact_score'
+}
 
 function parseCompetition(row: Record<string, unknown>): Competition | null {
   if (!row?.id || !row?.slug || !row?.name) return null
@@ -30,6 +42,7 @@ function parseCompetition(row: Record<string, unknown>): Competition | null {
     hero_image_url: row.hero_image_url != null ? String(row.hero_image_url) : null,
     sport_type: String(row.sport_type ?? ''),
     competition_mode: mode,
+    scoring_mode: parseScoringMode(row.scoring_mode),
     is_active: Boolean(row.is_active),
     display_order: Number(row.display_order ?? 0),
   }

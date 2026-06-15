@@ -14,7 +14,7 @@ import {
 } from '@/lib/province-logos'
 import { supabase } from '@/lib/supabase'
 
-import CompetitionTeamLogo, { competitionUsesTeamLogos } from '@/components/admin/CompetitionTeamLogo'
+import CompetitionTeamLogo from '@/components/CompetitionTeamLogo'
 
 export type CompetitionFixturesPanelProps = {
   competitionId: string
@@ -38,7 +38,6 @@ function FixtureRow({
   match: GameMatch
   competitionSlug?: string
 }) {
-  const showTeamLogos = competitionSlug ? competitionUsesTeamLogos(competitionSlug) : false
   const score =
     match.status === 'completed' && match.home_score != null && match.away_score != null
       ? `${match.home_score} – ${match.away_score}`
@@ -53,13 +52,13 @@ function FixtureRow({
         </div>
       </div>
       <div className="flex min-w-0 items-center gap-1.5 font-semibold text-slate-900">
-        {showTeamLogos && competitionSlug ? (
+        {competitionSlug ? (
           <CompetitionTeamLogo competitionSlug={competitionSlug} teamName={match.home_team} size={22} />
         ) : null}
         <span className="min-w-0 truncate">{match.home_team}</span>
       </div>
       <div className="flex min-w-0 items-center gap-1.5 font-semibold text-slate-900">
-        {showTeamLogos && competitionSlug ? (
+        {competitionSlug ? (
           <CompetitionTeamLogo competitionSlug={competitionSlug} teamName={match.away_team} size={22} />
         ) : null}
         <span className="min-w-0 truncate">{match.away_team}</span>

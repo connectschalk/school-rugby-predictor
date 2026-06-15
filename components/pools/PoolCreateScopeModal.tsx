@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import ProvinceLogoMark from '@/components/ProvinceLogoMark'
 import { filterCanonicalsForPickerQuery } from '@/lib/pool-picker-teams'
-import { getSchoolTeamLogoPath } from '@/lib/school-team-logos'
+import CompetitionTeamLogo from '@/components/CompetitionTeamLogo'
+import { SCHOOLS_COMPETITION_SLUG } from '@/lib/competitions'
 import type { FixtureGroupRow } from '@/lib/pools'
 
 type Tab = 'provinces' | 'events'
@@ -20,6 +21,7 @@ type Props = {
   aliasKeyToCanonical: Map<string, string> | null
   selectedTeamNames: string[]
   onChangeSelectedTeamNames: (names: string[]) => void
+  competitionSlug?: string | null
 }
 
 export default function PoolCreateScopeModal({
@@ -33,6 +35,7 @@ export default function PoolCreateScopeModal({
   aliasKeyToCanonical,
   selectedTeamNames,
   onChangeSelectedTeamNames,
+  competitionSlug = SCHOOLS_COMPETITION_SLUG,
 }: Props) {
   const [tab, setTab] = useState<Tab>('provinces')
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -218,7 +221,6 @@ export default function PoolCreateScopeModal({
                           <div className="mt-2 grid max-h-52 grid-cols-1 gap-1.5 overflow-y-auto sm:grid-cols-2">
                             {filteredExpandedTeams.map((name) => {
                               const sel = selectedTeamSet.has(name)
-                              const logo = getSchoolTeamLogoPath(name)
                               return (
                                 <button
                                   key={name}
@@ -231,12 +233,12 @@ export default function PoolCreateScopeModal({
                                   }`}
                                 >
                                   <span className="relative flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded bg-gray-100">
-                                    {logo ? (
-                                      // eslint-disable-next-line @next/next/no-img-element
-                                      <img src={logo} alt="" className="h-6 w-6 object-contain" draggable={false} />
-                                    ) : (
-                                      <span className="text-[9px] text-gray-400">?</span>
-                                    )}
+                                    <CompetitionTeamLogo
+                                      competitionSlug={competitionSlug}
+                                      teamName={name}
+                                      size={24}
+                                      variant="crest"
+                                    />
                                     {sel ? (
                                       <span className="absolute -right-0.5 -top-0.5 h-3.5 w-3.5 rounded-full bg-emerald-600 text-[8px] font-black leading-[14px] text-white">
                                         ✓

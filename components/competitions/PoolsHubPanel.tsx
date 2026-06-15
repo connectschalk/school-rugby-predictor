@@ -902,6 +902,7 @@ function PoolsPageContent({
                     poolId={selectedPool.id}
                     userId={user.id}
                     isMember={isPoolMember}
+                    competitionSlug={competitionSlug}
                   />
                 ) : (
                   <p className="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -910,7 +911,11 @@ function PoolsPageContent({
                 )
               ) : poolDetailTab === 'predict' ? (
                 isPoolMember && user ? (
-                  <PoolPredictTabSection effectiveMatchIds={effectiveMatchIds} user={user} />
+                  <PoolPredictTabSection
+                    effectiveMatchIds={effectiveMatchIds}
+                    user={user}
+                    competitionSlug={competitionSlug}
+                  />
                 ) : (
                   <p className="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                     Predictions for this pool are available to members only.

@@ -28,9 +28,11 @@ import { supabase } from '@/lib/supabase'
 export default function PoolPredictTabSection({
   effectiveMatchIds,
   user,
+  competitionSlug,
 }: {
   effectiveMatchIds: string[]
   user: User
+  competitionSlug?: string | null
 }) {
   const [upcoming, setUpcoming] = useState<GameMatch[]>([])
   const [loadError, setLoadError] = useState('')
@@ -116,8 +118,8 @@ export default function PoolPredictTabSection({
       const next = { ...prev }
       for (const m of poolMatches) {
         const p = predictions.get(m.id)
-        if (p) {
-          next[m.id] = { winner: p.predicted_winner, margin: String(p.predicted_margin) }
+        if (p?.predicted_winner === 'home' || p?.predicted_winner === 'away') {
+          next[m.id] = { winner: p.predicted_winner, margin: String(p.predicted_margin ?? '') }
         } else if (next[m.id] === undefined) {
           next[m.id] = defaultPick()
         }
@@ -265,6 +267,7 @@ export default function PoolPredictTabSection({
                     return (
                       <div key={m.id} id={`pool-predict-card-${m.id}`} className="scroll-mt-24">
                         <MatchCard
+                          competitionSlug={competitionSlug ?? undefined}
                           homeTeam={m.home_team}
                           awayTeam={m.away_team}
                           kickoffTime={m.kickoff_time}

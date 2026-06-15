@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { filterCanonicalsForPickerQuery } from '@/lib/pool-picker-teams'
-import { getSchoolTeamLogoPath } from '@/lib/school-team-logos'
+import CompetitionTeamLogo from '@/components/CompetitionTeamLogo'
+import { SCHOOLS_COMPETITION_SLUG } from '@/lib/competitions'
 
 type Props = {
   open: boolean
@@ -11,6 +12,7 @@ type Props = {
   aliasKeyToCanonical: Map<string, string> | null
   initialSelected: string[]
   onDone: (names: string[]) => void
+  competitionSlug?: string | null
 }
 
 export default function PoolCreateSelectTeamsModal({
@@ -20,6 +22,7 @@ export default function PoolCreateSelectTeamsModal({
   aliasKeyToCanonical,
   initialSelected,
   onDone,
+  competitionSlug = SCHOOLS_COMPETITION_SLUG,
 }: Props) {
   const [draft, setDraft] = useState<string[]>([])
   const [q, setQ] = useState('')
@@ -115,7 +118,6 @@ export default function PoolCreateSelectTeamsModal({
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {filtered.map((name) => {
               const sel = selectedSet.has(name)
-              const logo = getSchoolTeamLogoPath(name)
               return (
                 <button
                   key={name}
@@ -128,12 +130,12 @@ export default function PoolCreateSelectTeamsModal({
                   }`}
                 >
                   <span className="relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gray-100 ring-1 ring-gray-200">
-                    {logo ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- static public assets
-                      <img src={logo} alt="" className="h-9 w-9 object-contain" draggable={false} />
-                    ) : (
-                      <span className="text-[10px] font-bold text-gray-400">?</span>
-                    )}
+                    <CompetitionTeamLogo
+                      competitionSlug={competitionSlug}
+                      teamName={name}
+                      size={36}
+                      variant="crest"
+                    />
                     {sel ? (
                       <span className="absolute -right-0.5 -top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-[11px] font-black text-white shadow">
                         ✓

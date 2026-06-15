@@ -8,7 +8,7 @@ import PoolCreateScopeModal from '@/components/pools/PoolCreateScopeModal'
 import PoolCreateSelectTeamsModal from '@/components/pools/PoolCreateSelectTeamsModal'
 import PoolTeamPicker from '@/components/pools/PoolTeamPicker'
 import ProvinceLogoMark from '@/components/ProvinceLogoMark'
-import { getSchoolTeamLogoPath } from '@/lib/school-team-logos'
+import CompetitionTeamLogo from '@/components/CompetitionTeamLogo'
 import { fetchUserIsAdmin } from '@/lib/admin-access'
 import {
   buildPoolPickerAliasLookup,
@@ -1154,25 +1154,22 @@ export default function ManagePoolsPage() {
                     <p className="mt-1.5 text-sm text-gray-500">None yet — use Add teams.</p>
                   ) : (
                     <div className="mt-2 flex flex-wrap gap-2">
-                      {createSelectedTeamNames.map((name) => {
-                        const logo = getSchoolTeamLogoPath(name)
-                        return (
+                      {createSelectedTeamNames.map((name) => (
                           <span
                             key={name}
                             className="inline-flex max-w-full items-center gap-2 rounded-full border border-emerald-200 bg-white py-1 pl-1 pr-3 text-xs font-semibold text-gray-900 shadow-sm"
                           >
                             <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-50 ring-1 ring-gray-200">
-                              {logo ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img src={logo} alt="" className="h-6 w-6 object-contain" draggable={false} />
-                              ) : (
-                                <span className="text-[9px] text-gray-400">?</span>
-                              )}
+                              <CompetitionTeamLogo
+                                competitionSlug={SCHOOLS_COMPETITION_SLUG}
+                                teamName={name}
+                                size={24}
+                                variant="crest"
+                              />
                             </span>
                             <span className="truncate">{name}</span>
                           </span>
-                        )
-                      })}
+                        ))}
                     </div>
                   )}
                 </div>

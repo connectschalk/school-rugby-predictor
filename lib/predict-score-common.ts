@@ -5,10 +5,18 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 /** Keep in sync with `MATCH_CARD_MARGIN_MAX` in `components/MatchCard.tsx`. */
 export const PREDICT_SCORE_MARGIN_MAX = 50
 
+/** Soccer exact-score mode: integer goals 0–20. */
+export const SOCCER_GOALS_MAX = 20
+
 export type PickState = {
   winner: 'home' | 'away' | null
   /** Digits only for margin input (1–50); empty before entry. */
   margin: string
+}
+
+export type SoccerPickState = {
+  homeGoals: string
+  awayGoals: string
 }
 
 export function predictionMap(rows: UserPredictionRow[]) {
@@ -27,7 +35,17 @@ export function parseMarginFromInput(s: string): number | null {
   return n
 }
 
+export function parseSoccerGoalsFromInput(s: string): number | null {
+  const t = s.trim()
+  if (t === '') return null
+  const n = Number.parseInt(t, 10)
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0 || n > SOCCER_GOALS_MAX) return null
+  return n
+}
+
 export const defaultPick = (): PickState => ({ winner: null, margin: '' })
+
+export const defaultSoccerPick = (): SoccerPickState => ({ homeGoals: '0', awayGoals: '0' })
 
 export async function ensureUserProfile(client: SupabaseClient, user: User) {
   const displayName =
@@ -133,6 +151,29 @@ export async function upsertUserPrediction(
       user_id: user.id,
       predicted_winner: input.predictedWinner,
       predicted_margin: input.predictedMargin,
+      submitted_at: new Date().toISOString(),
+    },
+    { onConflict: 'user_id,match_id' }
+  )
+  return { error: error ? new Error(error.message) : null }
+}
+
+export async function upsertSoccerUserPrediction(
+  client: SupabaseClient,
+  user: User,
+  input: { matchId: string; predictedHomeScore: number; predictedAwayScore: number }
+) {
+  const profileErr = await ensureUserProfile(client, user)
+  if (profileErr) return { error: new Error(profileErr.message) }
+
+  const { error } = await client.from('user_predictions').upsert(
+    {
+      match_id: input.matchId,
+      user_id: user.id,
+      predicted_home_score: input.predictedHomeScore,
+      predicted_away_score: input.predictedAwayScore,
+      predicted_winner: null,
+      predicted_margin: null,
       submitted_at: new Date().toISOString(),
     },
     { onConflict: 'user_id,match_id' }

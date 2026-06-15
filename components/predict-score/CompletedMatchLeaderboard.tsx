@@ -1,6 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import CompetitionTeamLogo from '@/components/CompetitionTeamLogo'
+import { SCHOOLS_COMPETITION_SLUG } from '@/lib/competitions'
 import type { GameMatch, MatchLeaderboardEntry } from '@/lib/public-prediction-game'
 import { fetchMatchLeaderboardWithProfiles } from '@/lib/public-prediction-game'
 import Link from 'next/link'
@@ -11,6 +13,7 @@ import { supabase } from '@/lib/supabase'
 type Props = {
   match: GameMatch
   signedIn: boolean
+  competitionSlug?: string | null
 }
 
 function formatKickoff(iso: string) {
@@ -25,7 +28,11 @@ function formatKickoff(iso: string) {
   }
 }
 
-export default function CompletedMatchLeaderboard({ match, signedIn }: Props) {
+export default function CompletedMatchLeaderboard({
+  match,
+  signedIn,
+  competitionSlug = SCHOOLS_COMPETITION_SLUG,
+}: Props) {
   const [rows, setRows] = useState<MatchLeaderboardEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -75,11 +82,23 @@ export default function CompletedMatchLeaderboard({ match, signedIn }: Props) {
           <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
             {formatKickoff(match.kickoff_time)} · Final
           </p>
-          <h2 className="mt-2 text-xl font-semibold md:text-2xl">
+          <h2 className="mt-2 flex flex-wrap items-center justify-start gap-2 text-xl font-semibold md:text-2xl">
+            <CompetitionTeamLogo
+              competitionSlug={competitionSlug}
+              teamName={match.home_team}
+              size={32}
+              variant="badge"
+            />
             <span className="text-gray-900">{match.home_team}</span>
-            <span className="mx-2 font-bold text-gray-900">
+            <span className="mx-1 font-bold text-gray-900">
               {hs} – {as}
             </span>
+            <CompetitionTeamLogo
+              competitionSlug={competitionSlug}
+              teamName={match.away_team}
+              size={32}
+              variant="badge"
+            />
             <span className="text-gray-900">{match.away_team}</span>
           </h2>
         </div>

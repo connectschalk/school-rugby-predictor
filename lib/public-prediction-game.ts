@@ -32,8 +32,10 @@ export type UserPredictionRow = {
   id: string
   match_id: string
   user_id: string
-  predicted_winner: 'home' | 'away'
-  predicted_margin: number
+  predicted_winner: 'home' | 'away' | 'draw' | null
+  predicted_margin: number | null
+  predicted_home_score: number | null
+  predicted_away_score: number | null
   submitted_at: string
   is_locked?: boolean
   locked_at?: string | null
@@ -66,6 +68,8 @@ export type SeasonLeaderboardRow = {
   avg_points_per_prediction: number | null
   exact_margin_count: number
   correct_winner_count: number
+  exact_score_count: number
+  correct_result_count: number
   cumulative_margin_error: number
   average_margin_error: number | null
   /** Legacy compatibility fields. */
@@ -205,7 +209,9 @@ export async function fetchUserPredictionsForMatches(
 
   const { data, error } = await client
     .from('user_predictions')
-    .select('id, match_id, user_id, predicted_winner, predicted_margin, submitted_at, is_locked, locked_at')
+    .select(
+      'id, match_id, user_id, predicted_winner, predicted_margin, predicted_home_score, predicted_away_score, submitted_at, is_locked, locked_at'
+    )
     .eq('user_id', userId)
     .in('match_id', matchIds)
 
@@ -390,6 +396,8 @@ export async function fetchSeasonLeaderboard(client: SupabaseClient, season: num
         : num(r.avg_points_per_prediction),
     exact_margin_count: num(r.exact_margin_count),
     correct_winner_count: num(r.correct_winner_count),
+    exact_score_count: num(r.exact_score_count ?? 0),
+    correct_result_count: num(r.correct_result_count ?? r.correct_winner_count),
     cumulative_margin_error: num(r.cumulative_margin_error),
     average_margin_error:
       r.average_margin_error === null || r.average_margin_error === undefined
@@ -529,6 +537,8 @@ export async function fetchCompetitionLeaderboard(
         : num(r.avg_points_per_prediction),
     exact_margin_count: num(r.exact_margin_count),
     correct_winner_count: num(r.correct_winner_count),
+    exact_score_count: num(r.exact_score_count ?? 0),
+    correct_result_count: num(r.correct_result_count ?? r.correct_winner_count),
     cumulative_margin_error: num(r.cumulative_margin_error),
     average_margin_error:
       r.average_margin_error === null || r.average_margin_error === undefined
@@ -595,7 +605,9 @@ export type MyPredictionOverviewRow = {
 export async function fetchMyPredictionsOverview(client: SupabaseClient, userId: string) {
   const { data: preds, error: pe } = await client
     .from('user_predictions')
-    .select('id, match_id, user_id, predicted_winner, predicted_margin, submitted_at, is_locked, locked_at')
+    .select(
+      'id, match_id, user_id, predicted_winner, predicted_margin, predicted_home_score, predicted_away_score, submitted_at, is_locked, locked_at'
+    )
     .eq('user_id', userId)
     .order('submitted_at', { ascending: false })
 

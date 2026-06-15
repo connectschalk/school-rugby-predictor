@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import LetterAvatar from '@/components/LetterAvatar'
 import { PLATFORM_LOGO_ALT, PLATFORM_PREDICTOR_MARK_SRC } from '@/lib/platform-branding'
 import type { PredictorAppChartPick } from '@/lib/fixture-model-for-match'
-import type { CommunityBucketRow, CommunityMarginBucket, CommunityStatsOk } from '@/lib/community-predictor'
+import type { CommunityBucketRow, CommunityMarginBucket, CommunityStatsOkRugby } from '@/lib/community-predictor'
 
 const HOME_BUCKETS: CommunityMarginBucket[] = ['20+', '15', '10', '5']
 const AWAY_BUCKETS: CommunityMarginBucket[] = ['5', '10', '15', '20+']
@@ -109,7 +109,7 @@ type ViewerAvatar = {
 }
 
 type CommunityMarginDistributionChartProps = {
-  stats: CommunityStatsOk
+  stats: CommunityStatsOkRugby
   viewerAvatar: ViewerAvatar | null
   /** Model / app pick marker (NextPlay logo); independent of viewer avatar. */
   predictorAppPick?: PredictorAppChartPick | null

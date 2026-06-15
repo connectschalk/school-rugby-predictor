@@ -12,6 +12,7 @@ export default async function CompetitionLeaderboardPage({ params }: Props) {
       competitionId={competition.id}
       competitionSlug={competition.slug}
       competitionName={title}
+      scoringMode={competition.scoring_mode}
     />
   )
 }

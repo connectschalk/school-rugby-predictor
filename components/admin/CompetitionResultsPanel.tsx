@@ -2,10 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import CompetitionImportPanel from '@/components/admin/CompetitionImportPanel'
-import CompetitionTeamLogo, {
-  competitionUsesTeamLogos,
-  CompetitionMatchTeams,
-} from '@/components/admin/CompetitionTeamLogo'
+import CompetitionTeamLogo, { CompetitionMatchTeams } from '@/components/CompetitionTeamLogo'
 import {
   adminCompetitionFetch,
   formatKickoffDisplay,
@@ -42,7 +39,6 @@ function initialRowState(f: AdminFixtureRow): RowState {
 }
 
 export default function CompetitionResultsPanel({ competitionSlug, fixtures, onRefresh }: Props) {
-  const showTeamLogos = competitionUsesTeamLogos(competitionSlug)
   const [filter, setFilter] = useState<ResultFilter>('needs')
   const [search, setSearch] = useState('')
   const [rowState, setRowState] = useState<Record<string, RowState>>({})
@@ -254,20 +250,13 @@ export default function CompetitionResultsPanel({ competitionSlug, fixtures, onR
                         {formatKickoffDisplay(f.kickoff_time)}
                       </p>
                       <p className="mt-1 text-sm font-bold text-gray-900">
-                        {showTeamLogos ? (
-                          <CompetitionMatchTeams
-                            competitionSlug={competitionSlug}
-                            homeTeam={f.home_team}
-                            awayTeam={f.away_team}
-                            size={24}
-                            layout="versus"
-                          />
-                        ) : (
-                          <>
-                            {f.home_team}{' '}
-                            <span className="font-normal text-gray-500">vs</span> {f.away_team}
-                          </>
-                        )}
+                        <CompetitionMatchTeams
+                          competitionSlug={competitionSlug}
+                          homeTeam={f.home_team}
+                          awayTeam={f.away_team}
+                          size={24}
+                          layout="versus"
+                        />
                       </p>
                       <p className="mt-1 text-xs text-gray-500">
                         Status:{' '}
@@ -283,13 +272,11 @@ export default function CompetitionResultsPanel({ competitionSlug, fixtures, onR
 
                     <div className="flex flex-wrap items-center gap-2">
                       <label className="flex items-center gap-1 text-xs font-semibold text-gray-600">
-                        {showTeamLogos ? (
-                          <CompetitionTeamLogo
-                            competitionSlug={competitionSlug}
-                            teamName={f.home_team}
-                            size={20}
-                          />
-                        ) : null}
+                        <CompetitionTeamLogo
+                          competitionSlug={competitionSlug}
+                          teamName={f.home_team}
+                          size={20}
+                        />
                         Home
                         <input
                           type="number"
@@ -302,13 +289,11 @@ export default function CompetitionResultsPanel({ competitionSlug, fixtures, onR
                       </label>
                       <span className="text-gray-400">–</span>
                       <label className="flex items-center gap-1 text-xs font-semibold text-gray-600">
-                        {showTeamLogos ? (
-                          <CompetitionTeamLogo
-                            competitionSlug={competitionSlug}
-                            teamName={f.away_team}
-                            size={20}
-                          />
-                        ) : null}
+                        <CompetitionTeamLogo
+                          competitionSlug={competitionSlug}
+                          teamName={f.away_team}
+                          size={20}
+                        />
                         Away
                         <input
                           type="number"
