@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import type { User } from '@supabase/supabase-js'
@@ -97,8 +97,8 @@ function PoolsPageContent({
   const searchParams = useSearchParams()
   const [user, setUser] = useState<User | null>(null)
   const [authReady, setAuthReady] = useState(false)
-  const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
+  const userId = user?.id ?? null
 
   const [myPools, setMyPools] = useState<PoolRow[]>([])
   const [myMemberships, setMyMemberships] = useState<PoolMemberRow[]>([])
@@ -128,7 +128,8 @@ function PoolsPageContent({
 
   const [inviteCopied, setInviteCopied] = useState(false)
   const [codeCopied, setCodeCopied] = useState(false)
-  const [initialSessionLoaded, setInitialSessionLoaded] = useState(false)
+  const loadPoolsRef = useRef<(explicitUserId?: string) => Promise<void>>(async () => {})
+  const inviteHandledRef = useRef<string | null>(null)
 
   const [leaderRows, setLeaderRows] = useState<PoolLeaderboardRow[]>([])
   const [leaderLoading, setLeaderLoading] = useState(false)
@@ -185,8 +186,8 @@ function PoolsPageContent({
     return rows
   }, [leaderRows])
 
-  const loadPendingJoinState = useCallback(async () => {
-    if (!user) {
+  const loadPendingJoinState = useCallback(async (uid: string | null) => {
+    if (!uid) {
       setPendingRequestPoolIds(new Set())
       setAdminPendingCounts(new Map())
       return
@@ -201,23 +202,33 @@ function PoolsPageContent({
     if (!adminRes.error) {
       setAdminPendingCounts(adminRes.counts)
     }
-  }, [competitionId, user])
+  }, [competitionId])
 
   const loadPools = useCallback(async (explicitUserId?: string) => {
     const { data: sessionData } = await supabase.auth.getSession()
-    const userId = explicitUserId ?? sessionData.session?.user?.id
+    const activeUserId = explicitUserId ?? sessionData.session?.user?.id
 
-    if (!userId) return
+    if (!activeUserId) return
 
-    const result = await fetchMyPools(supabase, userId, competitionId)
+    const result = await fetchMyPools(supabase, activeUserId, competitionId)
     if (result.error) {
       setMessage(result.error.message)
       return
     }
-    setMyPools(result.pools)
+    setMyPools((prev) => {
+      if (
+        prev.length === result.pools.length &&
+        prev.every((pool, index) => pool.id === result.pools[index]?.id)
+      ) {
+        return prev
+      }
+      return result.pools
+    })
     setMyMemberships(result.memberships)
-    await loadPendingJoinState()
+    await loadPendingJoinState(activeUserId)
   }, [competitionId, loadPendingJoinState])
+
+  loadPoolsRef.current = loadPools
 
   const loadProfiles = useCallback(async (ids: string[]) => {
     const unique = [...new Set(ids.filter(Boolean))]
@@ -248,8 +259,17 @@ function PoolsPageContent({
     if (!reqRes.error) setJoinRequests(reqRes.rows)
     else setMessage(reqRes.error.message)
     if (!effRes.error) {
-      setEffectiveMatchIds(effRes.matchIds)
-      setSelectedMatchIds(effRes.matchIds)
+      const nextMatchIds = effRes.matchIds
+      setEffectiveMatchIds((prev) => {
+        if (
+          prev.length === nextMatchIds.length &&
+          prev.every((id, index) => id === nextMatchIds[index])
+        ) {
+          return prev
+        }
+        return nextMatchIds
+      })
+      setSelectedMatchIds(nextMatchIds)
     }
     if (!leaderRes.error) setLeaderRows(leaderRes.rows)
     if (!poolGroupsRes.error) setSelectedPoolGroups(poolGroupsRes.rows.map((g) => ({ id: g.id, name: g.name })))
@@ -265,12 +285,10 @@ function PoolsPageContent({
     const fallbackId = window.setTimeout(() => {
       if (cancelled) return
       setAuthReady(true)
-      setLoading(false)
     }, 5000)
 
     const loadSession = async () => {
       try {
-        setLoading(true)
         const { data, error } = await supabase.auth.getSession()
         if (error) console.error('Pools getSession error:', error)
         if (cancelled) return
@@ -278,45 +296,49 @@ function PoolsPageContent({
       } catch (err) {
         console.error('Pools getSession failed:', err)
       } finally {
-        if (cancelled) return
-        setInitialSessionLoaded(true)
-        setAuthReady(true)
-        setLoading(false)
+        if (!cancelled) setAuthReady(true)
       }
     }
     void loadSession()
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       if (cancelled) return
       setAuthReady(true)
-      setLoading(false)
       if (event === 'SIGNED_OUT') {
         setUser(null)
         setMyPools([])
         setMyMemberships([])
         setSelectedPoolId(null)
-      } else if (session?.user) {
-        setUser(session.user)
-        await loadPools(session.user.id)
-      } else if (!initialSessionLoaded) {
-        setUser(null)
+        inviteHandledRef.current = null
+        return
       }
+      if (!session?.user) return
+      setUser((prev) => (prev?.id === session.user.id ? prev : session.user))
     })
     return () => {
       cancelled = true
       window.clearTimeout(fallbackId)
       subscription.unsubscribe()
     }
-  }, [initialSessionLoaded, loadPools])
+  }, [])
 
   useEffect(() => {
-    void loadPools()
-  }, [loadPools])
+    if (!userId) {
+      setMyPools([])
+      setMyMemberships([])
+      return
+    }
+    void loadPools(userId)
+  }, [userId, competitionId, loadPools])
 
   useEffect(() => {
-    setSelectedPoolId((prev) => prev ?? (myPools[0]?.id ?? null))
+    if (myPools.length === 0) return
+    setSelectedPoolId((prev) => {
+      if (prev && myPools.some((pool) => pool.id === prev)) return prev
+      return myPools[0]?.id ?? null
+    })
   }, [myPools])
 
   useEffect(() => {
@@ -324,22 +346,18 @@ function PoolsPageContent({
   }, [competitionId])
 
   useEffect(() => {
-    void loadPendingJoinState()
-  }, [loadPendingJoinState])
-
-  useEffect(() => {
-    if (!user) {
+    if (!userId) {
       setIsUserAdmin(false)
       return
     }
     let cancelled = false
-    void fetchUserIsAdmin(supabase, user.id).then(({ isAdmin }) => {
+    void fetchUserIsAdmin(supabase, userId).then(({ isAdmin }) => {
       if (!cancelled) setIsUserAdmin(isAdmin)
     })
     return () => {
       cancelled = true
     }
-  }, [user])
+  }, [userId])
 
   useEffect(() => {
     if (!inviteCopied) return
@@ -359,15 +377,29 @@ function PoolsPageContent({
       typeof window === 'undefined' ? '' : (window.localStorage.getItem(PENDING_POOL_INVITE_KEY) ?? '').trim()
     const invitePoolId = inviteFromUrl || pendingFromStorage
     if (!invitePoolId) return
+    if (inviteHandledRef.current === invitePoolId) return
+    inviteHandledRef.current = invitePoolId
+
+    const stripInviteFromUrl = () => {
+      if (!inviteFromUrl) return
+      const query = searchParams.toString()
+      const currentPath = query ? `${pathname}?${query}` : pathname
+      if (currentPath !== poolsBase) {
+        router.replace(poolsBase)
+      }
+    }
 
     const handleInvite = async () => {
-      if (!user) {
+      if (!userId) {
         if (typeof window !== 'undefined') {
           window.localStorage.setItem(PENDING_POOL_INVITE_KEY, invitePoolId)
         }
         const query = searchParams.toString()
         const returnPath = query ? `${pathname}?${query}` : pathname
-        router.replace(buildLoginHref(returnPath))
+        const loginHref = buildLoginHref(returnPath)
+        if (!pathname.startsWith('/login')) {
+          router.replace(loginHref)
+        }
         return
       }
 
@@ -375,7 +407,7 @@ function PoolsPageContent({
         .from('pool_members')
         .select('pool_id')
         .eq('pool_id', invitePoolId)
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .maybeSingle()
       if (memberErr) {
         setMessage(memberErr.message)
@@ -386,7 +418,7 @@ function PoolsPageContent({
         if (typeof window !== 'undefined') {
           window.localStorage.removeItem(PENDING_POOL_INVITE_KEY)
         }
-        if (inviteFromUrl) router.replace(poolsBase)
+        stripInviteFromUrl()
         return
       }
 
@@ -410,12 +442,12 @@ function PoolsPageContent({
       if (typeof window !== 'undefined') {
         window.localStorage.removeItem(PENDING_POOL_INVITE_KEY)
       }
-      if (inviteFromUrl) router.replace(poolsBase)
-      await loadPools(user.id)
+      stripInviteFromUrl()
+      await loadPoolsRef.current(userId)
     }
 
     void handleInvite()
-  }, [authReady, inviteFromUrl, loadPools, router, user])
+  }, [authReady, inviteFromUrl, pathname, poolsBase, router, searchParams, userId])
 
   useEffect(() => {
     void loadPoolDetails()
@@ -517,7 +549,7 @@ function PoolsPageContent({
     setMessage('Request sent to pool admin.')
     setPendingRequestPoolIds((prev) => new Set(prev).add(poolId))
     setSentRequestPoolIds((prev) => new Set(prev).add(poolId))
-    if (user) await loadPools(user.id)
+    if (userId) await loadPools(userId)
   }
 
   async function onReview(requestId: string, action: 'approve' | 'decline') {
@@ -531,13 +563,13 @@ function PoolsPageContent({
     }
     setMessage(action === 'approve' ? 'Member approved.' : 'Join request declined.')
     await loadPoolDetails()
-    await loadPendingJoinState()
-    if (user) await loadPools(user.id)
+    await loadPendingJoinState(userId)
+    if (userId) await loadPools(userId)
   }
 
-  async function onRemoveMember(userId: string) {
+  async function onRemoveMember(memberUserId: string) {
     if (!selectedPoolId) return
-    const { error } = await removePoolMember(supabase, selectedPoolId, userId)
+    const { error } = await removePoolMember(supabase, selectedPoolId, memberUserId)
     if (error) {
       setMessage(error.message)
       return
@@ -559,7 +591,7 @@ function PoolsPageContent({
     setDeleteConfirmOpen(false)
     setPoolInfoModalOpen(false)
     setSelectedPoolId(null)
-    if (user) await loadPools(user.id)
+    if (userId) await loadPools(userId)
     router.push(poolsBase)
   }
 
@@ -576,7 +608,7 @@ function PoolsPageContent({
     await loadPoolDetails()
   }
 
-  if (!authReady || loading) {
+  if (!authReady) {
     return (
       <main className="mx-auto w-full min-w-0 max-w-6xl overflow-x-hidden px-4 py-8 sm:px-6 md:py-12">
         <p className="text-sm text-gray-500">Loading pools…</p>
@@ -767,7 +799,9 @@ function PoolsPageContent({
                 <button
                   key={pool.id}
                   type="button"
-                  onClick={() => setSelectedPoolId(pool.id)}
+                  onClick={() => {
+                    if (pool.id !== selectedPoolId) setSelectedPoolId(pool.id)
+                  }}
                   className={`w-full max-w-full min-w-0 rounded-xl border px-3 py-2 text-left ${
                     pool.id === selectedPoolId ? 'border-gray-900 bg-gray-100' : 'border-gray-200'
                   }`}
