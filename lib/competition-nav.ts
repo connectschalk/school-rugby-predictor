@@ -120,3 +120,38 @@ export function competitionSwitcherLabel(slug: string): string {
   const found = COMPETITION_SWITCHER_OPTIONS.find((o) => o.slug === slug)
   return found?.label ?? slug
 }
+
+/** Tabs on My Predictions — Overall plus each active competition. */
+export const MY_PREDICTIONS_TABS = [
+  { key: 'overall', label: 'Overall', href: '/my-predictions' },
+  {
+    key: 'nextplay-schools',
+    label: 'School Rugby',
+    href: '/competitions/nextplay-schools/my-predictions',
+  },
+  {
+    key: 'craven-week',
+    label: 'Craven Week',
+    href: '/competitions/craven-week/my-predictions',
+  },
+  {
+    key: 'soccer-world-cup',
+    label: 'Soccer World Cup',
+    href: '/competitions/soccer-world-cup/my-predictions',
+  },
+] as const
+
+export function isMyPredictionsPath(pathname: string | null | undefined): boolean {
+  if (!pathname) return false
+  if (pathname === '/my-predictions') return true
+  return /^\/competitions\/[^/]+\/my-predictions\/?$/i.test(pathname)
+}
+
+export function myPredictionsTabActive(
+  pathname: string | null | undefined,
+  tab: (typeof MY_PREDICTIONS_TABS)[number]
+): boolean {
+  if (!pathname) return false
+  if (tab.key === 'overall') return pathname === '/my-predictions'
+  return pathname === tab.href || pathname.startsWith(`${tab.href}/`)
+}

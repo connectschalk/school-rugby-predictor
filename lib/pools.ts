@@ -8,6 +8,7 @@ import {
   isPoolJoinCodeTakenError,
   normalizePoolJoinCodeInput,
   POOL_JOIN_CODE_TAKEN_MESSAGE,
+  validatePoolJoinCodeInput,
 } from '@/lib/pool-join-code'
 import type { GameMatch } from '@/lib/public-prediction-game'
 
@@ -434,6 +435,34 @@ export async function searchPublicPools(
     match_kind: String(raw.match_kind ?? 'name'),
   }))
   return { rows, error }
+}
+
+/** Exact join-code lookup (no competition filter — used on competition home join flow). */
+export async function findPoolByJoinCode(
+  client: SupabaseClient,
+  joinCodeRaw: string
+): Promise<{
+  row: PoolSearchRow | null
+  error: string | null
+  validationError: boolean
+}> {
+  const validation = validatePoolJoinCodeInput(joinCodeRaw)
+  if (validation) {
+    return { row: null, error: validation, validationError: true }
+  }
+
+  const normalized = normalizePoolJoinCodeInput(joinCodeRaw)
+  const { rows, error } = await searchPublicPools(client, normalized)
+  if (error) {
+    return { row: null, error: error.message, validationError: false }
+  }
+
+  const row =
+    rows.find((r) => r.match_kind === 'join_code' && r.join_code === normalized) ??
+    rows.find((r) => r.match_kind === 'join_code') ??
+    null
+
+  return { row, error: null, validationError: false }
 }
 
 export async function requestJoinPool(

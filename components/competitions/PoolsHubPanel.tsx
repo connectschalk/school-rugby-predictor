@@ -5,12 +5,15 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import type { User } from '@supabase/supabase-js'
 import LetterAvatar from '@/components/LetterAvatar'
+import DeletePoolConfirmModal from '@/components/pools/DeletePoolConfirmModal'
 import PoolPicksSection from '@/components/pools/PoolPicksSection'
 import PoolPredictTabSection from '@/components/pools/PoolPredictTabSection'
+import { fetchUserIsAdmin } from '@/lib/admin-access'
 import {
   canUserCreatePoolInCompetition,
   countUserAdminPoolsForCompetition,
   createPool,
+  deletePool,
   fetchEffectivePoolMatches,
   fetchPoolGroups,
   fetchPoolTeams,
@@ -108,6 +111,9 @@ function PoolsPageContent({
   const [poolTeamsRows, setPoolTeamsRows] = useState<PoolTeamRow[]>([])
   const [poolDetailTab, setPoolDetailTab] = useState<PoolDetailTab>('leaderboard')
   const [poolInfoModalOpen, setPoolInfoModalOpen] = useState(false)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [deletingPool, setDeletingPool] = useState(false)
+  const [isUserAdmin, setIsUserAdmin] = useState(false)
   const showManagement = competitionMode === 'official_fixed_fixtures'
   const poolsBase = `/competitions/${competitionSlug}/pools`
   const createPoolPath = `${poolsBase}/create`
@@ -134,6 +140,7 @@ function PoolsPageContent({
     [myPools, selectedPoolId]
   )
   const isAdmin = Boolean(user && selectedPool && selectedPool.admin_user_id === user.id)
+  const canDeletePool = Boolean(user && selectedPool && (isAdmin || isUserAdmin))
   const isPoolMember = Boolean(selectedPoolId && membershipByPool.has(selectedPoolId))
   const effectiveMatches = useMemo(() => {
     const byId = new Map(allMatches.map((m) => [m.id, m]))
@@ -269,6 +276,20 @@ function PoolsPageContent({
   useEffect(() => {
     fetchGameMatchesForCommunityHub(supabase, 250, competitionId).then(({ data }) => setAllMatches(data))
   }, [competitionId])
+
+  useEffect(() => {
+    if (!user) {
+      setIsUserAdmin(false)
+      return
+    }
+    let cancelled = false
+    void fetchUserIsAdmin(supabase, user.id).then(({ isAdmin }) => {
+      if (!cancelled) setIsUserAdmin(isAdmin)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [user])
 
   useEffect(() => {
     if (!inviteCopied) return
@@ -454,6 +475,23 @@ function PoolsPageContent({
     }
     setMessage('Member removed from pool.')
     await loadPoolDetails()
+  }
+
+  async function onConfirmDeletePool() {
+    if (!selectedPool || !canDeletePool) return
+    setDeletingPool(true)
+    const poolId = selectedPool.id
+    const { error } = await deletePool(supabase, poolId)
+    setDeletingPool(false)
+    if (error) {
+      setMessage(error.message)
+      return
+    }
+    setDeleteConfirmOpen(false)
+    setPoolInfoModalOpen(false)
+    setSelectedPoolId(null)
+    if (user) await loadPools(user.id)
+    router.push(poolsBase)
   }
 
   async function onSaveMatches() {
@@ -997,10 +1035,30 @@ function PoolsPageContent({
                           This pool includes matches from selected groups and/or matches involving selected teams.
                         </p>
                       </section>
+                      {canDeletePool ? (
+                        <section className="border-t border-gray-100 pt-4">
+                          <button
+                            type="button"
+                            onClick={() => setDeleteConfirmOpen(true)}
+                            className="w-full rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-bold text-red-700 transition hover:bg-red-100"
+                          >
+                            Delete Pool
+                          </button>
+                        </section>
+                      ) : null}
                     </div>
                   </div>
                 </div>
               ) : null}
+
+              <DeletePoolConfirmModal
+                open={deleteConfirmOpen}
+                deleting={deletingPool}
+                onCancel={() => {
+                  if (!deletingPool) setDeleteConfirmOpen(false)
+                }}
+                onConfirm={() => void onConfirmDeletePool()}
+              />
 
               {showManagement && isAdmin ? (
                 <div className="mt-6">

@@ -502,7 +502,11 @@ export default function PredictScorePanel({
           </p>
           <div className="mt-5 flex flex-wrap justify-center gap-3">
             <Link
-              href="/my-predictions"
+              href={
+                competitionSlug
+                  ? `/competitions/${competitionSlug}/my-predictions`
+                  : '/my-predictions'
+              }
               className="inline-flex rounded-xl border-2 border-slate-300 bg-white px-5 py-2.5 text-sm font-bold text-slate-900 shadow-sm transition hover:border-slate-400 hover:bg-slate-50"
             >
               My Predictions

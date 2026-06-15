@@ -1,9 +1,11 @@
 'use client'
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
 import LetterAvatar from '@/components/LetterAvatar'
+import DeletePoolConfirmModal from '@/components/pools/DeletePoolConfirmModal'
 import PoolCreateScopeModal from '@/components/pools/PoolCreateScopeModal'
 import PoolCreateSelectTeamsModal from '@/components/pools/PoolCreateSelectTeamsModal'
 import PoolTeamPicker from '@/components/pools/PoolTeamPicker'
@@ -90,6 +92,7 @@ function isManagePoolHiddenGroup(g: FixtureGroupRow): boolean {
   return MANAGE_POOL_HIDDEN_SLUGS.has((g.slug ?? '').trim().toLowerCase())
 }
 export default function ManagePoolsPage() {
+  const router = useRouter()
   const [user, setUser] = useState<User | null>(null)
   const [isUserAdmin, setIsUserAdmin] = useState(false)
   const [authReady, setAuthReady] = useState(false)
@@ -128,6 +131,7 @@ export default function ManagePoolsPage() {
   const [savingGroups, setSavingGroups] = useState(false)
   const [requestsLoading, setRequestsLoading] = useState(false)
   const [deletingPoolId, setDeletingPoolId] = useState<string | null>(null)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [createPreview, setCreatePreview] = useState<{
     total_matches: number
     teams: string[]
@@ -172,6 +176,7 @@ export default function ManagePoolsPage() {
     schoolsCompetitionId != null &&
     adminSchoolsPoolCount >= MAX_POOLS_PER_COMPETITION
   const isSelectedPoolAdmin = Boolean(user && selectedPool && selectedPool.admin_user_id === user.id)
+  const canDeleteSelectedPool = Boolean(selectedPool && user && (isSelectedPoolAdmin || isUserAdmin))
   const createGroupIds = useMemo(
     () =>
       createSelectedGroupIds.filter((id) => {
@@ -834,10 +839,8 @@ export default function ManagePoolsPage() {
     await loadPoolDetails()
   }
 
-  async function onDeletePool() {
-    if (!selectedPool || !user || selectedPool.admin_user_id !== user.id) return
-    const confirmed = window.confirm('Are you sure you want to delete this pool?')
-    if (!confirmed) return
+  async function onConfirmDeletePool() {
+    if (!selectedPool || !canDeleteSelectedPool) return
 
     setDeletingPoolId(selectedPool.id)
     const deletingId = selectedPool.id
@@ -848,9 +851,11 @@ export default function ManagePoolsPage() {
       return
     }
 
+    setDeleteConfirmOpen(false)
     setMessage('Pool deleted')
     await loadPools()
     setSelectedPoolId((prev) => (prev === deletingId ? null : prev))
+    router.push(`/competitions/${SCHOOLS_COMPETITION_SLUG}/pools`)
   }
 
   async function copyInviteLink() {
@@ -1317,14 +1322,14 @@ export default function ManagePoolsPage() {
                   Copy invite link
                 </button>
                 {inviteCopied ? <span className="text-sm font-medium text-emerald-800">Invite link copied.</span> : null}
-                {selectedPool.admin_user_id === user.id ? (
+                {canDeleteSelectedPool ? (
                   <button
                     type="button"
-                    onClick={() => void onDeletePool()}
+                    onClick={() => setDeleteConfirmOpen(true)}
                     disabled={deletingPoolId === selectedPool.id}
-                    className="rounded-xl border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+                    className="rounded-xl border border-red-300 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-50"
                   >
-                    {deletingPoolId === selectedPool.id ? 'Deleting...' : 'Delete pool'}
+                    {deletingPoolId === selectedPool.id ? 'Deleting…' : 'Delete Pool'}
                   </button>
                 ) : null}
               </div>
@@ -1552,6 +1557,15 @@ export default function ManagePoolsPage() {
           )}
         </div>
       </section>
+
+      <DeletePoolConfirmModal
+        open={deleteConfirmOpen}
+        deleting={deletingPoolId != null}
+        onCancel={() => {
+          if (deletingPoolId == null) setDeleteConfirmOpen(false)
+        }}
+        onConfirm={() => void onConfirmDeletePool()}
+      />
     </main>
   )
 }

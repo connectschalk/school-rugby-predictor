@@ -539,7 +539,13 @@ export default function CommunityPicksPage() {
     let cancelled = false
     setStatsLoading(true)
     setStatsLoadError('')
-    void fetchCommunityPredictionStats(supabase, matchId).then(({ data, error }) => {
+    void fetchCommunityPredictionStats(supabase, matchId, {
+      match_id: currentMatch.id,
+      home_team: currentMatch.home_team,
+      away_team: currentMatch.away_team,
+      kickoff_time: currentMatch.kickoff_time,
+      status: currentMatch.status,
+    }).then(({ data, error }) => {
       if (cancelled) return
       if (error) {
         setStatsLoadError(error.message)
@@ -778,6 +784,11 @@ export default function CommunityPicksPage() {
                 {process.env.NODE_ENV === 'development' && stats?.allowed === false && stats.reason ? (
                   <p className="mt-2 break-words font-mono text-xs text-gray-500">RPC: {stats.reason}</p>
                 ) : null}
+              </div>
+            ) : stats === null ? (
+              <div className="rounded-3xl border border-gray-200 bg-white px-6 py-14 text-center shadow-inner">
+                <p className="text-lg font-bold text-gray-900">Could not load community picks.</p>
+                <p className="mt-2 text-sm text-gray-600">No stats returned for this fixture.</p>
               </div>
             ) : (
               <div className="rounded-3xl border border-gray-200 bg-white px-6 py-14 text-center shadow-inner">

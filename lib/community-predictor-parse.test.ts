@@ -76,6 +76,11 @@ describe('parseCommunityStatsRpc', () => {
     expect(data.allowed).toBe(true)
     if (data.allowed) expect(data.scoring_mode).toBe('rugby_margin')
   })
+
+  it('rejects array RPC payloads', () => {
+    const data = parseCommunityStatsRpc([])
+    expect(data).toEqual({ allowed: false, reason: 'match_not_found' })
+  })
 })
 
 describe('isCommunityStatsRpcFailure', () => {

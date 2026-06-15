@@ -1,4 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import {
+  getCompetitionBySlug,
+  resolveCompetitionScoringMode,
+  SCHOOLS_COMPETITION_SLUG,
+  type CompetitionScoringMode,
+} from '@/lib/competitions'
 
 export type GameMatchStatus = 'upcoming' | 'locked' | 'completed' | 'cancelled'
 
@@ -591,18 +597,52 @@ export async function fetchGameMatchById(client: SupabaseClient, matchId: string
   return { match: (data as GameMatch | null) ?? null, error }
 }
 
+export type MyPredictionMatch = GameMatch & {
+  competition_id: string | null
+}
+
+export type MyPredictionCompetitionMeta = {
+  id: string
+  slug: string
+  name: string
+  scoring_mode: CompetitionScoringMode
+}
+
 /** One row per user prediction with joined match and optional score row (Predict hub / My Predictions). */
 export type MyPredictionOverviewRow = {
   prediction: UserPredictionRow
-  match: GameMatch
+  match: MyPredictionMatch
+  competition: MyPredictionCompetitionMeta | null
   score: UserPredictionScoreRow | null
 }
 
+export type FetchMyPredictionsOptions = {
+  competitionId?: string
+  competitionSlug?: string
+}
+
+function matchBelongsToCompetitionFilter(
+  matchCompetitionId: string | null | undefined,
+  filter: { competitionId: string; slug: string }
+): boolean {
+  if (filter.slug === SCHOOLS_COMPETITION_SLUG) {
+    return matchCompetitionId == null || matchCompetitionId === filter.competitionId
+  }
+  return matchCompetitionId === filter.competitionId
+}
+
+const MY_PREDICTIONS_MATCH_SELECT =
+  'id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at, competition_id'
+
 /**
- * All predictions for a user with `game_matches` and `user_prediction_scores` (when scored).
- * Does not filter by match status — split client-side into upcoming vs completed.
+ * All predictions for a user with `game_matches`, `competitions`, and `user_prediction_scores`.
+ * Optionally filters to one competition (`game_matches.competition_id`; Schools also includes null).
  */
-export async function fetchMyPredictionsOverview(client: SupabaseClient, userId: string) {
+export async function fetchMyPredictionsOverview(
+  client: SupabaseClient,
+  userId: string,
+  options?: FetchMyPredictionsOptions
+) {
   const { data: preds, error: pe } = await client
     .from('user_predictions')
     .select(
@@ -623,14 +663,67 @@ export async function fetchMyPredictionsOverview(client: SupabaseClient, userId:
   const matchIds = [...new Set(list.map((p) => p.match_id))]
   const { data: matches, error: me } = await client
     .from('game_matches')
-    .select('id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at')
+    .select(MY_PREDICTIONS_MATCH_SELECT)
     .in('id', matchIds)
 
   if (me) {
     return { rows: [] as MyPredictionOverviewRow[], error: me }
   }
 
-  const matchMap = new Map((matches as GameMatch[] | null)?.map((m) => [m.id, m]) ?? [])
+  const matchRows = (matches as MyPredictionMatch[] | null) ?? []
+  const matchMap = new Map(matchRows.map((m) => [m.id, m]))
+
+  const competitionIds = [
+    ...new Set(matchRows.map((m) => m.competition_id).filter((id): id is string => Boolean(id))),
+  ]
+
+  let schoolsCompetition: MyPredictionCompetitionMeta | null = null
+  const needsSchoolsFallback =
+    !options?.competitionId ||
+    options.competitionSlug === SCHOOLS_COMPETITION_SLUG ||
+    matchRows.some((m) => m.competition_id == null)
+
+  if (needsSchoolsFallback) {
+    const { competition } = await getCompetitionBySlug(client, SCHOOLS_COMPETITION_SLUG)
+    if (competition) {
+      schoolsCompetition = {
+        id: competition.id,
+        slug: competition.slug,
+        name: competition.name,
+        scoring_mode: competition.scoring_mode,
+      }
+      if (!competitionIds.includes(competition.id)) {
+        competitionIds.push(competition.id)
+      }
+    }
+  }
+
+  const competitionById = new Map<string, MyPredictionCompetitionMeta>()
+  if (schoolsCompetition) {
+    competitionById.set(schoolsCompetition.id, schoolsCompetition)
+  }
+
+  if (competitionIds.length > 0) {
+    const { data: comps, error: ce } = await client
+      .from('competitions')
+      .select('id, slug, name, scoring_mode')
+      .in('id', competitionIds)
+
+    if (ce) {
+      return { rows: [] as MyPredictionOverviewRow[], error: ce }
+    }
+
+    for (const raw of comps ?? []) {
+      const row = raw as Record<string, unknown>
+      if (!row.id || !row.slug || !row.name) continue
+      competitionById.set(String(row.id), {
+        id: String(row.id),
+        slug: String(row.slug),
+        name: String(row.name),
+        scoring_mode: resolveCompetitionScoringMode(String(row.slug), row.scoring_mode),
+      })
+    }
+  }
 
   const { data: scores, error: se } = await client
     .from('user_prediction_scores')
@@ -648,13 +741,25 @@ export async function fetchMyPredictionsOverview(client: SupabaseClient, userId:
     ((scores as UserPredictionScoreRow[] | null) ?? []).map((s) => [s.prediction_id, s])
   )
 
+  const filter =
+    options?.competitionId && options.competitionSlug
+      ? { competitionId: options.competitionId, slug: options.competitionSlug }
+      : null
+
   const rows: MyPredictionOverviewRow[] = []
   for (const prediction of list) {
     const match = matchMap.get(prediction.match_id)
     if (!match) continue
+    if (filter && !matchBelongsToCompetitionFilter(match.competition_id, filter)) continue
+
+    const competition =
+      (match.competition_id ? competitionById.get(match.competition_id) : null) ??
+      schoolsCompetition
+
     rows.push({
       prediction,
       match,
+      competition,
       score: scoreByPredictionId.get(prediction.id) ?? null,
     })
   }

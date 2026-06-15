@@ -1,8 +1,9 @@
 import Image from 'next/image'
 import Link from 'next/link'
+import { Suspense } from 'react'
 import { notFound } from 'next/navigation'
+import CompetitionPoolActions from '@/components/competitions/CompetitionPoolActions'
 import {
-  competitionCreateCta,
   competitionHeroSrc,
   competitionLogoSrc,
   competitionModeBadge,
@@ -25,7 +26,6 @@ export default async function CompetitionHomePage({ params }: Props) {
   const heroSrc = competitionHeroSrc(competition)
   const tagline = competitionTagline(competition.slug)
   const modeBadge = competitionModeBadge(competition.competition_mode)
-  const createCta = competitionCreateCta(competition.slug, competition.competition_mode)
   const official = isOfficialCompetition(competition.competition_mode)
   const base = `/competitions/${competition.slug}`
 
@@ -95,38 +95,48 @@ export default async function CompetitionHomePage({ params }: Props) {
           ) : null}
         </div>
 
-        <div className="mt-10 grid gap-3 sm:grid-cols-2">
-          <Link
-            href={`${base}/pools/create`}
-            className="rounded-2xl border border-red-600/40 bg-red-600 px-6 py-4 text-center text-sm font-bold text-white shadow-lg shadow-red-900/30 transition hover:bg-red-700 sm:col-span-2"
-          >
-            {createCta}
-          </Link>
+        <div className="mt-10 space-y-3">
           <Link
             href={`${base}/predict`}
-            className="rounded-2xl border border-white/10 bg-[#111318] px-6 py-4 text-center text-sm font-semibold text-white transition hover:border-white/20 hover:bg-[#161a22]"
+            className="block w-full rounded-2xl border border-red-600/40 bg-red-600 px-6 py-4 text-center text-sm font-bold text-white shadow-lg shadow-red-900/30 transition hover:bg-red-700"
           >
             Predict
           </Link>
-          <Link
-            href={`${base}/fixtures`}
-            className="rounded-2xl border border-white/10 bg-[#111318] px-6 py-4 text-center text-sm font-semibold text-white transition hover:border-white/20 hover:bg-[#161a22]"
-          >
-            Fixtures
-          </Link>
-          <Link
-            href={`${base}/leaderboard`}
-            className="rounded-2xl border border-white/10 bg-[#111318] px-6 py-4 text-center text-sm font-semibold text-white transition hover:border-white/20 hover:bg-[#161a22] sm:col-span-2"
-          >
-            Leaderboard
-          </Link>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Link
+              href={`${base}/leaderboard`}
+              className="rounded-2xl border border-white/10 bg-[#111318] px-6 py-4 text-center text-sm font-semibold text-white transition hover:border-white/20 hover:bg-[#161a22]"
+            >
+              Leaderboard
+            </Link>
+            <Link
+              href={`${base}/fixtures`}
+              className="rounded-2xl border border-white/10 bg-[#111318] px-6 py-4 text-center text-sm font-semibold text-white transition hover:border-white/20 hover:bg-[#161a22]"
+            >
+              Fixtures
+            </Link>
+          </div>
+
           <Link
             href={`${base}/pools`}
-            className="rounded-2xl border border-white/10 bg-transparent px-6 py-3 text-center text-sm font-medium text-gray-400 transition hover:text-white sm:col-span-2"
+            className="block w-full rounded-2xl border border-white/10 bg-[#111318] px-6 py-4 text-center text-sm font-semibold text-white transition hover:border-white/20 hover:bg-[#161a22]"
           >
             My pools
           </Link>
         </div>
+
+        <Suspense
+          fallback={
+            <div className="mt-6 h-48 animate-pulse rounded-2xl border border-white/10 bg-[#111318]" />
+          }
+        >
+          <CompetitionPoolActions
+            competitionSlug={competition.slug}
+            competitionName={title}
+            competitionId={competition.id}
+          />
+        </Suspense>
       </div>
     </main>
   )

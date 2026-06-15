@@ -436,7 +436,7 @@ function parseScoringMode(v: unknown): CompetitionScoringMode {
 }
 
 export function parseCommunityStatsRpc(data: unknown): CommunityStatsResponse {
-  if (!data || typeof data !== 'object') {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
     return { allowed: false, reason: 'match_not_found' }
   }
   const o = data as Record<string, unknown>
@@ -513,31 +513,50 @@ export function parseCommunityStatsRpc(data: unknown): CommunityStatsResponse {
   }
 }
 
+export type CommunityStatsMatchDebug = {
+  match_id: string
+  home_team?: string
+  away_team?: string
+  kickoff_time?: string
+  status?: string
+  competition_id?: string | null
+}
+
+export function logCommunityStatsFailure(
+  match: CommunityStatsMatchDebug | null | undefined,
+  stats: CommunityStatsResponse | null,
+  rpcError: string | null
+) {
+  const payload = {
+    match_id: match?.match_id ?? (stats?.allowed === false ? stats.match_id : undefined),
+    home_team: match?.home_team ?? (stats?.allowed === false ? stats.home_team : undefined),
+    away_team: match?.away_team ?? (stats?.allowed === false ? stats.away_team : undefined),
+    kickoff_time: match?.kickoff_time ?? (stats?.allowed === false ? stats.kickoff_time : undefined),
+    status: match?.status,
+    competition_id: match?.competition_id,
+    rpc_error: rpcError,
+    stats_reason: stats?.allowed === false ? stats.reason : null,
+    stats_allowed: stats?.allowed ?? null,
+  }
+  console.error('[community-picks] load failed', payload)
+}
+
 export async function fetchCommunityPredictionStats(
   client: SupabaseClient,
-  matchId: string
+  matchId: string,
+  debug?: CommunityStatsMatchDebug
 ): Promise<{ data: CommunityStatsResponse; error: Error | null }> {
   const { data, error } = await client.rpc('get_community_prediction_stats', { p_match_id: matchId })
   if (error) {
-    if (process.env.NODE_ENV === 'development') {
-      console.error('[community-picks] get_community_prediction_stats failed', {
-        matchId,
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-        code: error.code,
-      })
-    }
+    logCommunityStatsFailure(debug ?? { match_id: matchId }, null, error.message)
     return {
       data: { allowed: false, reason: error.message || 'rpc_error' },
       error: new Error(error.message),
     }
   }
-  if (process.env.NODE_ENV === 'development' && data && typeof data === 'object') {
-    const row = data as Record<string, unknown>
-    if (row.allowed === false) {
-      console.warn('[community-picks] stats denied', { matchId, reason: row.reason })
-    }
+  const parsed = parseCommunityStatsRpc(data)
+  if (isCommunityStatsRpcFailure(parsed)) {
+    logCommunityStatsFailure(debug ?? { match_id: matchId }, parsed, null)
   }
-  return { data: parseCommunityStatsRpc(data), error: null }
+  return { data: parsed, error: null }
 }
