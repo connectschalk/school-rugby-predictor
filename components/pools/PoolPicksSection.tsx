@@ -230,7 +230,26 @@ export default function PoolPicksSection({
   }, [loadPicksForMatch, nowTick])
 
   const showPicksData =
-    Boolean(match) && !loadingPicks && !picksError && poolRows.length > 0
+    Boolean(match) &&
+    !loadingPicks &&
+    !picksError &&
+    poolRows.length > 0 &&
+    poolRows.some((r) => r.reveal_allowed)
+
+  const showLockToRevealMessage =
+    Boolean(match) &&
+    !loadingPicks &&
+    !picksError &&
+    poolRows.length > 0 &&
+    !poolRows.some((r) => r.reveal_allowed) &&
+    picksSegment === 'upcoming'
+
+  const hiddenPicksMessage = showLockToRevealMessage
+    ? 'Lock your pick to see pool picks for this fixture.'
+    : !showPicksData && picksSegment === 'upcoming' && poolRows.length === 0
+      ? 'Picks will be visible once this game locks.'
+      : null
+
   const stats = useMemo(() => {
     if (!match || !showPicksData) return null
     return buildPoolCommunityStatsOk(match, mapRpcToStatRows(poolRows), scoringModeResolved)
@@ -483,7 +502,7 @@ export default function PoolPicksSection({
             </div>
           ) : null}
 
-          {!showPicksData ? (
+          {!showPicksData && hiddenPicksMessage ? (
             <div className="w-full max-w-full min-w-0 overflow-hidden rounded-3xl border border-gray-200 bg-white p-6 shadow-lg shadow-black/10">
               <div className="grid min-w-0 grid-cols-3 gap-2 border-b border-gray-100 pb-6">
                 <div className="min-w-0 text-right">
@@ -515,9 +534,7 @@ export default function PoolPicksSection({
                   <p className="mt-1 break-words font-semibold text-gray-900">{match.away_team}</p>
                 </div>
               </div>
-              <p className="mt-6 text-center text-sm font-semibold text-gray-800">
-                Picks will be visible once this game locks.
-              </p>
+              <p className="mt-6 text-center text-sm font-semibold text-gray-800">{hiddenPicksMessage}</p>
             </div>
           ) : stats ? (
             <>

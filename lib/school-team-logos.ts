@@ -119,6 +119,40 @@ reg('worcester-gim', ['Worcester Gimnasium', 'Worcester Gim', 'Hoërskool Worces
 reg('wynberg', ['Wynberg', 'Wynberg Boys High', 'Wynberg Boys'])
 reg('zwartkop', ['Zwartkop', 'Hoërskool Zwartkop'])
 
+reg('st-benedicts', ["St Benedict's", 'St Benedicts', "St. Benedict's", 'St Benedict'])
+reg('st-benedicts-bedfordview', [
+  "St Benedict's College",
+  'St Benedicts College',
+  "St. Benedict's College",
+  'St Benedict Bedfordview',
+])
+reg('st-davids', [
+  "St David's Marist Inanda",
+  'St Davids Marist Inanda',
+  "St. David's Marist Inanda",
+  "St David's",
+])
+reg('st-albans', ["St Alban's College", 'St Albans College', "St. Alban's", 'St Albans'])
+reg('volkskool', ['Hoër Volkskool', 'Hoer Volkskool', 'Volkskool'])
+reg('jan-van-riebeeck', [
+  'Jan van Riebeeck',
+  'Hoërskool Jan van Riebeeck',
+  'Hoerskool Jan van Riebeeck',
+  'HJS',
+])
+reg('charlie-hofmeyr', [
+  'Charlie Hofmeyr',
+  'Hoërskool Charlie Hofmeyr',
+  'Hoerskool Charlie Hofmeyr',
+])
+reg('pinelands', ['Pinelands High School', 'Pinelands High', 'Pinelands', 'PHS'])
+reg('lichtenburg', ['Lichtenburg', 'Hoërskool Lichtenburg', 'Hoerskool Lichtenburg'])
+reg('kalahari', ['Kalahari', 'Hoërskool Kalahari', 'Hoerskool Kalahari'])
+reg('jeugland', ['Jeugland', 'Hoërskool Jeugland', 'Hoerskool Jeugland'])
+reg('dinamika', ['Dinamika', 'Hoërskool Dinamika', 'Hoerskool Dinamika'])
+reg('sutherland', ['Sutherland', 'Sutherland High School', 'Sutherland High'])
+reg('ermelo', ['Ermelo', 'Hoërskool Ermelo', 'Hoerskool Ermelo', 'EHS'])
+
 /**
  * Public URL path for Next.js `/public` (leading slash).
  */

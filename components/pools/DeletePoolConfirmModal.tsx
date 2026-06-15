@@ -31,10 +31,9 @@ export default function DeletePoolConfirmModal({
         onClick={(e) => e.stopPropagation()}
       >
         <h2 id="delete-pool-dialog-title" className="text-lg font-black text-gray-900">
-          Delete pool?
+          Are you sure you want to delete this pool?
         </h2>
         <div className="mt-3 space-y-3 text-sm leading-relaxed text-gray-700">
-          <p>Are you sure you want to delete this pool?</p>
           <p className="font-semibold text-gray-900">This action cannot be undone.</p>
           <p>
             The pool, members, and join requests will be removed. Match predictions and user accounts
