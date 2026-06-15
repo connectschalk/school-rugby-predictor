@@ -21,8 +21,14 @@ export type Competition = {
 export const SCHOOLS_COMPETITION_SLUG = 'nextplay-schools'
 export const SOCCER_WORLD_CUP_SLUG = 'soccer-world-cup'
 
-function parseScoringMode(raw: unknown): CompetitionScoringMode {
-  return raw === 'soccer_exact_score' ? 'soccer_exact_score' : 'rugby_margin'
+/** DB value first; slug fallback when migration 084 not applied or column null. */
+export function resolveCompetitionScoringMode(
+  slug: string,
+  fromDb?: unknown
+): CompetitionScoringMode {
+  if (fromDb === 'soccer_exact_score') return 'soccer_exact_score'
+  if (slug.trim().toLowerCase() === SOCCER_WORLD_CUP_SLUG) return 'soccer_exact_score'
+  return 'rugby_margin'
 }
 
 export function isSoccerExactScoreMode(mode: CompetitionScoringMode | string | null | undefined): boolean {
@@ -42,7 +48,7 @@ function parseCompetition(row: Record<string, unknown>): Competition | null {
     hero_image_url: row.hero_image_url != null ? String(row.hero_image_url) : null,
     sport_type: String(row.sport_type ?? ''),
     competition_mode: mode,
-    scoring_mode: parseScoringMode(row.scoring_mode),
+    scoring_mode: resolveCompetitionScoringMode(String(row.slug), row.scoring_mode),
     is_active: Boolean(row.is_active),
     display_order: Number(row.display_order ?? 0),
   }

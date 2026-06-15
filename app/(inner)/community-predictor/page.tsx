@@ -9,6 +9,8 @@ import CommunityDistributionPanel from '@/components/community-predictor/Communi
 import {
   fetchCommunityPredictionStats,
   formatCommunityMatchScheduleLine,
+  isCommunityStatsAccessDenied,
+  isCommunityStatsRpcFailure,
   type CommunityStatsOk,
   type CommunityStatsResponse,
 } from '@/lib/community-predictor'
@@ -224,6 +226,7 @@ export default function CommunityPicksPage() {
   const [stats, setStats] = useState<CommunityStatsResponse | null>(null)
   const [competitionScoringMode, setCompetitionScoringMode] = useState<CompetitionScoringMode>('rugby_margin')
   const [statsLoading, setStatsLoading] = useState(false)
+  const [statsLoadError, setStatsLoadError] = useState('')
   const touchStartX = useRef<number | null>(null)
   const lastFilterTabRef = useRef<FilterTab>('default')
   const selectedMatchIdRef = useRef<string | null>(null)
@@ -528,12 +531,19 @@ export default function CommunityPicksPage() {
   useEffect(() => {
     if (!currentMatch) {
       setStats(null)
+      setStatsLoadError('')
+      setStatsLoading(false)
       return
     }
+    const matchId = currentMatch.id
     let cancelled = false
     setStatsLoading(true)
-    void fetchCommunityPredictionStats(supabase, currentMatch.id).then(({ data }) => {
+    setStatsLoadError('')
+    void fetchCommunityPredictionStats(supabase, matchId).then(({ data, error }) => {
       if (cancelled) return
+      if (error) {
+        setStatsLoadError(error.message)
+      }
       setStats(data)
       setStatsLoading(false)
     })
@@ -752,8 +762,30 @@ export default function CommunityPicksPage() {
                   </Link>
                 </div>
               </div>
+            ) : stats?.allowed === false && stats.reason === 'match_not_found' ? (
+              <div className="rounded-3xl border border-gray-200 bg-white px-6 py-14 text-center shadow-inner">
+                <p className="text-lg font-bold text-gray-900">Match not found</p>
+                <p className="mt-2 text-sm text-gray-600">
+                  This fixture could not be loaded for community picks.
+                </p>
+              </div>
+            ) : isCommunityStatsRpcFailure(stats) ? (
+              <div className="rounded-3xl border border-gray-200 bg-white px-6 py-14 text-center shadow-inner">
+                <p className="text-lg font-bold text-gray-900">Could not load community picks.</p>
+                {process.env.NODE_ENV === 'development' && statsLoadError ? (
+                  <p className="mt-3 break-words font-mono text-xs text-red-700">{statsLoadError}</p>
+                ) : null}
+                {process.env.NODE_ENV === 'development' && stats?.allowed === false && stats.reason ? (
+                  <p className="mt-2 break-words font-mono text-xs text-gray-500">RPC: {stats.reason}</p>
+                ) : null}
+              </div>
             ) : (
-              <p className="py-12 text-center text-sm text-gray-600">Could not load community picks.</p>
+              <div className="rounded-3xl border border-gray-200 bg-white px-6 py-14 text-center shadow-inner">
+                <p className="text-lg font-bold text-gray-900">Could not load community picks.</p>
+                {process.env.NODE_ENV === 'development' && stats?.allowed === false && stats.reason ? (
+                  <p className="mt-2 break-words font-mono text-xs text-gray-500">{stats.reason}</p>
+                ) : null}
+              </div>
             )}
           </div>
         </section>

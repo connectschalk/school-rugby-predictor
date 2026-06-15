@@ -54,14 +54,14 @@ export default async function CompetitionHomePage({ params }: Props) {
         </Link>
 
         <div className="mt-8 text-center">
-          <div className="mx-auto inline-flex rounded-2xl bg-white px-6 py-5 shadow-lg shadow-black/30">
+          <div className="mx-auto inline-flex rounded-2xl bg-white px-8 py-6 shadow-lg shadow-black/30 sm:px-10 sm:py-8">
             <Image
               src={logoSrc}
               alt=""
-              width={280}
-              height={80}
+              width={360}
+              height={108}
               priority
-              className="h-14 w-auto max-w-[min(100%,280px)] object-contain sm:h-16"
+              className="h-20 w-auto max-w-[min(100%,360px)] object-contain sm:h-24"
             />
           </div>
 

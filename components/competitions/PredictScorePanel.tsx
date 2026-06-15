@@ -5,7 +5,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import type { User } from '@supabase/supabase-js'
 import MatchCard, { MATCH_CARD_MARGIN_MAX } from '@/components/MatchCard'
-import SoccerMatchCard from '@/components/competitions/SoccerMatchCard'
+import SoccerMatchCard, { SOCCER_PREDICT_HEADER_GRID } from '@/components/competitions/SoccerMatchCard'
 import ProvinceLogoMark from '@/components/ProvinceLogoMark'
 import PredictScoreAuthModal from '@/components/predict-score/PredictScoreAuthModal'
 import PredictionMarginModal from '@/components/predict-score/PredictionMarginModal'
@@ -24,7 +24,7 @@ import {
   type PickState,
   type SoccerPickState,
 } from '@/lib/predict-score-common'
-import { isSoccerExactScoreMode, type CompetitionScoringMode } from '@/lib/competitions'
+import { isSoccerExactScoreMode, resolveCompetitionScoringMode, type CompetitionScoringMode } from '@/lib/competitions'
 import { fetchEffectivePoolMatches, fetchMyPools } from '@/lib/pools'
 import {
   fetchCompetitionUpcomingMatches,
@@ -72,7 +72,8 @@ export default function PredictScorePanel({
   scoringMode = 'rugby_margin',
   showProvinceFilters = true,
 }: PredictScorePanelProps) {
-  const soccerMode = isSoccerExactScoreMode(scoringMode)
+  const scoringModeResolved = resolveCompetitionScoringMode(competitionSlug, scoringMode)
+  const soccerMode = isSoccerExactScoreMode(scoringModeResolved)
   const [user, setUser] = useState<User | null>(null)
   const [authReady, setAuthReady] = useState(false)
   const [matches, setMatches] = useState<GameMatch[]>([])
@@ -682,16 +683,17 @@ export default function PredictScorePanel({
                   <div
                     className={
                       soccerMode
-                        ? 'grid min-w-[640px] grid-cols-[5.25rem_minmax(0,1fr)_4.25rem] items-center gap-2 text-[10px] font-black uppercase tracking-wide text-slate-500'
+                        ? `${SOCCER_PREDICT_HEADER_GRID} text-[10px] font-black uppercase tracking-wide text-slate-500`
                         : 'grid min-w-[640px] grid-cols-[5.25rem_minmax(0,1fr)_minmax(0,1fr)_3.25rem_4.25rem_6.5rem] items-center gap-2 text-[10px] font-black uppercase tracking-wide text-slate-500'
                     }
                   >
                     <span>Kickoff</span>
-                    <span>{soccerMode ? 'Score prediction' : 'Home'}</span>
-                    {!soccerMode ? <span>Away</span> : null}
+                    <span>Home</span>
+                    {soccerMode ? <span className="text-center">Score</span> : null}
+                    <span>Away</span>
                     {!soccerMode ? <span className="text-center">Mgn</span> : null}
-                    {!soccerMode ? <span className="text-center">Save</span> : null}
-                    {!soccerMode ? <span className="text-center">Admin</span> : null}
+                    <span className="text-center">Save</span>
+                    <span className="text-center">Admin</span>
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -714,16 +716,17 @@ export default function PredictScorePanel({
                     <div
                       className={
                         soccerMode
-                          ? 'grid min-w-[640px] grid-cols-[5.25rem_minmax(0,1fr)_4.25rem] items-center gap-2 text-[10px] font-black uppercase tracking-wide text-slate-500'
+                          ? `${SOCCER_PREDICT_HEADER_GRID} text-[10px] font-black uppercase tracking-wide text-slate-500`
                           : 'grid min-w-[640px] grid-cols-[5.25rem_minmax(0,1fr)_minmax(0,1fr)_3.25rem_4.25rem_6.5rem] items-center gap-2 text-[10px] font-black uppercase tracking-wide text-slate-500'
                       }
                     >
                       <span>Kickoff</span>
-                      <span>{soccerMode ? 'Score prediction' : 'Home'}</span>
-                      {!soccerMode ? <span>Away</span> : null}
+                      <span>Home</span>
+                      {soccerMode ? <span className="text-center">Score</span> : null}
+                      <span>Away</span>
                       {!soccerMode ? <span className="text-center">Mgn</span> : null}
-                      {!soccerMode ? <span className="text-center">Save</span> : null}
-                      {!soccerMode ? <span className="text-center">Admin</span> : null}
+                      <span className="text-center">Save</span>
+                      <span className="text-center">Admin</span>
                     </div>
                   </div>
                   <div className="space-y-2">

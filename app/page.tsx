@@ -83,14 +83,14 @@ function CompetitionCard({ competition }: { competition: Competition }) {
       }
       className="group flex min-h-[320px] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#111318] text-left shadow-lg shadow-black/40 transition hover:border-red-600/50 hover:bg-[#161a22] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600"
     >
-      <div className="border-b border-white/5 bg-white px-5 py-5 sm:px-6 sm:py-6">
-        <div className="flex h-14 items-center sm:h-16">
+      <div className="border-b border-white/5 bg-white px-5 py-6 sm:px-6 sm:py-8">
+        <div className="flex min-h-[4.5rem] items-center sm:min-h-[5.5rem]">
           <Image
             src={logoSrc}
             alt=""
-            width={220}
-            height={64}
-            className="h-11 w-auto max-w-full object-contain object-left sm:h-12"
+            width={320}
+            height={96}
+            className="h-16 w-auto max-w-full object-contain object-left sm:h-[4.5rem] lg:h-20"
           />
         </div>
       </div>

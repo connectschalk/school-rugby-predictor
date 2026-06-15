@@ -163,6 +163,25 @@ export type CommunityStatsDenied = {
   status?: string
 }
 
+export function isCommunityStatsAccessDenied(
+  stats: CommunityStatsResponse | null
+): stats is CommunityStatsDenied {
+  return (
+    stats?.allowed === false &&
+    (stats.reason === 'lock_required' || stats.reason === 'not_authenticated')
+  )
+}
+
+export function isCommunityStatsRpcFailure(stats: CommunityStatsResponse | null): boolean {
+  if (!stats || stats.allowed !== false) return false
+  if (stats.reason === 'match_not_found') return false
+  return !isCommunityStatsAccessDenied(stats)
+}
+
+export function isCommunityStatsEmptyOk(stats: CommunityStatsOk): boolean {
+  return stats.total_predictions === 0
+}
+
 export type CommunityScorelineRow = {
   home_score: number
   away_score: number
@@ -371,7 +390,7 @@ export function parseCommunityStatsRpc(data: unknown): CommunityStatsResponse {
       scoring_mode: 'soccer_exact_score',
       draw_prediction_count: num(o.draw_prediction_count),
       draw_prediction_pct: num(o.draw_prediction_pct),
-      top_scorelines: parseScorelineRows(o.top_scorelines),
+      top_scorelines: parseScorelineRows(o.top_scorelines ?? []),
       user_locked_home_score: parseNullableInt(o.user_locked_home_score),
       user_locked_away_score: parseNullableInt(o.user_locked_away_score),
     }
@@ -380,7 +399,7 @@ export function parseCommunityStatsRpc(data: unknown): CommunityStatsResponse {
   return {
     ...base,
     scoring_mode: 'rugby_margin',
-    bucket_rows: parseBucketRows(o.bucket_rows),
+    bucket_rows: parseBucketRows(o.bucket_rows ?? []),
     user_locked_winner: o.user_locked_winner === 'away' ? 'away' : o.user_locked_winner === 'home' ? 'home' : null,
     user_locked_margin:
       o.user_locked_margin === null || o.user_locked_margin === undefined ? null : num(o.user_locked_margin),
@@ -393,7 +412,25 @@ export async function fetchCommunityPredictionStats(
 ): Promise<{ data: CommunityStatsResponse; error: Error | null }> {
   const { data, error } = await client.rpc('get_community_prediction_stats', { p_match_id: matchId })
   if (error) {
-    return { data: { allowed: false, reason: error.message }, error: new Error(error.message) }
+    if (process.env.NODE_ENV === 'development') {
+      console.error('[community-picks] get_community_prediction_stats failed', {
+        matchId,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+      })
+    }
+    return {
+      data: { allowed: false, reason: error.message || 'rpc_error' },
+      error: new Error(error.message),
+    }
+  }
+  if (process.env.NODE_ENV === 'development' && data && typeof data === 'object') {
+    const row = data as Record<string, unknown>
+    if (row.allowed === false) {
+      console.warn('[community-picks] stats denied', { matchId, reason: row.reason })
+    }
   }
   return { data: parseCommunityStatsRpc(data), error: null }
 }

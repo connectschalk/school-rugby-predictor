@@ -160,6 +160,10 @@ export default function CommunityDistributionPanel({
 
       {stats.scoring_mode === 'soccer_exact_score' ? (
         <SoccerCommunityPredictionPanel stats={stats} />
+      ) : stats.total_predictions === 0 ? (
+        <p className="mt-6 rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-center text-sm font-medium text-gray-600">
+          No community picks were made for this fixture.
+        </p>
       ) : (
         <CommunityMarginDistributionChart stats={stats} viewerAvatar={viewerAvatar} predictorAppPick={null} />
       )}
