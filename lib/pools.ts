@@ -203,6 +203,8 @@ export type PoolMatchPredictionViewerRpcRow = {
   reveal_allowed: boolean
   predicted_winner: string | null
   predicted_margin: number | null
+  predicted_home_score: number | null
+  predicted_away_score: number | null
   is_locked: boolean | null
   locked_at: string | null
   submitted_at: string | null
@@ -829,6 +831,14 @@ export async function fetchPoolMatchPredictionsForViewer(
       r.predicted_margin == null || r.predicted_margin === ''
         ? null
         : Math.trunc(Number(r.predicted_margin)),
+    predicted_home_score:
+      r.predicted_home_score == null || r.predicted_home_score === ''
+        ? null
+        : Math.trunc(Number(r.predicted_home_score)),
+    predicted_away_score:
+      r.predicted_away_score == null || r.predicted_away_score === ''
+        ? null
+        : Math.trunc(Number(r.predicted_away_score)),
     is_locked: r.is_locked == null ? null : Boolean(r.is_locked),
     locked_at: r.locked_at == null ? null : String(r.locked_at),
     submitted_at: r.submitted_at == null ? null : String(r.submitted_at),

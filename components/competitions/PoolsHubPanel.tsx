@@ -905,6 +905,7 @@ function PoolsPageContent({
                     userId={user.id}
                     isMember={isPoolMember}
                     competitionSlug={competitionSlug}
+                    scoringMode={scoringMode}
                   />
                 ) : (
                   <p className="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">

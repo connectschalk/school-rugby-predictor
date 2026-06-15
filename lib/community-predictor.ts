@@ -19,6 +19,16 @@ export function marginToCommunityBucket(margin: number): CommunityMarginBucket {
 
 export type WinnerMarginPick = { side: 'home' | 'away'; margin: number }
 
+export type SoccerScorePick = { homeScore: number; awayScore: number }
+
+function formatSoccerCommunityAverage(homeAvg: number, awayAvg: number): string {
+  const fmt = (n: number) => {
+    const r = Math.round(n * 10) / 10
+    return Number.isInteger(r) ? String(r) : r.toFixed(1)
+  }
+  return `${fmt(homeAvg)} - ${fmt(awayAvg)}`
+}
+
 export type CommunityMatchSlice = {
   id: string
   home_team: string
@@ -141,6 +151,103 @@ export function buildCommunityStatsOkFromMarginPicks(
     community_average_label: communityAverageLabelFromSignedPicks(match.home_team, match.away_team, normalized),
     user_locked_winner: uw,
     user_locked_margin: um,
+  }
+}
+
+/**
+ * Build {@link CommunityStatsOkSoccer} from exact-score picks (pool revealed picks).
+ */
+export function buildCommunityStatsOkFromSoccerPicks(
+  match: CommunityMatchSlice,
+  picks: SoccerScorePick[],
+  options?: {
+    viewerPick?: SoccerScorePick | null
+  }
+): CommunityStatsOkSoccer {
+  const hs = match.home_score
+  const ascr = match.away_score
+  const completed = match.status === 'completed'
+  const actualWinner = completed ? parseActualWinnerFromScores(hs, ascr) : null
+  const actualMargin =
+    completed && hs != null && ascr != null ? Math.abs(Math.trunc(hs - ascr)) : null
+
+  const normalized = picks
+    .map((p) => ({
+      homeScore: Math.max(0, Math.trunc(Number(p.homeScore))),
+      awayScore: Math.max(0, Math.trunc(Number(p.awayScore))),
+    }))
+    .filter((p) => Number.isFinite(p.homeScore) && Number.isFinite(p.awayScore))
+
+  const total = normalized.length
+  let homeC = 0
+  let awayC = 0
+  let drawC = 0
+  const tally = new Map<string, number>()
+  let homeSum = 0
+  let awaySum = 0
+
+  for (const p of normalized) {
+    homeSum += p.homeScore
+    awaySum += p.awayScore
+    if (p.homeScore > p.awayScore) homeC += 1
+    else if (p.awayScore > p.homeScore) awayC += 1
+    else drawC += 1
+    const key = `${p.homeScore}-${p.awayScore}`
+    tally.set(key, (tally.get(key) ?? 0) + 1)
+  }
+
+  const top_scorelines: CommunityScorelineRow[] = [...tally.entries()]
+    .map(([key, count]) => {
+      const [h, a] = key.split('-').map((x) => Number.parseInt(x, 10))
+      return {
+        home_score: h,
+        away_score: a,
+        count,
+        percentage: total > 0 ? Math.round((count / total) * 1000) / 10 : 0,
+        label: `${h}-${a}`,
+      }
+    })
+    .sort(
+      (a, b) =>
+        b.count - a.count || b.home_score - a.home_score || b.away_score - a.away_score
+    )
+    .slice(0, 5)
+
+  const homePct = total > 0 ? Math.round((homeC / total) * 1000) / 10 : 0
+  const awayPct = total > 0 ? Math.round((awayC / total) * 1000) / 10 : 0
+  const drawPct = total > 0 ? Math.round((drawC / total) * 1000) / 10 : 0
+
+  const vp = options?.viewerPick
+  const viewerHome =
+    vp != null && Number.isFinite(vp.homeScore) ? Math.max(0, Math.trunc(vp.homeScore)) : null
+  const viewerAway =
+    vp != null && Number.isFinite(vp.awayScore) ? Math.max(0, Math.trunc(vp.awayScore)) : null
+
+  return {
+    allowed: true,
+    reason: null,
+    scoring_mode: 'soccer_exact_score',
+    match_id: match.id,
+    home_team: match.home_team,
+    away_team: match.away_team,
+    kickoff_time: match.kickoff_time,
+    status: match.status,
+    home_score: hs,
+    away_score: ascr,
+    actual_winner: actualWinner,
+    actual_margin: actualMargin,
+    total_predictions: total,
+    home_prediction_count: homeC,
+    away_prediction_count: awayC,
+    home_prediction_pct: homePct,
+    away_prediction_pct: awayPct,
+    draw_prediction_count: drawC,
+    draw_prediction_pct: drawPct,
+    top_scorelines,
+    community_average_label:
+      total > 0 ? formatSoccerCommunityAverage(homeSum / total, awaySum / total) : null,
+    user_locked_home_score: viewerHome,
+    user_locked_away_score: viewerAway,
   }
 }
 

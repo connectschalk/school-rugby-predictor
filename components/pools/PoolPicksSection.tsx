@@ -5,7 +5,8 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import CompetitionTeamLogo from '@/components/CompetitionTeamLogo'
 import CommunityDistributionPanel from '@/components/community-predictor/CommunityDistributionPanel'
 import LetterAvatar from '@/components/LetterAvatar'
-import { buildPoolCommunityStatsOk, type PoolMatchPredictionViewerRow } from '@/lib/pool-picks-stats'
+import { buildPoolCommunityStatsOk, poolRowHasSoccerPick, poolRowSoccerResultSide, type PoolMatchPredictionViewerRow } from '@/lib/pool-picks-stats'
+import { isSoccerExactScoreMode, resolveCompetitionScoringMode, type CompetitionScoringMode } from '@/lib/competitions'
 import {
   fetchEffectivePoolMatches,
   fetchGameMatchesByIdsForPool,
@@ -23,6 +24,8 @@ function mapRpcToStatRows(rows: PoolMatchPredictionViewerRpcRow[]): PoolMatchPre
     user_id: r.user_id,
     predicted_winner: r.predicted_winner,
     predicted_margin: r.predicted_margin,
+    predicted_home_score: r.predicted_home_score,
+    predicted_away_score: r.predicted_away_score,
     reveal_allowed: r.reveal_allowed,
     is_viewer: r.is_viewer,
   }))
@@ -109,13 +112,17 @@ export default function PoolPicksSection({
   userId,
   isMember,
   competitionSlug,
+  scoringMode = 'rugby_margin',
 }: {
   supabase: SupabaseClient
   poolId: string
   userId: string
   isMember: boolean
   competitionSlug?: string | null
+  scoringMode?: CompetitionScoringMode
 }) {
+  const scoringModeResolved = resolveCompetitionScoringMode(competitionSlug ?? '', scoringMode)
+  const soccerMode = isSoccerExactScoreMode(scoringModeResolved)
   const [nowTick, setNowTick] = useState(() => Date.now())
   const [loadingGames, setLoadingGames] = useState(true)
   const [picksSegment, setPicksSegment] = useState<PoolPicksSegment>('upcoming')
@@ -226,8 +233,8 @@ export default function PoolPicksSection({
     Boolean(match) && !loadingPicks && !picksError && poolRows.length > 0
   const stats = useMemo(() => {
     if (!match || !showPicksData) return null
-    return buildPoolCommunityStatsOk(match, mapRpcToStatRows(poolRows))
-  }, [match, poolRows, showPicksData])
+    return buildPoolCommunityStatsOk(match, mapRpcToStatRows(poolRows), scoringModeResolved)
+  }, [match, poolRows, showPicksData, scoringModeResolved])
 
   const viewerAvatar = viewerProfile
     ? {
@@ -240,13 +247,23 @@ export default function PoolPicksSection({
 
   const homePickUsers = useMemo(() => {
     if (!showPicksData) return []
+    if (soccerMode) {
+      return poolRows.filter(
+        (r) => r.reveal_allowed && poolRowSoccerResultSide(r) === 'home'
+      )
+    }
     return poolRows.filter((r) => r.predicted_winner === 'home' && r.reveal_allowed)
-  }, [poolRows, showPicksData])
+  }, [poolRows, showPicksData, soccerMode])
 
   const awayPickUsers = useMemo(() => {
     if (!showPicksData) return []
+    if (soccerMode) {
+      return poolRows.filter(
+        (r) => r.reveal_allowed && poolRowSoccerResultSide(r) === 'away'
+      )
+    }
     return poolRows.filter((r) => r.predicted_winner === 'away' && r.reveal_allowed)
-  }, [poolRows, showPicksData])
+  }, [poolRows, showPicksData, soccerMode])
 
   const tableRows = useMemo(() => {
     return [...poolRows].sort((a, b) => a.display_name.localeCompare(b.display_name))
@@ -573,7 +590,7 @@ export default function PoolPicksSection({
                   <thead>
                     <tr className="border-b border-gray-100 bg-gray-50 text-xs font-bold uppercase tracking-wide text-gray-600">
                       <th className="whitespace-nowrap px-4 py-3">Name</th>
-                      <th className="whitespace-nowrap px-4 py-3">Margin</th>
+                      <th className="whitespace-nowrap px-4 py-3">{soccerMode ? 'Predicted score' : 'Margin'}</th>
                       <th className="whitespace-nowrap px-4 py-3">Bonus pts</th>
                       <th className="whitespace-nowrap px-4 py-3">Pts (game)</th>
                       <th className="whitespace-nowrap px-4 py-3">This game</th>
@@ -582,7 +599,13 @@ export default function PoolPicksSection({
                   </thead>
                   <tbody>
                     {fixtureResultsTable.map(({ row: r, thisGame, overall, bonus }) => {
-                      const marginLabel = r.predicted_margin != null ? String(r.predicted_margin) : '—'
+                      const marginLabel = soccerMode
+                        ? poolRowHasSoccerPick(r)
+                          ? `${r.predicted_home_score} - ${r.predicted_away_score}`
+                          : '—'
+                        : r.predicted_margin != null
+                          ? String(r.predicted_margin)
+                          : '—'
                       const ptsGame =
                         r.score_total_points != null && r.reveal_allowed ? String(r.score_total_points) : '—'
                       const bonusLabel =
@@ -631,15 +654,27 @@ export default function PoolPicksSection({
                   <thead>
                     <tr className="border-b border-gray-100 bg-gray-50 text-xs font-bold uppercase tracking-wide text-gray-600">
                       <th className="whitespace-nowrap px-4 py-3">Player</th>
-                      <th className="whitespace-nowrap px-4 py-3">Picked winner</th>
-                      <th className="whitespace-nowrap px-4 py-3">Predicted margin</th>
+                      {soccerMode ? (
+                        <th className="whitespace-nowrap px-4 py-3">Predicted score</th>
+                      ) : (
+                        <>
+                          <th className="whitespace-nowrap px-4 py-3">Picked winner</th>
+                          <th className="whitespace-nowrap px-4 py-3">Predicted margin</th>
+                        </>
+                      )}
                       <th className="whitespace-nowrap px-4 py-3">Submitted at</th>
                       <th className="whitespace-nowrap px-4 py-3">Points</th>
-                      <th className="whitespace-nowrap px-4 py-3">Margin diff</th>
+                      {!soccerMode ? (
+                        <th className="whitespace-nowrap px-4 py-3">Margin diff</th>
+                      ) : null}
                     </tr>
                   </thead>
                   <tbody>
                     {tableRows.map((r) => {
+                      const scoreLabel =
+                        poolRowHasSoccerPick(r)
+                          ? `${r.predicted_home_score} - ${r.predicted_away_score}`
+                          : '—'
                       const winnerLabel =
                         r.predicted_winner === 'home'
                           ? match.home_team
@@ -674,13 +709,21 @@ export default function PoolPicksSection({
                               </span>
                             </span>
                           </td>
-                          <td className="max-w-[8rem] truncate px-4 py-2 text-gray-800 sm:max-w-none sm:whitespace-nowrap" title={winnerLabel}>
-                            {winnerLabel}
-                          </td>
-                          <td className="whitespace-nowrap px-4 py-2 tabular-nums text-gray-800">{marginLabel}</td>
+                          {soccerMode ? (
+                            <td className="whitespace-nowrap px-4 py-2 tabular-nums text-gray-800">{scoreLabel}</td>
+                          ) : (
+                            <>
+                              <td className="max-w-[8rem] truncate px-4 py-2 text-gray-800 sm:max-w-none sm:whitespace-nowrap" title={winnerLabel}>
+                                {winnerLabel}
+                              </td>
+                              <td className="whitespace-nowrap px-4 py-2 tabular-nums text-gray-800">{marginLabel}</td>
+                            </>
+                          )}
                           <td className="whitespace-nowrap px-4 py-2 text-gray-600">{formatSubmitted(r.submitted_at)}</td>
                           <td className="whitespace-nowrap px-4 py-2 tabular-nums text-gray-800">{pts}</td>
-                          <td className="whitespace-nowrap px-4 py-2 tabular-nums text-gray-800">{md}</td>
+                          {!soccerMode ? (
+                            <td className="whitespace-nowrap px-4 py-2 tabular-nums text-gray-800">{md}</td>
+                          ) : null}
                         </tr>
                       )
                     })}
