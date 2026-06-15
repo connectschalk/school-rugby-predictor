@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { User } from '@supabase/supabase-js'
+import { buildLoginHref, buildSignupHref } from '@/lib/auth-return-path'
 import { MY_PREDICTIONS_TABS, myPredictionsTabActive } from '@/lib/competition-nav'
 import { competitionCardTitle, isSoccerExactScoreMode, type CompetitionScoringMode } from '@/lib/competitions'
 import { canEditPredictionOnMatch } from '@/lib/prediction-cutoff'
@@ -68,6 +69,8 @@ export default function MyPredictionsPanel({ mode, competition }: MyPredictionsP
 
   const backHref = isOverall ? '/' : `/competitions/${competition!.slug}/predict`
   const predictHref = isOverall ? '/competitions/nextplay-schools/predict' : backHref
+  const loginHref = buildLoginHref(pathname)
+  const signupHref = buildSignupHref(pathname)
 
   const load = useCallback(
     async (uid: string) => {
@@ -192,13 +195,13 @@ export default function MyPredictionsPanel({ mode, competition }: MyPredictionsP
             <p className="text-base font-semibold text-slate-900">Log in to see your predictions</p>
             <div className="mt-6 flex flex-wrap justify-center gap-3">
               <Link
-                href="/login"
+                href={loginHref}
                 className="rounded-xl bg-slate-900 px-6 py-3 text-sm font-bold text-white shadow-md hover:bg-black"
               >
                 Log in
               </Link>
               <Link
-                href="/signup"
+                href={signupHref}
                 className="rounded-xl border-2 border-slate-300 bg-white px-6 py-3 text-sm font-bold text-slate-900 hover:bg-slate-50"
               >
                 Sign up

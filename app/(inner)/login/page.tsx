@@ -6,39 +6,9 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useId, useState, Suspense } from 'react'
 import LetterAvatar from '@/components/LetterAvatar'
 import { PLATFORM_LOGO_ALT, PLATFORM_LOGO_SRC, PLATFORM_NAME } from '@/lib/platform-branding'
-import { safeInternalReturnPath } from '@/lib/auth-return-path'
+import { buildSignupHref, resolvePostAuthRedirect, safeInternalReturnPath } from '@/lib/auth-return-path'
 import { clearPostConfirmProfilePreview, readPostConfirmProfilePreview, type PostConfirmProfilePreview } from '@/lib/user-profile-metadata'
 import { supabase } from '@/lib/supabase'
-import { isProfileAdminRole } from '@/lib/admin-access'
-
-type PostLoginPath = '/admin' | '/profile' | '/predict-score'
-
-/** First-time / incomplete profile → `/profile`; complete → `/predict-score`; admin role → `/admin`. Fetch errors → `/profile`. */
-async function getPostLoginRouteForUser(user: {
-  id: string
-  email?: string | null
-}): Promise<PostLoginPath> {
-  const { data: profile, error } = await supabase
-    .from('user_profiles')
-    .select('first_name, surname, display_name, role')
-    .eq('id', user.id)
-    .single()
-
-  if (error || !profile) return '/profile'
-
-  const row = profile as {
-    first_name: string | null
-    surname: string | null
-    display_name: string | null
-    role?: string | null
-  }
-  if (isProfileAdminRole(row.role)) return '/admin'
-
-  const isProfileComplete =
-    Boolean(row.first_name?.trim()) && Boolean(row.surname?.trim()) && Boolean(row.display_name?.trim())
-
-  return isProfileComplete ? '/predict-score' : '/profile'
-}
 
 function AccountConfirmedModal({
   open,
@@ -185,13 +155,8 @@ function LoginForm() {
         data: { session },
       } = await supabase.auth.getSession()
       if (!session?.user || cancelled || confirmed) return
-      if (nextAfterLogin) {
-        setSessionRedirecting(true)
-        if (!cancelled) router.replace(nextAfterLogin)
-        return
-      }
       setSessionRedirecting(true)
-      const path = await getPostLoginRouteForUser(session.user)
+      const path = resolvePostAuthRedirect(nextAfterLogin)
       if (!cancelled) router.replace(path)
     })()
     return () => {
@@ -224,26 +189,13 @@ function LoginForm() {
       return
     }
 
-    try {
-      const path = nextAfterLogin ?? (await getPostLoginRouteForUser(user))
-      router.push(path)
-    } catch {
-      setError('Could not verify your profile. Try again.')
-      setLoading(false)
-    }
+    router.push(resolvePostAuthRedirect(nextAfterLogin))
   }
 
   const continueToApp = () => {
     clearPostConfirmProfilePreview()
     setConfirmedModalOpen(false)
-    void (async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
-      if (!session?.user) return
-      const path = await getPostLoginRouteForUser(session.user)
-      router.replace(path)
-    })()
+    router.replace(resolvePostAuthRedirect(nextAfterLogin))
   }
 
   const dismissConfirmedModal = () => {
@@ -285,8 +237,7 @@ function LoginForm() {
       <div className="mx-auto max-w-md px-6 py-16">
         <h1 className="text-3xl font-bold">Log in</h1>
         <p className="mt-2 text-gray-600">
-          Sign in to predict scores, edit your profile, and see rankings. Admin accounts use the
-          same page and are routed to the admin dashboard after login.
+          Sign in to predict scores, edit your profile, and see rankings.
         </p>
 
         {resetSuccess ? (
@@ -348,7 +299,7 @@ function LoginForm() {
           <p>
             No account yet?{' '}
             <Link
-              href={nextAfterLogin ? `/signup?next=${encodeURIComponent(nextAfterLogin)}` : '/signup'}
+              href={buildSignupHref(nextAfterLogin)}
               className="font-semibold text-black underline"
             >
               Sign up

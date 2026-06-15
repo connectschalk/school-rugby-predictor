@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
 import {
   findPoolByJoinCode,
+  isPoolJoinRequestAlreadySentError,
   requestJoinPool,
   type PoolSearchRow,
 } from '@/lib/pools'
@@ -149,21 +150,21 @@ export default function CompetitionPoolActions({
     setJoining(true)
     setJoinMessage('')
     setSearchError('')
-    const { error } = await requestJoinPool(supabase, pool.id, {
+    const { error, alreadySent } = await requestJoinPool(supabase, pool.id, {
       joinCode: pool.join_code,
     })
     setJoining(false)
 
     if (error) {
-      setSearchError(error.message)
+      if (alreadySent || isPoolJoinRequestAlreadySentError(error)) {
+        setJoinMessage('Request already sent.')
+      } else {
+        setSearchError(error.message)
+      }
       return
     }
 
-    setJoinMessage(
-      pool.is_public
-        ? 'Join request sent. The pool admin will approve your request.'
-        : 'Join request sent using your pool code.'
-    )
+    setJoinMessage('Request sent to pool admin.')
     router.push(`/competitions/${competitionSlug}/pools`)
   }
 

@@ -179,6 +179,18 @@ export type PoolJoinRequestRow = {
   requested_at: string
 }
 
+export type PendingJoinRequestRef = {
+  pool_id: string
+  requested_at: string
+}
+
+export const POOL_JOIN_REQUEST_ALREADY_SENT = 'request already sent'
+
+export function isPoolJoinRequestAlreadySentError(error: unknown): boolean {
+  const msg = (error instanceof Error ? error.message : String(error ?? '')).toLowerCase()
+  return msg.includes('request already sent')
+}
+
 export type PoolLeaderboardRow = {
   user_id: string
   display_name: string
@@ -477,15 +489,67 @@ export async function requestJoinPool(
     ? normalizePoolJoinCodeInput(options.joinCode)
     : null
   const { data, error } = await client.rpc('request_pool_join', params)
-  return { row: (data as PoolJoinRequestRow | null) ?? null, error }
+  if (error && isPoolJoinRequestAlreadySentError(error)) {
+    return {
+      row: null,
+      error: new Error(POOL_JOIN_REQUEST_ALREADY_SENT),
+      alreadySent: true as const,
+    }
+  }
+  return {
+    row: (data as PoolJoinRequestRow | null) ?? null,
+    error,
+    alreadySent: false as const,
+  }
 }
 
 export async function fetchPoolJoinRequests(client: SupabaseClient, poolId: string) {
-  const { data, error } = await client.rpc('pending_pool_join_requests', {
+  const { data, error } = await client.rpc('get_pool_join_requests', {
     p_pool_id: poolId,
   })
 
   return { rows: (data as PoolJoinRequestRow[] | null) ?? [], error }
+}
+
+export async function fetchMyPendingPoolJoinRequests(
+  client: SupabaseClient,
+  competitionId?: string
+) {
+  const { data, error } = await client.rpc('my_pending_pool_join_requests', {
+    p_competition_id: competitionId ?? null,
+  })
+  return {
+    rows: (data as PendingJoinRequestRef[] | null) ?? [],
+    error,
+  }
+}
+
+export async function fetchAdminPoolPendingJoinCounts(
+  client: SupabaseClient,
+  competitionId?: string
+) {
+  const { data, error } = await client.rpc('my_admin_pool_pending_join_counts', {
+    p_competition_id: competitionId ?? null,
+  })
+  const map = new Map<string, number>()
+  for (const row of (data as { pool_id: string; pending_count: number }[] | null) ?? []) {
+    map.set(String(row.pool_id), Number(row.pending_count ?? 0))
+  }
+  return { counts: map, error }
+}
+
+export async function approvePoolJoinRequest(client: SupabaseClient, requestId: string) {
+  const { data, error } = await client.rpc('approve_pool_join_request', {
+    p_request_id: requestId,
+  })
+  return { row: (data as PoolJoinRequestRow | null) ?? null, error }
+}
+
+export async function declinePoolJoinRequest(client: SupabaseClient, requestId: string) {
+  const { data, error } = await client.rpc('decline_pool_join_request', {
+    p_request_id: requestId,
+  })
+  return { row: (data as PoolJoinRequestRow | null) ?? null, error }
 }
 
 export async function reviewPoolJoinRequest(

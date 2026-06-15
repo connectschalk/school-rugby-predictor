@@ -37,7 +37,9 @@ import {
   previewPoolGroups,
   removePoolMember,
   requestJoinPool,
-  reviewPoolJoinRequest,
+  approvePoolJoinRequest,
+  declinePoolJoinRequest,
+  isPoolJoinRequestAlreadySentError,
   searchPublicPools,
   setPoolGroups,
   fetchGameMatchGroupLinksForGroups,
@@ -176,6 +178,7 @@ export default function ManagePoolsPage() {
     schoolsCompetitionId != null &&
     adminSchoolsPoolCount >= MAX_POOLS_PER_COMPETITION
   const isSelectedPoolAdmin = Boolean(user && selectedPool && selectedPool.admin_user_id === user.id)
+  const canManageSelectedPool = Boolean(selectedPool && user && (isSelectedPoolAdmin || isUserAdmin))
   const canDeleteSelectedPool = Boolean(selectedPool && user && (isSelectedPoolAdmin || isUserAdmin))
   const createGroupIds = useMemo(
     () =>
@@ -779,23 +782,33 @@ export default function ManagePoolsPage() {
       setMessage(`You have reached the limit of ${MAX_USER_MEMBERSHIPS} pools.`)
       return
     }
-    const { error } = await requestJoinPool(supabase, poolId, {
+    const { error, alreadySent } = await requestJoinPool(supabase, poolId, {
       joinCode: joinCode || undefined,
     })
     if (error) {
-      setMessage(error.message)
+      if (alreadySent || isPoolJoinRequestAlreadySentError(error)) {
+        setMessage('Request already sent.')
+      } else {
+        setMessage(error.message)
+      }
       return
     }
-    setMessage('Join request sent to pool admin.')
+    setMessage('Request sent to pool admin.')
+    await loadPools()
   }
 
-  async function onReview(requestId: string, action: 'approve' | 'reject') {
-    const { error } = await reviewPoolJoinRequest(supabase, requestId, action)
+  async function onReview(requestId: string, action: 'approve' | 'decline') {
+    const { error } =
+      action === 'approve'
+        ? await approvePoolJoinRequest(supabase, requestId)
+        : await declinePoolJoinRequest(supabase, requestId)
     if (error) {
       setMessage(error.message)
       return
     }
+    setMessage(action === 'approve' ? 'Member approved.' : 'Join request declined.')
     await loadPoolDetails()
+    await loadPools()
   }
 
   async function onRemoveMember(userId: string) {
@@ -1276,9 +1289,9 @@ export default function ManagePoolsPage() {
         <div className="rounded-2xl border border-gray-200 bg-white p-4">
           {!selectedPool ? (
             <p className="text-sm text-gray-500">Select a pool to manage.</p>
-          ) : !isSelectedPoolAdmin ? (
+          ) : !canManageSelectedPool ? (
             <div className="space-y-4">
-              <p className="text-sm text-gray-500">You are a member of this pool. Admin tools are available to the pool owner only.</p>
+              <p className="text-sm text-gray-500">You are a member of this pool. Admin tools are available to the pool owner or app admins.</p>
               <div>
                 <h3 className="text-sm font-black uppercase tracking-wide text-gray-700">Teams in this pool</h3>
                 {poolTeamsRows.length === 0 ? (
@@ -1347,7 +1360,7 @@ export default function ManagePoolsPage() {
                         <p className="text-sm text-gray-800">{r.display_name || 'Player'}</p>
                         <div className="flex gap-2">
                           <button type="button" onClick={() => void onReview(r.id, 'approve')} className="rounded-lg bg-gray-900 px-2.5 py-1.5 text-xs font-semibold text-white">Approve</button>
-                          <button type="button" onClick={() => void onReview(r.id, 'reject')} className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs font-semibold text-gray-800">Reject</button>
+                          <button type="button" onClick={() => void onReview(r.id, 'decline')} className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs font-semibold text-gray-800">Decline</button>
                         </div>
                       </div>
                     ))}

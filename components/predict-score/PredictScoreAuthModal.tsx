@@ -1,7 +1,9 @@
 'use client'
 
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { useEffect, useId } from 'react'
+import { buildLoginHref, buildSignupHref } from '@/lib/auth-return-path'
 
 type Props = {
   open: boolean
@@ -10,6 +12,9 @@ type Props = {
 
 export default function PredictScoreAuthModal({ open, onClose }: Props) {
   const titleId = useId()
+  const pathname = usePathname()
+  const loginHref = buildLoginHref(pathname)
+  const signupHref = buildSignupHref(pathname)
 
   useEffect(() => {
     if (!open) return
@@ -48,13 +53,13 @@ export default function PredictScoreAuthModal({ open, onClose }: Props) {
         </p>
         <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-center">
           <Link
-            href="/login"
+            href={loginHref}
             className="inline-flex flex-1 items-center justify-center rounded-xl border border-gray-900 bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
           >
             Log in
           </Link>
           <Link
-            href="/signup"
+            href={signupHref}
             className="inline-flex flex-1 items-center justify-center rounded-xl border border-red-700 bg-white px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
           >
             Sign up

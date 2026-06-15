@@ -11,7 +11,7 @@ import {
   normalizeAvatarLetter,
   resolveAvatarLetter,
 } from '@/lib/letter-avatar'
-import { safeInternalReturnPath } from '@/lib/auth-return-path'
+import { buildLoginHref, resolvePostAuthRedirect, safeInternalReturnPath } from '@/lib/auth-return-path'
 import {
   DISPLAY_NAME_NOT_ALLOWED_MESSAGE,
   isDisplayNamePolicyDbError,
@@ -145,7 +145,7 @@ function SignupPageContent() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
-        router.replace(nextAfterSignup ?? '/profile')
+        router.replace(resolvePostAuthRedirect(nextAfterSignup))
       }
     })
   }, [router, nextAfterSignup])
@@ -247,7 +247,7 @@ function SignupPageContent() {
         return
       }
       setLoading(false)
-      router.push(nextAfterSignup ?? '/profile')
+      router.push(resolvePostAuthRedirect(nextAfterSignup))
       return
     }
 
@@ -440,7 +440,7 @@ function SignupPageContent() {
       <p className="mt-8 text-center text-sm text-gray-600">
         Already have an account?{' '}
         <Link
-          href={nextAfterSignup ? `/login?next=${encodeURIComponent(nextAfterSignup)}` : '/login'}
+          href={buildLoginHref(nextAfterSignup)}
           className="font-semibold text-black underline"
         >
           Log in

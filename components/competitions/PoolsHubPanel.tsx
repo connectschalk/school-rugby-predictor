@@ -2,27 +2,32 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import type { User } from '@supabase/supabase-js'
 import LetterAvatar from '@/components/LetterAvatar'
 import DeletePoolConfirmModal from '@/components/pools/DeletePoolConfirmModal'
 import PoolPicksSection from '@/components/pools/PoolPicksSection'
 import PoolPredictTabSection from '@/components/pools/PoolPredictTabSection'
+import { buildLoginHref } from '@/lib/auth-return-path'
 import { fetchUserIsAdmin } from '@/lib/admin-access'
 import {
   canUserCreatePoolInCompetition,
   countUserAdminPoolsForCompetition,
   createPool,
+  declinePoolJoinRequest,
   deletePool,
+  approvePoolJoinRequest,
+  fetchAdminPoolPendingJoinCounts,
   fetchEffectivePoolMatches,
+  fetchMyPendingPoolJoinRequests,
   fetchPoolGroups,
   fetchPoolTeams,
   fetchMyPools,
   fetchPoolJoinRequests,
   fetchPoolLeaderboard,
+  isPoolJoinRequestAlreadySentError,
   removePoolMember,
   requestJoinPool,
-  reviewPoolJoinRequest,
   searchPublicPools,
   upsertPoolMatches,
   MAX_POOLS_PER_COMPETITION,
@@ -55,6 +60,21 @@ function requestDisplayName(r: PoolJoinRequestRow, profilesById: Record<string, 
   return r.display_name?.trim() || profilesById[r.user_id]?.display_name?.trim() || 'Player'
 }
 
+function formatRequestedAt(iso: string) {
+  try {
+    return new Date(iso).toLocaleString('en-ZA', {
+      timeZone: 'Africa/Johannesburg',
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  } catch {
+    return iso
+  }
+}
+
 const PENDING_POOL_INVITE_KEY = 'pending_pool_invite_id'
 
 export type PoolsHubPanelProps = {
@@ -73,6 +93,7 @@ function PoolsPageContent({
   scoringMode = 'rugby_margin',
 }: PoolsHubPanelProps) {
   const router = useRouter()
+  const pathname = usePathname()
   const searchParams = useSearchParams()
   const [user, setUser] = useState<User | null>(null)
   const [authReady, setAuthReady] = useState(false)
@@ -95,6 +116,9 @@ function PoolsPageContent({
 
   const [joinRequests, setJoinRequests] = useState<PoolJoinRequestRow[]>([])
   const [requestsLoading, setRequestsLoading] = useState(false)
+  const [pendingRequestPoolIds, setPendingRequestPoolIds] = useState<Set<string>>(() => new Set())
+  const [adminPendingCounts, setAdminPendingCounts] = useState<Map<string, number>>(() => new Map())
+  const [sentRequestPoolIds, setSentRequestPoolIds] = useState<Set<string>>(() => new Set())
 
   const [allMatches, setAllMatches] = useState<GameMatch[]>([])
   const [effectiveMatchIds, setEffectiveMatchIds] = useState<string[]>([])
@@ -140,7 +164,9 @@ function PoolsPageContent({
     [myPools, selectedPoolId]
   )
   const isAdmin = Boolean(user && selectedPool && selectedPool.admin_user_id === user.id)
+  const canManagePool = Boolean(user && selectedPool && (isAdmin || isUserAdmin))
   const canDeletePool = Boolean(user && selectedPool && (isAdmin || isUserAdmin))
+  const selectedPoolPendingCount = selectedPoolId ? adminPendingCounts.get(selectedPoolId) ?? 0 : 0
   const isPoolMember = Boolean(selectedPoolId && membershipByPool.has(selectedPoolId))
   const effectiveMatches = useMemo(() => {
     const byId = new Map(allMatches.map((m) => [m.id, m]))
@@ -159,6 +185,24 @@ function PoolsPageContent({
     return rows
   }, [leaderRows])
 
+  const loadPendingJoinState = useCallback(async () => {
+    if (!user) {
+      setPendingRequestPoolIds(new Set())
+      setAdminPendingCounts(new Map())
+      return
+    }
+    const [mineRes, adminRes] = await Promise.all([
+      fetchMyPendingPoolJoinRequests(supabase, competitionId),
+      fetchAdminPoolPendingJoinCounts(supabase, competitionId),
+    ])
+    if (!mineRes.error) {
+      setPendingRequestPoolIds(new Set(mineRes.rows.map((r) => r.pool_id)))
+    }
+    if (!adminRes.error) {
+      setAdminPendingCounts(adminRes.counts)
+    }
+  }, [competitionId, user])
+
   const loadPools = useCallback(async (explicitUserId?: string) => {
     const { data: sessionData } = await supabase.auth.getSession()
     const userId = explicitUserId ?? sessionData.session?.user?.id
@@ -172,7 +216,8 @@ function PoolsPageContent({
     }
     setMyPools(result.pools)
     setMyMemberships(result.memberships)
-  }, [competitionId])
+    await loadPendingJoinState()
+  }, [competitionId, loadPendingJoinState])
 
   const loadProfiles = useCallback(async (ids: string[]) => {
     const unique = [...new Set(ids.filter(Boolean))]
@@ -201,6 +246,7 @@ function PoolsPageContent({
     const poolGroupsRes = await fetchPoolGroups(supabase, selectedPoolId)
 
     if (!reqRes.error) setJoinRequests(reqRes.rows)
+    else setMessage(reqRes.error.message)
     if (!effRes.error) {
       setEffectiveMatchIds(effRes.matchIds)
       setSelectedMatchIds(effRes.matchIds)
@@ -278,6 +324,10 @@ function PoolsPageContent({
   }, [competitionId])
 
   useEffect(() => {
+    void loadPendingJoinState()
+  }, [loadPendingJoinState])
+
+  useEffect(() => {
     if (!user) {
       setIsUserAdmin(false)
       return
@@ -315,7 +365,9 @@ function PoolsPageContent({
         if (typeof window !== 'undefined') {
           window.localStorage.setItem(PENDING_POOL_INVITE_KEY, invitePoolId)
         }
-        router.replace('/login')
+        const query = searchParams.toString()
+        const returnPath = query ? `${pathname}?${query}` : pathname
+        router.replace(buildLoginHref(returnPath))
         return
       }
 
@@ -345,12 +397,16 @@ function PoolsPageContent({
         .maybeSingle()
       const poolName = String((poolRow as { name?: string } | null)?.name ?? 'pool')
 
-      const { error } = await requestJoinPool(supabase, invitePoolId)
+      const { error, alreadySent } = await requestJoinPool(supabase, invitePoolId)
       if (error) {
-        setMessage(error.message)
+        setMessage(
+          alreadySent || isPoolJoinRequestAlreadySentError(error)
+            ? 'Request already sent.'
+            : error.message
+        )
         return
       }
-      setMessage(`Request sent to join ${poolName}`)
+      setMessage(`Request sent to pool admin for ${poolName}.`)
       if (typeof window !== 'undefined') {
         window.localStorage.removeItem(PENDING_POOL_INVITE_KEY)
       }
@@ -445,25 +501,38 @@ function PoolsPageContent({
   }
 
   async function onRequestJoin(poolId: string, joinCode?: string) {
-    const { error } = await requestJoinPool(supabase, poolId, {
+    const { error, alreadySent } = await requestJoinPool(supabase, poolId, {
       joinCode: joinCode || undefined,
     })
     if (error) {
-      setMessage(error.message)
+      if (alreadySent || isPoolJoinRequestAlreadySentError(error)) {
+        setMessage('Request already sent.')
+        setPendingRequestPoolIds((prev) => new Set(prev).add(poolId))
+        setSentRequestPoolIds((prev) => new Set(prev).add(poolId))
+      } else {
+        setMessage(error.message)
+      }
       return
     }
-    setMessage('Join request sent to pool admin.')
+    setMessage('Request sent to pool admin.')
+    setPendingRequestPoolIds((prev) => new Set(prev).add(poolId))
+    setSentRequestPoolIds((prev) => new Set(prev).add(poolId))
     if (user) await loadPools(user.id)
   }
 
-  async function onReview(requestId: string, action: 'approve' | 'reject') {
-    const { error } = await reviewPoolJoinRequest(supabase, requestId, action)
+  async function onReview(requestId: string, action: 'approve' | 'decline') {
+    const { error } =
+      action === 'approve'
+        ? await approvePoolJoinRequest(supabase, requestId)
+        : await declinePoolJoinRequest(supabase, requestId)
     if (error) {
       setMessage(error.message)
       return
     }
-    setMessage(action === 'approve' ? 'Member approved.' : 'Join request rejected.')
+    setMessage(action === 'approve' ? 'Member approved.' : 'Join request declined.')
     await loadPoolDetails()
+    await loadPendingJoinState()
+    if (user) await loadPools(user.id)
   }
 
   async function onRemoveMember(userId: string) {
@@ -591,7 +660,13 @@ function PoolsPageContent({
             </button>
           </div>
           <div className="mt-3 space-y-2">
-            {publicRows.map((r) => (
+            {publicRows.map((r) => {
+              const alreadyRequested =
+                pendingRequestPoolIds.has(r.id) ||
+                sentRequestPoolIds.has(r.id) ||
+                membershipByPool.has(r.id)
+              const isMember = membershipByPool.has(r.id)
+              return (
               <div
                 key={r.id}
                 className="flex min-w-0 max-w-full items-center justify-between gap-2 rounded-xl border border-gray-200 px-3 py-2"
@@ -608,15 +683,22 @@ function PoolsPageContent({
                     {!r.is_public ? ' · Private' : ''}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => void onRequestJoin(r.id, r.join_code)}
-                  className="shrink-0 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-800"
-                >
-                  Request join
-                </button>
+                {isMember ? (
+                  <span className="shrink-0 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
+                    Member
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void onRequestJoin(r.id, r.join_code)}
+                    disabled={alreadyRequested}
+                    className="shrink-0 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-800 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-50 disabled:text-gray-500"
+                  >
+                    {alreadyRequested ? 'Request sent' : 'Request join'}
+                  </button>
+                )}
               </div>
-            ))}
+            )})}
           </div>
         </div>
 
@@ -679,7 +761,9 @@ function PoolsPageContent({
             {myPools.length === 0 ? (
               <p className="min-w-0 break-words">No pools yet.</p>
             ) : (
-              myPools.map((pool) => (
+              myPools.map((pool) => {
+                const pendingForPool = adminPendingCounts.get(pool.id) ?? 0
+                return (
                 <button
                   key={pool.id}
                   type="button"
@@ -695,10 +779,16 @@ function PoolsPageContent({
                         Admin
                       </span>
                     ) : null}
+                    {pendingForPool > 0 && (pool.admin_user_id === user.id || isUserAdmin) ? (
+                      <span className="rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                        {pendingForPool}
+                      </span>
+                    ) : null}
                   </div>
                   <p className="mt-0.5 text-xs text-gray-500">{pool.is_public ? 'Public' : 'Private'} pool</p>
                 </button>
-              ))
+                )
+              })
             )}
           </div>
         </aside>
@@ -709,11 +799,16 @@ function PoolsPageContent({
           ) : (
             <>
               <div className="flex min-w-0 max-w-full flex-wrap items-start justify-between gap-3">
-                <div className="flex min-w-0 flex-1 items-center gap-2">
+                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                   <h2 className="min-w-0 break-words text-lg font-black text-gray-900">{selectedPool.name}</h2>
                   {selectedPool.admin_user_id === user.id ? (
                     <span className="shrink-0 rounded-full border border-gray-300 px-2 py-0.5 text-[10px] font-semibold text-gray-700">
                       Admin
+                    </span>
+                  ) : null}
+                  {canManagePool && selectedPoolPendingCount > 0 ? (
+                    <span className="shrink-0 rounded-full bg-red-100 px-2.5 py-0.5 text-[10px] font-bold text-red-800">
+                      {selectedPoolPendingCount} join request{selectedPoolPendingCount === 1 ? '' : 's'}
                     </span>
                   ) : null}
                 </div>
@@ -812,7 +907,10 @@ function PoolsPageContent({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setPoolInfoModalOpen(true)}
+                  onClick={() => {
+                    setPoolInfoModalOpen(true)
+                    if (canManagePool) void loadPoolDetails()
+                  }}
                   aria-expanded={poolInfoModalOpen}
                   aria-controls="pool-info-dialog"
                   className="inline-flex w-full shrink-0 items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-800 shadow-sm transition hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 sm:w-auto sm:justify-start"
@@ -831,6 +929,11 @@ function PoolsPageContent({
                     />
                   </svg>
                   Pool info
+                  {canManagePool && selectedPoolPendingCount > 0 ? (
+                    <span className="rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                      {selectedPoolPendingCount}
+                    </span>
+                  ) : null}
                 </button>
               </div>
 
@@ -1035,6 +1138,57 @@ function PoolsPageContent({
                           This pool includes matches from selected groups and/or matches involving selected teams.
                         </p>
                       </section>
+                      {canManagePool ? (
+                        <section className="border-t border-gray-100 pt-4">
+                          <h3 className="text-xs font-black uppercase tracking-wide text-gray-500">
+                            Pending join requests
+                          </h3>
+                          {requestsLoading ? (
+                            <p className="mt-2 text-sm text-gray-500">Loading requests…</p>
+                          ) : joinRequests.length === 0 ? (
+                            <p className="mt-2 text-sm text-gray-500">No pending requests.</p>
+                          ) : (
+                            <ul className="mt-3 space-y-2">
+                              {joinRequests.map((r) => (
+                                <li
+                                  key={r.id}
+                                  className="rounded-xl border border-gray-200 px-3 py-2.5"
+                                >
+                                  <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <p
+                                        className="truncate text-sm font-semibold text-gray-900"
+                                        title={requestDisplayName(r, profilesById)}
+                                      >
+                                        {requestDisplayName(r, profilesById)}
+                                      </p>
+                                      <p className="mt-0.5 text-xs text-gray-500">
+                                        Requested {formatRequestedAt(r.requested_at)}
+                                      </p>
+                                    </div>
+                                    <div className="flex shrink-0 gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => void onReview(r.id, 'approve')}
+                                        className="rounded-lg bg-gray-900 px-2.5 py-1.5 text-xs font-semibold text-white"
+                                      >
+                                        Approve
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => void onReview(r.id, 'decline')}
+                                        className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs font-semibold text-gray-800"
+                                      >
+                                        Decline
+                                      </button>
+                                    </div>
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </section>
+                      ) : null}
                       {canDeletePool ? (
                         <section className="border-t border-gray-100 pt-4">
                           <button
@@ -1060,49 +1214,7 @@ function PoolsPageContent({
                 onConfirm={() => void onConfirmDeletePool()}
               />
 
-              {showManagement && isAdmin ? (
-                <div className="mt-6">
-                  <h3 className="text-sm font-black uppercase tracking-wide text-gray-700">Join requests</h3>
-                  {requestsLoading ? (
-                    <p className="mt-2 text-sm text-gray-500">Loading requests…</p>
-                  ) : (
-                    <div className="mt-2 space-y-2">
-                      {joinRequests.length === 0 ? (
-                        <p className="text-sm text-gray-500">No pending requests.</p>
-                      ) : (
-                        joinRequests.map((r) => (
-                            <div
-                              key={r.id}
-                              className="flex min-w-0 max-w-full items-center justify-between gap-2 rounded-xl border border-gray-200 px-3 py-2"
-                            >
-                              <p className="min-w-0 truncate text-sm text-gray-800" title={requestDisplayName(r, profilesById)}>
-                                {requestDisplayName(r, profilesById)}
-                              </p>
-                              <div className="flex gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => void onReview(r.id, 'approve')}
-                                  className="rounded-lg bg-gray-900 px-2.5 py-1.5 text-xs font-semibold text-white"
-                                >
-                                  Approve
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => void onReview(r.id, 'reject')}
-                                  className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs font-semibold text-gray-800"
-                                >
-                                  Reject
-                                </button>
-                              </div>
-                            </div>
-                          ))
-                      )}
-                    </div>
-                  )}
-                </div>
-              ) : null}
-
-              {showManagement && isAdmin ? (
+              {canManagePool ? (
                 <div className="mt-6">
                   <h3 className="text-sm font-black uppercase tracking-wide text-gray-700">Members</h3>
                   <div className="mt-2 space-y-2">

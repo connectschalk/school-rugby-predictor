@@ -2,13 +2,14 @@
 
 import Link from 'next/link'
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { usePathname, useSearchParams } from 'next/navigation'
 import type { User } from '@supabase/supabase-js'
 import MatchCard, { MATCH_CARD_MARGIN_MAX } from '@/components/MatchCard'
 import SoccerMatchCard, { SOCCER_PREDICT_HEADER_GRID } from '@/components/competitions/SoccerMatchCard'
 import ProvinceLogoMark from '@/components/ProvinceLogoMark'
 import PredictScoreAuthModal from '@/components/predict-score/PredictScoreAuthModal'
 import PredictionMarginModal from '@/components/predict-score/PredictionMarginModal'
+import { buildLoginHref, buildSignupHref } from '@/lib/auth-return-path'
 import { fetchUserIsAdmin } from '@/lib/admin-access'
 import { canEditPredictionOnMatch, matchPredictionsClosed } from '@/lib/prediction-cutoff'
 import {
@@ -72,6 +73,9 @@ export default function PredictScorePanel({
   scoringMode = 'rugby_margin',
   showProvinceFilters = true,
 }: PredictScorePanelProps) {
+  const pathname = usePathname()
+  const loginHref = buildLoginHref(pathname)
+  const signupHref = buildSignupHref(pathname)
   const scoringModeResolved = resolveCompetitionScoringMode(competitionSlug, scoringMode)
   const soccerMode = isSoccerExactScoreMode(scoringModeResolved)
   const [user, setUser] = useState<User | null>(null)
@@ -617,13 +621,13 @@ export default function PredictScorePanel({
             <p className="mt-2 text-sm text-slate-600">Browse and filter fixtures below; log in to submit picks.</p>
             <div className="mt-6 flex flex-wrap justify-center gap-3">
               <Link
-                href="/signup"
+                href={signupHref}
                 className="rounded-xl bg-slate-900 px-6 py-3 text-sm font-bold text-white shadow-md hover:bg-black"
               >
                 Sign up
               </Link>
               <Link
-                href="/login"
+                href={loginHref}
                 className="rounded-xl border-2 border-slate-300 bg-white px-6 py-3 text-sm font-bold text-slate-900 hover:bg-slate-50"
               >
                 Log in
