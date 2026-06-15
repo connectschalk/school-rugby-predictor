@@ -82,7 +82,7 @@ export function TeamLogoCircle({
 
   return (
     <div
-      className={`flex items-center justify-center rounded-full border border-gray-200 bg-gray-50 ${sizeClassName}`}
+      className={`flex items-center justify-center rounded-full border border-gray-200 bg-white ${sizeClassName}`}
     >
       {!failed && teamName ? (
         <img

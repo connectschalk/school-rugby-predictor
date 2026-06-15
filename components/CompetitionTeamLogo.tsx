@@ -24,8 +24,8 @@ function variantClasses(variant: 'badge' | 'crest'): { shell: string; image: str
     }
   }
   return {
-    shell: 'rounded-full bg-gray-100',
-    image: 'object-cover',
+    shell: 'rounded-md border border-gray-200 bg-white',
+    image: 'object-contain p-0.5',
   }
 }
 
@@ -56,15 +56,20 @@ export default function CompetitionTeamLogo({
   }
 
   return (
-    <Image
-      src={src}
-      alt=""
-      width={size}
-      height={size}
-      className={`shrink-0 ${styles.shell} ${styles.image} ${className}`}
+    <span
+      className={`inline-flex shrink-0 items-center justify-center overflow-hidden ${styles.shell} ${className}`}
+      style={{ width: size, height: size }}
       title={label}
-      onError={() => setFailed(true)}
-    />
+    >
+      <Image
+        src={src}
+        alt=""
+        width={size}
+        height={size}
+        className={`h-full w-full ${styles.image}`}
+        onError={() => setFailed(true)}
+      />
+    </span>
   )
 }
 

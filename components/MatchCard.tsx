@@ -46,17 +46,13 @@ function TeamPickCell({
           : 'border-slate-200 bg-slate-50 text-slate-900 hover:border-slate-400'
       } ${disabled ? 'cursor-not-allowed opacity-55' : ''}`}
     >
-      <span
-        className={`flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded text-xs font-bold ${
-          selected ? 'bg-white/15 text-white ring-1 ring-white/30' : 'bg-white text-slate-700 ring-1 ring-slate-200'
-        }`}
-      >
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md bg-white ring-1 ring-slate-200">
         <CompetitionTeamLogo
           competitionSlug={competitionSlug}
           teamName={name}
           size={32}
           variant="badge"
-          className={selected ? 'bg-transparent' : ''}
+          className="border-0"
         />
       </span>
       <span className="min-w-0 flex-1">

@@ -26,7 +26,7 @@ import {
   parseCompetitionSlugFromPathname,
   resolveCompetitionSlugFromPathname,
 } from '@/lib/competition-nav'
-import { getCompetitionBySlug, SCHOOLS_COMPETITION_SLUG } from '@/lib/competitions'
+import { getCompetitionBySlug, SCHOOLS_COMPETITION_SLUG, type CompetitionScoringMode } from '@/lib/competitions'
 import { supabase } from '@/lib/supabase'
 import { trackEvent } from '@/lib/trackEvent'
 
@@ -222,6 +222,7 @@ export default function CommunityPicksPage() {
   const [nowTick, setNowTick] = useState(() => Date.now())
   const [index, setIndex] = useState(0)
   const [stats, setStats] = useState<CommunityStatsResponse | null>(null)
+  const [competitionScoringMode, setCompetitionScoringMode] = useState<CompetitionScoringMode>('rugby_margin')
   const [statsLoading, setStatsLoading] = useState(false)
   const touchStartX = useRef<number | null>(null)
   const lastFilterTabRef = useRef<FilterTab>('default')
@@ -312,6 +313,7 @@ export default function CommunityPicksPage() {
       const routeSlug = parseCompetitionSlugFromPathname(pathname)
       const slugForFilter = routeSlug ?? SCHOOLS_COMPETITION_SLUG
       const { competition } = await getCompetitionBySlug(supabase, slugForFilter)
+      setCompetitionScoringMode(competition?.scoring_mode ?? 'rugby_margin')
       const competitionId = competition?.id
 
       let matchQuery = supabase
@@ -589,8 +591,9 @@ export default function CommunityPicksPage() {
       <div className="text-center md:text-left">
         <h1 className="text-3xl font-black tracking-tight text-gray-900 md:text-4xl">Community Picks</h1>
         <p className="mx-auto mt-2 max-w-2xl text-sm text-gray-600 md:mx-0">
-          After kickoff, everyone can see how the crowd split margins. Before kickoff, lock your pick on Predict a
-          Score to view Community Picks for that fixture.
+          {competitionScoringMode === 'soccer_exact_score'
+            ? 'After kickoff, everyone can see the most predicted scorelines. Before kickoff, lock your score prediction to view Community Picks for that fixture.'
+            : 'After kickoff, everyone can see how the crowd split margins. Before kickoff, lock your pick on Predict a Score to view Community Picks for that fixture.'}
         </p>
       </div>
 

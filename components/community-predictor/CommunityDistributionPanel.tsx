@@ -2,7 +2,7 @@
 
 import LetterAvatar from '@/components/LetterAvatar'
 import CommunityMarginDistributionChart from '@/components/community-predictor/CommunityMarginDistributionChart'
-import CommunityTopScorelines from '@/components/community-predictor/CommunityTopScorelines'
+import SoccerCommunityPredictionPanel from '@/components/community-predictor/SoccerCommunityPredictionPanel'
 import { formatCommunityMatchScheduleLine, type CommunityStatsOk } from '@/lib/community-predictor'
 import CompetitionTeamLogo from '@/components/CompetitionTeamLogo'
 
@@ -48,9 +48,13 @@ export default function CommunityDistributionPanel({
   const actualLine =
     !scoresExist || stats.actual_winner == null
       ? null
-      : stats.actual_winner === 'draw'
-        ? 'Actual: Draw'
-        : `Actual: ${stats.actual_winner === 'home' ? stats.home_team : stats.away_team} by ${stats.actual_margin ?? 0}`
+      : stats.scoring_mode === 'soccer_exact_score'
+        ? stats.actual_winner === 'draw'
+          ? 'Actual: Draw'
+          : `Actual: ${stats.home_score} - ${stats.away_score}`
+        : stats.actual_winner === 'draw'
+          ? 'Actual: Draw'
+          : `Actual: ${stats.actual_winner === 'home' ? stats.home_team : stats.away_team} by ${stats.actual_margin ?? 0}`
 
   return (
     <div className="w-full max-w-full overflow-hidden rounded-3xl border border-gray-200 bg-white p-4 shadow-lg shadow-black/10 sm:p-8">
@@ -99,30 +103,16 @@ export default function CommunityDistributionPanel({
         </div>
       </div>
 
-      <div className="mt-6 flex flex-wrap items-center justify-center gap-3 text-xs text-gray-700 sm:text-sm">
-        {stats.scoring_mode === 'soccer_exact_score' ? (
-          <>
-            <span className="rounded-full bg-gray-900 px-3 py-1 font-semibold text-white">
-              Home win {formatPctLabel(stats.home_prediction_pct)}%
-            </span>
-            <span className="rounded-full bg-gray-500 px-3 py-1 font-semibold text-white">
-              Draw {formatPctLabel(stats.draw_prediction_pct)}%
-            </span>
-            <span className="rounded-full bg-red-700 px-3 py-1 font-semibold text-white">
-              Away win {formatPctLabel(stats.away_prediction_pct)}%
-            </span>
-          </>
-        ) : (
-          <>
-            <span className="rounded-full bg-gray-900 px-3 py-1 font-semibold text-white">
-              Home {formatPctLabel(stats.home_prediction_pct)}%
-            </span>
-            <span className="rounded-full bg-red-700 px-3 py-1 font-semibold text-white">
-              Away {formatPctLabel(stats.away_prediction_pct)}%
-            </span>
-          </>
-        )}
-      </div>
+      {stats.scoring_mode === 'rugby_margin' ? (
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-3 text-xs text-gray-700 sm:text-sm">
+          <span className="rounded-full bg-gray-900 px-3 py-1 font-semibold text-white">
+            Home {formatPctLabel(stats.home_prediction_pct)}%
+          </span>
+          <span className="rounded-full bg-red-700 px-3 py-1 font-semibold text-white">
+            Away {formatPctLabel(stats.away_prediction_pct)}%
+          </span>
+        </div>
+      ) : null}
       {yours && viewerAvatar ? (
         <div className="mt-3 flex items-center justify-center gap-2 text-sm text-gray-800">
           <LetterAvatar
@@ -140,13 +130,9 @@ export default function CommunityDistributionPanel({
         </div>
       ) : null}
 
-      <p className="mt-6 text-center text-sm font-semibold text-gray-900">
-        {stats.scoring_mode === 'soccer_exact_score'
-          ? stats.community_average_label
-            ? `Community average score: ${stats.community_average_label}`
-            : 'Community average score: —'
-          : avgLine}
-      </p>
+      {stats.scoring_mode === 'rugby_margin' ? (
+        <p className="mt-6 text-center text-sm font-semibold text-gray-900">{avgLine}</p>
+      ) : null}
       {actualLine || (yours && viewerAvatar) ? (
         <div className="mt-2 flex flex-wrap items-center justify-center gap-3 text-sm font-semibold text-gray-900">
           {actualLine ? (
@@ -173,7 +159,7 @@ export default function CommunityDistributionPanel({
       ) : null}
 
       {stats.scoring_mode === 'soccer_exact_score' ? (
-        <CommunityTopScorelines stats={stats} />
+        <SoccerCommunityPredictionPanel stats={stats} />
       ) : (
         <CommunityMarginDistributionChart stats={stats} viewerAvatar={viewerAvatar} predictorAppPick={null} />
       )}

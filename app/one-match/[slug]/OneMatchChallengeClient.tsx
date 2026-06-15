@@ -590,12 +590,8 @@ export default function OneMatchChallengePage() {
                       : 'border-gray-200 bg-white'
                   } disabled:opacity-50`}
                 >
-                  <span
-                    className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full border bg-white ${
-                      winner === 'home' ? 'border-white/30 bg-white/15' : 'border-gray-200'
-                    }`}
-                  >
-                    <TeamCrestImg teamName={match.home_team} className="h-9 w-9" />
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-md border border-gray-200 bg-white">
+                    <TeamCrestImg teamName={match.home_team} className="h-9 w-9 border-0" />
                   </span>
                   <span className="min-w-0 flex-1 leading-snug">{match.home_team}</span>
                 </button>
@@ -609,12 +605,8 @@ export default function OneMatchChallengePage() {
                       : 'border-gray-200 bg-white'
                   } disabled:opacity-50`}
                 >
-                  <span
-                    className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full border bg-white ${
-                      winner === 'away' ? 'border-white/30 bg-white/15' : 'border-gray-200'
-                    }`}
-                  >
-                    <TeamCrestImg teamName={match.away_team} className="h-9 w-9" />
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-md border border-gray-200 bg-white">
+                    <TeamCrestImg teamName={match.away_team} className="h-9 w-9 border-0" />
                   </span>
                   <span className="min-w-0 flex-1 leading-snug">{match.away_team}</span>
                 </button>

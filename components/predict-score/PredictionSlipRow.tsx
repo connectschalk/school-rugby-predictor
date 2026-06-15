@@ -74,16 +74,13 @@ function TeamLogoBlock({
           : 'border-gray-200 bg-gray-50 text-gray-900 hover:border-gray-400'
       } ${disabled ? 'cursor-not-allowed opacity-60' : ''}`}
     >
-      <span
-        className={`flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md text-sm font-bold ${
-          selected ? 'bg-white/15 text-white ring-1 ring-white/30' : 'bg-white text-gray-700 ring-1 ring-gray-200'
-        }`}
-      >
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-white ring-1 ring-gray-200">
         <CompetitionTeamLogo
           competitionSlug={competitionSlug}
           teamName={name}
           size={40}
           variant="badge"
+          className="border-0"
         />
       </span>
       <span className="min-w-0 flex-1">
