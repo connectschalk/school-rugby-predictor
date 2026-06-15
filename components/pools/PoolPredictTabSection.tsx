@@ -3,19 +3,25 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
 import MatchCard from '@/components/MatchCard'
+import SoccerMatchCard from '@/components/competitions/SoccerMatchCard'
 import ProvinceLogoMark from '@/components/ProvinceLogoMark'
 import PredictScoreAuthModal from '@/components/predict-score/PredictScoreAuthModal'
 import PredictionMarginModal from '@/components/predict-score/PredictionMarginModal'
 import { fetchUserIsAdmin } from '@/lib/admin-access'
 import {
   defaultPick,
+  defaultSoccerPick,
   groupByProvinceThenDate,
   parseMarginFromInput,
+  parseSoccerGoalsFromInput,
   predictionMap,
   PREDICT_SCORE_MARGIN_MAX,
+  upsertSoccerUserPrediction,
   upsertUserPrediction,
   type PickState,
+  type SoccerPickState,
 } from '@/lib/predict-score-common'
+import { isSoccerExactScoreMode, type CompetitionScoringMode } from '@/lib/competitions'
 import { canEditPredictionOnMatch, matchPredictionsClosed } from '@/lib/prediction-cutoff'
 import {
   fetchUpcomingPredictScoreMatches,
@@ -29,16 +35,20 @@ export default function PoolPredictTabSection({
   effectiveMatchIds,
   user,
   competitionSlug,
+  scoringMode = 'rugby_margin',
 }: {
   effectiveMatchIds: string[]
   user: User
   competitionSlug?: string | null
+  scoringMode?: CompetitionScoringMode
 }) {
+  const soccerMode = isSoccerExactScoreMode(scoringMode)
   const [upcoming, setUpcoming] = useState<GameMatch[]>([])
   const [loadError, setLoadError] = useState('')
   const [loading, setLoading] = useState(true)
   const [predictions, setPredictions] = useState<Map<string, UserPredictionRow>>(() => new Map())
   const [picksByMatch, setPicksByMatch] = useState<Record<string, PickState>>({})
+  const [soccerPicksByMatch, setSoccerPicksByMatch] = useState<Record<string, SoccerPickState>>({})
   const [submitError, setSubmitError] = useState('')
   const [submittingMatchId, setSubmittingMatchId] = useState<string | null>(null)
   const [lockingMatchId, setLockingMatchId] = useState<string | null>(null)
@@ -114,6 +124,25 @@ export default function PoolPredictTabSection({
   }, [user.id, matchIds, reloadPredictions])
 
   useEffect(() => {
+    if (soccerMode) {
+      setSoccerPicksByMatch((prev) => {
+        const next = { ...prev }
+        for (const m of poolMatches) {
+          const p = predictions.get(m.id)
+          if (p?.predicted_home_score != null && p.predicted_away_score != null) {
+            next[m.id] = {
+              homeGoals: String(p.predicted_home_score),
+              awayGoals: String(p.predicted_away_score),
+            }
+          } else if (next[m.id] === undefined) {
+            next[m.id] = defaultSoccerPick()
+          }
+        }
+        return next
+      })
+      return
+    }
+
     setPicksByMatch((prev) => {
       const next = { ...prev }
       for (const m of poolMatches) {
@@ -126,7 +155,7 @@ export default function PoolPredictTabSection({
       }
       return next
     })
-  }, [poolMatches, predictions])
+  }, [poolMatches, predictions, soccerMode])
 
   useEffect(() => {
     if (!flashSubmittedId) return
@@ -147,6 +176,20 @@ export default function PoolPredictTabSection({
     })
   }, [])
 
+  const setSoccerPick = useCallback((matchId: string, patch: Partial<SoccerPickState>) => {
+    setSoccerPicksByMatch((prev) => {
+      const cur = prev[matchId] ?? defaultSoccerPick()
+      const merged: SoccerPickState = { ...cur, ...patch }
+      if (typeof patch.homeGoals === 'string') {
+        merged.homeGoals = patch.homeGoals.replace(/\D/g, '').slice(0, 2)
+      }
+      if (typeof patch.awayGoals === 'string') {
+        merged.awayGoals = patch.awayGoals.replace(/\D/g, '').slice(0, 2)
+      }
+      return { ...prev, [matchId]: merged }
+    })
+  }, [])
+
   const handleSubmitOne = async (matchId: string) => {
     const existing = predictions.get(matchId)
     if (existing?.is_locked) {
@@ -158,6 +201,33 @@ export default function PoolPredictTabSection({
       setSubmitError('Predictions are closed for this match.')
       return
     }
+
+    if (soccerMode) {
+      const slip = soccerPicksByMatch[matchId] ?? defaultSoccerPick()
+      const homeGoals = parseSoccerGoalsFromInput(slip.homeGoals)
+      const awayGoals = parseSoccerGoalsFromInput(slip.awayGoals)
+      if (homeGoals === null || awayGoals === null) {
+        setSubmitError('Enter home and away goals (0–20).')
+        return
+      }
+      setSubmitError('')
+      setSubmittingMatchId(matchId)
+      const { error } = await upsertSoccerUserPrediction(supabase, user, {
+        matchId,
+        predictedHomeScore: homeGoals,
+        predictedAwayScore: awayGoals,
+      })
+      if (error) {
+        setSubmitError(error.message)
+        setSubmittingMatchId(null)
+        return
+      }
+      await reloadPredictions(user.id, matchIds.length ? matchIds : [matchId])
+      setFlashSubmittedId(matchId)
+      setSubmittingMatchId(null)
+      return
+    }
+
     const slip = picksByMatch[matchId]
     if (!slip?.winner) {
       setSubmitError('Pick a winner for this match.')
@@ -208,6 +278,74 @@ export default function PoolPredictTabSection({
     setLockingMatchId(null)
   }
 
+  const renderMatchRow = (m: GameMatch) => {
+    const pred = predictions.get(m.id)
+    const closed = matchPredictionsClosed(m, atDate)
+    const editable = canEditPredictionOnMatch(m, atDate)
+    const rowBusy = submittingMatchId === m.id
+    const showLock = Boolean(pred?.id) && !pred?.is_locked && editable && !closed
+
+    if (soccerMode) {
+      const pick = soccerPicksByMatch[m.id] ?? defaultSoccerPick()
+      return (
+        <div key={m.id} id={`pool-predict-card-${m.id}`} className="scroll-mt-24">
+          <SoccerMatchCard
+            competitionSlug={competitionSlug ?? undefined}
+            homeTeam={m.home_team}
+            awayTeam={m.away_team}
+            kickoffTime={m.kickoff_time}
+            homeGoalsInput={pick.homeGoals}
+            awayGoalsInput={pick.awayGoals}
+            onHomeGoalsChange={(value) => setSoccerPick(m.id, { homeGoals: value })}
+            onAwayGoalsChange={(value) => setSoccerPick(m.id, { awayGoals: value })}
+            matchId={m.id}
+            signedIn
+            predictionsClosed={closed}
+            editable={editable}
+            predictionRowLocked={Boolean(pred?.is_locked)}
+            hasExistingSubmission={Boolean(pred?.id)}
+            submitting={rowBusy}
+            flashSubmitted={flashSubmittedId === m.id}
+            lockingPick={lockingMatchId === m.id}
+            onSubmit={() => void handleSubmitOne(m.id)}
+            onLockPick={showLock ? () => void handleLockOne(m.id) : undefined}
+            onRequireAuth={() => setAuthModalOpen(true)}
+          />
+        </div>
+      )
+    }
+
+    const pick = picksByMatch[m.id] ?? defaultPick()
+    return (
+      <div key={m.id} id={`pool-predict-card-${m.id}`} className="scroll-mt-24">
+        <MatchCard
+          competitionSlug={competitionSlug ?? undefined}
+          homeTeam={m.home_team}
+          awayTeam={m.away_team}
+          kickoffTime={m.kickoff_time}
+          winner={pick.winner}
+          marginInput={pick.margin}
+          onSelectWinner={(side) => setPick(m.id, { winner: side })}
+          onMarginInputChange={(value) => setPick(m.id, { margin: value })}
+          matchId={m.id}
+          signedIn
+          predictionsClosed={closed}
+          editable={editable}
+          predictionRowLocked={Boolean(pred?.is_locked)}
+          hasExistingSubmission={Boolean(pred?.id)}
+          submitting={rowBusy}
+          flashSubmitted={flashSubmittedId === m.id}
+          lockingPick={lockingMatchId === m.id}
+          onSubmit={() => void handleSubmitOne(m.id)}
+          onLockPick={showLock ? () => void handleLockOne(m.id) : undefined}
+          onRequireAuth={() => setAuthModalOpen(true)}
+          isAdmin={isUserAdmin}
+          onAdminModel={isUserAdmin ? () => setMarginModalMatch(m) : undefined}
+        />
+      </div>
+    )
+  }
+
   if (scopeIdSet.size === 0) {
     return (
       <p className="mt-4 min-w-0 max-w-full break-words text-sm text-gray-600">
@@ -215,6 +353,10 @@ export default function PoolPredictTabSection({
       </p>
     )
   }
+
+  const listHeaderCols = soccerMode
+    ? 'grid min-w-[640px] grid-cols-[5.25rem_minmax(0,1fr)_4.25rem] items-center gap-2'
+    : 'grid min-w-[640px] grid-cols-[5.25rem_minmax(0,1fr)_minmax(0,1fr)_3.25rem_4.25rem_6.5rem] items-center gap-2'
 
   return (
     <div className="mt-4 w-full max-w-full min-w-0">
@@ -245,55 +387,16 @@ export default function PoolPredictTabSection({
               <div key={day.dateKey} className="min-w-0 max-w-full space-y-3">
                 <h4 className="min-w-0 break-words text-sm font-semibold text-gray-500">{day.label}</h4>
                 <div className="mb-1 hidden w-full max-w-full overflow-x-auto rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5 md:block">
-                  <div className="grid min-w-[640px] grid-cols-[5.25rem_minmax(0,1fr)_minmax(0,1fr)_3.25rem_4.25rem_6.5rem] items-center gap-2 text-[10px] font-black uppercase tracking-wide text-gray-500">
+                  <div className={`${listHeaderCols} text-[10px] font-black uppercase tracking-wide text-gray-500`}>
                     <span>Kickoff</span>
-                    <span>Home</span>
-                    <span>Away</span>
-                    <span className="text-center">Mgn</span>
-                    <span className="text-center">Save</span>
-                    <span className="text-center">Admin</span>
+                    <span>{soccerMode ? 'Score prediction' : 'Home'}</span>
+                    {!soccerMode ? <span>Away</span> : null}
+                    {!soccerMode ? <span className="text-center">Mgn</span> : null}
+                    {!soccerMode ? <span className="text-center">Save</span> : null}
+                    {!soccerMode ? <span className="text-center">Admin</span> : null}
                   </div>
                 </div>
-                <div className="space-y-2">
-                  {day.matches.map((m) => {
-                    const pick = picksByMatch[m.id] ?? defaultPick()
-                    const pred = predictions.get(m.id)
-                    const closed = matchPredictionsClosed(m, atDate)
-                    const editable = canEditPredictionOnMatch(m, atDate)
-                    const rowBusy = submittingMatchId === m.id
-                    const showLock =
-                      Boolean(pred?.id) && !pred?.is_locked && editable && !closed
-
-                    return (
-                      <div key={m.id} id={`pool-predict-card-${m.id}`} className="scroll-mt-24">
-                        <MatchCard
-                          competitionSlug={competitionSlug ?? undefined}
-                          homeTeam={m.home_team}
-                          awayTeam={m.away_team}
-                          kickoffTime={m.kickoff_time}
-                          winner={pick.winner}
-                          marginInput={pick.margin}
-                          onSelectWinner={(side) => setPick(m.id, { winner: side })}
-                          onMarginInputChange={(value) => setPick(m.id, { margin: value })}
-                          matchId={m.id}
-                          signedIn
-                          predictionsClosed={closed}
-                          editable={editable}
-                          predictionRowLocked={Boolean(pred?.is_locked)}
-                          hasExistingSubmission={Boolean(pred?.id)}
-                          submitting={rowBusy}
-                          flashSubmitted={flashSubmittedId === m.id}
-                          lockingPick={lockingMatchId === m.id}
-                          onSubmit={() => void handleSubmitOne(m.id)}
-                          onLockPick={showLock ? () => void handleLockOne(m.id) : undefined}
-                          onRequireAuth={() => setAuthModalOpen(true)}
-                          isAdmin={isUserAdmin}
-                          onAdminModel={isUserAdmin ? () => setMarginModalMatch(m) : undefined}
-                        />
-                      </div>
-                    )
-                  })}
-                </div>
+                <div className="space-y-2">{day.matches.map((m) => renderMatchRow(m))}</div>
               </div>
             ))}
           </section>

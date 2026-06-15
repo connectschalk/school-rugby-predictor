@@ -36,7 +36,7 @@ import {
   formatPoolJoinCodeDisplay,
   validatePoolJoinCodeInput,
 } from '@/lib/pool-join-code'
-import type { CompetitionMode } from '@/lib/competitions'
+import type { CompetitionMode, CompetitionScoringMode } from '@/lib/competitions'
 import { SCHOOLS_COMPETITION_SLUG } from '@/lib/competitions'
 import { fetchGameMatchesForCommunityHub, type GameMatch } from '@/lib/public-prediction-game'
 import { supabase } from '@/lib/supabase'
@@ -59,6 +59,7 @@ export type PoolsHubPanelProps = {
   competitionSlug: string
   competitionName?: string
   competitionMode: CompetitionMode
+  scoringMode?: CompetitionScoringMode
 }
 
 function PoolsPageContent({
@@ -66,6 +67,7 @@ function PoolsPageContent({
   competitionSlug,
   competitionName,
   competitionMode,
+  scoringMode = 'rugby_margin',
 }: PoolsHubPanelProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -915,6 +917,7 @@ function PoolsPageContent({
                     effectiveMatchIds={effectiveMatchIds}
                     user={user}
                     competitionSlug={competitionSlug}
+                    scoringMode={scoringMode}
                   />
                 ) : (
                   <p className="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">

@@ -13,6 +13,7 @@ export default async function CompetitionPoolsPage({ params }: Props) {
       competitionSlug={competition.slug}
       competitionName={title}
       competitionMode={competition.competition_mode}
+      scoringMode={competition.scoring_mode}
     />
   )
 }

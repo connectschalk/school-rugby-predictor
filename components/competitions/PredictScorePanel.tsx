@@ -495,7 +495,9 @@ export default function PredictScorePanel({
             Predict{competitionName ? ` · ${competitionName}` : ''}
           </h1>
           <p className="mt-2 text-sm font-medium text-slate-500">
-            Upcoming fixtures · search, pool or province filters, save picks
+            {soccerMode
+              ? 'Upcoming fixtures · enter exact scorelines (0–20 goals)'
+              : 'Upcoming fixtures · search, pool or province filters, save picks'}
           </p>
           <div className="mt-5 flex flex-wrap justify-center gap-3">
             <Link
@@ -677,13 +679,19 @@ export default function PredictScorePanel({
               <div key={day.dateKey} className="min-w-0 max-w-full space-y-3">
                 <h3 className="min-w-0 break-words text-sm font-semibold text-slate-500">{day.label}</h3>
                 <div className="mb-1 hidden overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 md:block">
-                  <div className="grid min-w-[640px] grid-cols-[5.25rem_minmax(0,1fr)_minmax(0,1fr)_3.25rem_4.25rem_6.5rem] items-center gap-2 text-[10px] font-black uppercase tracking-wide text-slate-500">
+                  <div
+                    className={
+                      soccerMode
+                        ? 'grid min-w-[640px] grid-cols-[5.25rem_minmax(0,1fr)_4.25rem] items-center gap-2 text-[10px] font-black uppercase tracking-wide text-slate-500'
+                        : 'grid min-w-[640px] grid-cols-[5.25rem_minmax(0,1fr)_minmax(0,1fr)_3.25rem_4.25rem_6.5rem] items-center gap-2 text-[10px] font-black uppercase tracking-wide text-slate-500'
+                    }
+                  >
                     <span>Kickoff</span>
-                    <span>Home</span>
-                    <span>Away</span>
-                    <span className="text-center">Mgn</span>
-                    <span className="text-center">Save</span>
-                    <span className="text-center">Admin</span>
+                    <span>{soccerMode ? 'Score prediction' : 'Home'}</span>
+                    {!soccerMode ? <span>Away</span> : null}
+                    {!soccerMode ? <span className="text-center">Mgn</span> : null}
+                    {!soccerMode ? <span className="text-center">Save</span> : null}
+                    {!soccerMode ? <span className="text-center">Admin</span> : null}
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -703,13 +711,19 @@ export default function PredictScorePanel({
                 <div key={day.dateKey} className="min-w-0 max-w-full space-y-3">
                   <h3 className="min-w-0 break-words text-sm font-semibold text-slate-500">{day.label}</h3>
                   <div className="mb-1 hidden overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 md:block">
-                    <div className="grid min-w-[640px] grid-cols-[5.25rem_minmax(0,1fr)_minmax(0,1fr)_3.25rem_4.25rem_6.5rem] items-center gap-2 text-[10px] font-black uppercase tracking-wide text-slate-500">
+                    <div
+                      className={
+                        soccerMode
+                          ? 'grid min-w-[640px] grid-cols-[5.25rem_minmax(0,1fr)_4.25rem] items-center gap-2 text-[10px] font-black uppercase tracking-wide text-slate-500'
+                          : 'grid min-w-[640px] grid-cols-[5.25rem_minmax(0,1fr)_minmax(0,1fr)_3.25rem_4.25rem_6.5rem] items-center gap-2 text-[10px] font-black uppercase tracking-wide text-slate-500'
+                      }
+                    >
                       <span>Kickoff</span>
-                      <span>Home</span>
-                      <span>Away</span>
-                      <span className="text-center">Mgn</span>
-                      <span className="text-center">Save</span>
-                      <span className="text-center">Admin</span>
+                      <span>{soccerMode ? 'Score prediction' : 'Home'}</span>
+                      {!soccerMode ? <span>Away</span> : null}
+                      {!soccerMode ? <span className="text-center">Mgn</span> : null}
+                      {!soccerMode ? <span className="text-center">Save</span> : null}
+                      {!soccerMode ? <span className="text-center">Admin</span> : null}
                     </div>
                   </div>
                   <div className="space-y-2">

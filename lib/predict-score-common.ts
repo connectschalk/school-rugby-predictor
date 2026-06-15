@@ -151,6 +151,8 @@ export async function upsertUserPrediction(
       user_id: user.id,
       predicted_winner: input.predictedWinner,
       predicted_margin: input.predictedMargin,
+      predicted_home_score: null,
+      predicted_away_score: null,
       submitted_at: new Date().toISOString(),
     },
     { onConflict: 'user_id,match_id' }
