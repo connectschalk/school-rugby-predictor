@@ -2,10 +2,16 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Settings } from 'lucide-react'
+import { Settings, Info } from 'lucide-react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import type { User } from '@supabase/supabase-js'
 import LetterAvatar from '@/components/LetterAvatar'
+import HowItWorksModal from '@/components/HowItWorksModal'
+import SoccerScoringRulesBody from '@/components/competitions/SoccerScoringRulesBody'
+import SoccerScoringBreakdownModal, {
+  type SoccerScoringBreakdownTarget,
+} from '@/components/competitions/SoccerScoringBreakdownModal'
+import SoccerLeaderboardPlayerButton from '@/components/competitions/SoccerLeaderboardPlayerButton'
 import DeletePoolConfirmModal from '@/components/pools/DeletePoolConfirmModal'
 import PoolPicksSection from '@/components/pools/PoolPicksSection'
 import PoolPredictTabSection from '@/components/pools/PoolPredictTabSection'
@@ -46,7 +52,7 @@ import {
   validatePoolJoinCodeInput,
 } from '@/lib/pool-join-code'
 import type { CompetitionMode, CompetitionScoringMode } from '@/lib/competitions'
-import { SCHOOLS_COMPETITION_SLUG } from '@/lib/competitions'
+import { isSoccerExactScoreMode, SCHOOLS_COMPETITION_SLUG } from '@/lib/competitions'
 import { fetchGameMatchesForCommunityHub, type GameMatch } from '@/lib/public-prediction-game'
 import { supabase } from '@/lib/supabase'
 
@@ -93,6 +99,7 @@ function PoolsPageContent({
   competitionMode,
   scoringMode = 'rugby_margin',
 }: PoolsHubPanelProps) {
+  const soccerMode = isSoccerExactScoreMode(scoringMode)
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -137,6 +144,8 @@ function PoolsPageContent({
   const [poolTeamsRows, setPoolTeamsRows] = useState<PoolTeamRow[]>([])
   const [poolDetailTab, setPoolDetailTab] = useState<PoolDetailTab>('leaderboard')
   const [managePoolModalOpen, setManagePoolModalOpen] = useState(false)
+  const [scoringRulesOpen, setScoringRulesOpen] = useState(false)
+  const [breakdownTarget, setBreakdownTarget] = useState<SoccerScoringBreakdownTarget | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deletingPool, setDeletingPool] = useState(false)
   const [isUserAdmin, setIsUserAdmin] = useState(false)
@@ -936,7 +945,19 @@ function PoolsPageContent({
               {poolDetailTab === 'leaderboard' ? (
                 <>
                   <div className="mt-6 min-w-0 max-w-full">
-                    <h3 className="text-sm font-black uppercase tracking-wide text-gray-700">Leaderboard</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-black uppercase tracking-wide text-gray-700">Leaderboard</h3>
+                      {soccerMode ? (
+                        <button
+                          type="button"
+                          onClick={() => setScoringRulesOpen(true)}
+                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-500 shadow-sm hover:border-gray-400 hover:text-gray-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-teal-800"
+                          aria-label="View scoring rules"
+                        >
+                          <Info className="h-3 w-3" aria-hidden />
+                        </button>
+                      ) : null}
+                    </div>
                     <p className="mt-1 min-w-0 break-words text-xs text-gray-500">
                       Pool members only, scored on games in this pool&apos;s fixture scope (groups and optional team
                       filter).
@@ -972,20 +993,42 @@ function PoolsPageContent({
                                   </td>
                                   <td className="max-w-[11rem] px-3 py-2 sm:max-w-none">
                                     <div className="flex min-w-0 flex-col gap-0.5">
-                                      <div className="flex min-w-0 items-center gap-2">
-                                        <LetterAvatar
-                                          letter={r.avatar_letter}
-                                          colour={r.avatar_colour}
-                                          avatarUrl={r.avatar_url}
-                                          displayName={r.display_name}
+                                      {soccerMode ? (
+                                        <SoccerLeaderboardPlayerButton
                                           name={r.display_name}
+                                          displayName={r.display_name}
+                                          avatarUrl={r.avatar_url}
+                                          avatarLetter={r.avatar_letter}
+                                          avatarColour={r.avatar_colour}
                                           size={28}
-                                          className="shrink-0 ring-1 ring-gray-200"
+                                          onOpen={() =>
+                                            setBreakdownTarget({
+                                              userId: r.user_id,
+                                              displayName: r.display_name?.trim() || 'Player',
+                                              poolId: selectedPool.id,
+                                              poolJoinedAt: r.joined_at,
+                                            })
+                                          }
                                         />
-                                        <span className="min-w-0 truncate font-semibold text-gray-900" title={r.display_name}>
-                                          {r.display_name}
-                                        </span>
-                                      </div>
+                                      ) : (
+                                        <div className="flex min-w-0 items-center gap-2">
+                                          <LetterAvatar
+                                            letter={r.avatar_letter}
+                                            colour={r.avatar_colour}
+                                            avatarUrl={r.avatar_url}
+                                            displayName={r.display_name}
+                                            name={r.display_name}
+                                            size={28}
+                                            className="shrink-0 ring-1 ring-gray-200"
+                                          />
+                                          <span
+                                            className="min-w-0 truncate font-semibold text-gray-900"
+                                            title={r.display_name}
+                                          >
+                                            {r.display_name}
+                                          </span>
+                                        </div>
+                                      )}
                                       {!afterJoin ? (
                                         <span className="text-[10px] text-gray-500">Late joiner</span>
                                       ) : null}
@@ -1283,6 +1326,25 @@ function PoolsPageContent({
           )}
         </div>
       </section>
+      {soccerMode ? (
+        <HowItWorksModal
+          open={scoringRulesOpen}
+          onClose={() => setScoringRulesOpen(false)}
+          title="How scoring works"
+        >
+          <SoccerScoringRulesBody />
+        </HowItWorksModal>
+      ) : null}
+      {soccerMode ? (
+        <SoccerScoringBreakdownModal
+          open={breakdownTarget !== null}
+          onClose={() => setBreakdownTarget(null)}
+          client={supabase}
+          target={breakdownTarget}
+          competitionId={competitionId}
+          competitionSlug={competitionSlug}
+        />
+      ) : null}
     </main>
   )
 }

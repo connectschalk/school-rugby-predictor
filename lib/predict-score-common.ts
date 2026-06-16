@@ -1,6 +1,7 @@
 import type { User } from '@supabase/supabase-js'
 import type { GameMatch, UserPredictionRow } from '@/lib/public-prediction-game'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { ensureUserProfileExists } from '@/lib/user-profile-metadata'
 
 /** Keep in sync with `MATCH_CARD_MARGIN_MAX` in `components/MatchCard.tsx`. */
 export const PREDICT_SCORE_MARGIN_MAX = 50
@@ -48,15 +49,7 @@ export const defaultPick = (): PickState => ({ winner: null, margin: '' })
 export const defaultSoccerPick = (): SoccerPickState => ({ homeGoals: '0', awayGoals: '0' })
 
 export async function ensureUserProfile(client: SupabaseClient, user: User) {
-  const displayName =
-    (typeof user.user_metadata?.full_name === 'string' && user.user_metadata.full_name.trim()) ||
-    user.email?.split('@')[0]?.trim() ||
-    'Player'
-
-  const { error } = await client.from('user_profiles').upsert(
-    { id: user.id, display_name: displayName },
-    { onConflict: 'id' }
-  )
+  const { error } = await ensureUserProfileExists(client, user)
   return error
 }
 

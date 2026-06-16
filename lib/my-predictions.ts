@@ -3,6 +3,7 @@ import {
   SCHOOLS_COMPETITION_SLUG,
   type CompetitionScoringMode,
 } from './competitions'
+import { SOCCER_EXACT_SCORE_POINTS } from './soccer-exact-score-scoring'
 import type {
   GameMatch,
   MyPredictionOverviewRow,
@@ -61,7 +62,7 @@ export function computeMyPredictionsStats(rows: MyPredictionOverviewRow[]): MyPr
     const score = row.score!
     totalPoints += score.total_points ?? 0
     if (isSoccerRow(row)) {
-      if (score.total_points === 4) exactScores += 1
+      if (score.total_points === SOCCER_EXACT_SCORE_POINTS) exactScores += 1
       if (score.winner_correct) correct += 1
     } else {
       if (score.winner_correct) correct += 1
@@ -164,16 +165,22 @@ export function completedPredictionBadge(row: MyPredictionOverviewRow): Complete
   }
 
   if (isSoccerRow(row)) {
-    if (score.total_points === 4) {
+    if (score.total_points === SOCCER_EXACT_SCORE_POINTS) {
       return {
         label: 'Exact score',
         className:
           'rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-950 ring-2 ring-amber-300',
       }
     }
-    if (score.total_points >= 1) {
+    if (score.total_points === 2) {
       return {
-        label: score.total_points >= 2 ? 'Correct result' : 'Correct result',
+        label: 'Close score',
+        className: 'rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-900',
+      }
+    }
+    if (score.total_points === 1) {
+      return {
+        label: 'Correct result',
         className: 'rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-900',
       }
     }

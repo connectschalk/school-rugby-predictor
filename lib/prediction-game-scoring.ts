@@ -12,4 +12,10 @@ export type SoccerPredictionInput = {
   predicted_away_score: number
 }
 
-export { scoreSoccerExactPrediction } from '@/lib/soccer-exact-score-scoring'
+export {
+  scoreSoccerExactPrediction,
+  scoreSoccerPrediction,
+  SOCCER_EXACT_SCORE_POINTS,
+  type SoccerPredictionOutcome,
+  type SoccerPredictionScore,
+} from '@/lib/soccer-exact-score-scoring'

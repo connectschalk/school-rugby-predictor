@@ -1,18 +1,25 @@
 'use client'
 
-import { useEffect, useId } from 'react'
+import { useEffect, useId, type ReactNode } from 'react'
 
 type Props = {
   open: boolean
   onClose: () => void
   /** Dialog title; defaults to “How it works”. */
   title?: string
+  /** When set, replaces the default rugby scoring body. */
+  children?: ReactNode
 }
 
 /**
  * Shared Predict a Score + rankings explainer (modal shell + one canonical body).
  */
-export default function HowItWorksModal({ open, onClose, title = 'How it works' }: Props) {
+export default function HowItWorksModal({
+  open,
+  onClose,
+  title = 'How it works',
+  children,
+}: Props) {
   const titleId = useId()
 
   useEffect(() => {
@@ -58,6 +65,7 @@ export default function HowItWorksModal({ open, onClose, title = 'How it works' 
           </button>
         </div>
         <div className="min-h-0 overflow-y-auto px-5 py-4 text-left text-sm leading-relaxed text-gray-800">
+          {children ?? (
           <ul className="list-disc space-y-2.5 pl-5 marker:text-gray-900">
             <li>You can predict one match or many. You do not have to predict every fixture.</li>
             <li>Select the team you think will win.</li>
@@ -87,6 +95,7 @@ export default function HowItWorksModal({ open, onClose, title = 'How it works' 
             <li>You can earn margin points even if you picked the wrong winner.</li>
             <li>Average Margin Error is the default ranking. Lower is better.</li>
           </ul>
+          )}
         </div>
       </div>
     </div>

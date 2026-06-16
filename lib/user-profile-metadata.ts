@@ -118,27 +118,76 @@ export async function upsertProfileFromSignupMetadata(
   client: SupabaseClient,
   user: User
 ): Promise<{ error: Error | null }> {
+  const { data: existing, error: readErr } = await client
+    .from('user_profiles')
+    .select('id')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  if (readErr) return { error: new Error(readErr.message) }
+  if (existing) return { error: null }
+
   const parsed = parseSignupProfileMetadata(user)
   if (!parsed) {
-    return { error: new Error('Missing signup metadata on user.') }
-  }
-  const { error } = await client.from('user_profiles').upsert(
-    {
+    const { error } = await client.from('user_profiles').insert({
       id: user.id,
-      first_name: parsed.first_name,
-      surname: parsed.surname,
-      display_name: parsed.display_name,
-      avatar_letter: parsed.avatar_letter,
-      avatar_colour: parsed.avatar_colour,
-      avatar_url: null,
-    },
-    { onConflict: 'id' }
-  )
-  return { error: error ? new Error(error.message) : null }
+      display_name: emailUsernameFallback(user),
+    })
+    if (error && error.code !== '23505') return { error: new Error(error.message) }
+    return { error: null }
+  }
+
+  const { error } = await client.from('user_profiles').insert({
+    id: user.id,
+    first_name: parsed.first_name,
+    surname: parsed.surname,
+    display_name: parsed.display_name,
+    avatar_letter: parsed.avatar_letter,
+    avatar_colour: parsed.avatar_colour,
+    avatar_url: null,
+  })
+  if (error && error.code !== '23505') return { error: new Error(error.message) }
+  return { error: null }
 }
 
 function isEmpty(v: string | null | undefined): boolean {
   return v == null || String(v).trim() === ''
+}
+
+function emailUsernameFallback(user: User): string {
+  return user.email?.split('@')[0]?.trim() || 'Player'
+}
+
+/**
+ * Ensures a `user_profiles` row exists for predictions/comments.
+ * Never overwrites an existing `display_name` (or any other profile field).
+ * On first create only, sets `display_name` from the email username.
+ */
+export async function ensureUserProfileExists(
+  client: SupabaseClient,
+  user: User
+): Promise<{ error: Error | null; created: boolean }> {
+  const { data: existing, error: readErr } = await client
+    .from('user_profiles')
+    .select('id, display_name')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  if (readErr) return { error: new Error(readErr.message), created: false }
+  if (existing) return { error: null, created: false }
+
+  const { error } = await client.from('user_profiles').insert({
+    id: user.id,
+    display_name: emailUsernameFallback(user),
+  })
+
+  if (error) {
+    // Another request may have created the row between read and insert.
+    if (error.code === '23505') return { error: null, created: false }
+    return { error: new Error(error.message), created: false }
+  }
+
+  return { error: null, created: true }
 }
 
 /**
@@ -155,20 +204,17 @@ export async function repairUserProfileFromMetadataIfNeeded(
   if (!hasAnyMeta) return { row: existing, repaired: false }
 
   if (!existing) {
-    const display_name = m.display_name ?? user.email?.split('@')[0]?.trim() ?? 'Player'
-    const { error } = await client.from('user_profiles').upsert(
-      {
-        id: user.id,
-        first_name: m.first_name,
-        surname: m.surname,
-        display_name,
-        avatar_letter: m.avatar_letter,
-        avatar_colour: m.avatar_colour,
-        avatar_url: null,
-      },
-      { onConflict: 'id' }
-    )
-    if (error) return { row: existing, repaired: false }
+    const display_name = m.display_name ?? emailUsernameFallback(user)
+    const { error } = await client.from('user_profiles').insert({
+      id: user.id,
+      first_name: m.first_name,
+      surname: m.surname,
+      display_name,
+      avatar_letter: m.avatar_letter,
+      avatar_colour: m.avatar_colour,
+      avatar_url: null,
+    })
+    if (error && error.code !== '23505') return { row: existing, repaired: false }
     return {
       row: {
         first_name: m.first_name,

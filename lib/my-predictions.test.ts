@@ -122,7 +122,7 @@ describe('computeMyPredictionsStats', () => {
         margin_difference: 0,
         winner_points: 0,
         margin_points: 0,
-        total_points: 4,
+        total_points: 3,
         scored_at: '2026-06-02T00:00:00Z',
       },
     })
@@ -133,6 +133,6 @@ describe('computeMyPredictionsStats', () => {
     expect(stats.scoredCompleted).toBe(2)
     expect(stats.exactMargins).toBe(1)
     expect(stats.exactScores).toBe(1)
-    expect(stats.totalPoints).toBe(6)
+    expect(stats.totalPoints).toBe(5)
   })
 })

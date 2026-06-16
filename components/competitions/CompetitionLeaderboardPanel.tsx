@@ -3,8 +3,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import type { User } from '@supabase/supabase-js'
+import { Info } from 'lucide-react'
 import HowItWorksModal from '@/components/HowItWorksModal'
 import InfoTooltip from '@/components/InfoTooltip'
+import SoccerScoringRulesBody from '@/components/competitions/SoccerScoringRulesBody'
+import SoccerScoringBreakdownModal, {
+  type SoccerScoringBreakdownTarget,
+} from '@/components/competitions/SoccerScoringBreakdownModal'
+import SoccerLeaderboardPlayerButton from '@/components/competitions/SoccerLeaderboardPlayerButton'
 import LetterAvatar from '@/components/LetterAvatar'
 import {
   COMPETITION_LEADERBOARD_VIEW_MISSING_MESSAGE,
@@ -14,6 +20,14 @@ import {
   type SeasonLeaderboardRow,
 } from '@/lib/public-prediction-game'
 import { isSoccerExactScoreMode, type CompetitionScoringMode } from '@/lib/competitions'
+import {
+  defaultLeaderboardQualificationFilter,
+  filterGlobalLeaderboardRows,
+  filterPoolLeaderboardRows,
+  globalLeaderboardFilterControls,
+  leaderboardShowsQualificationFilter,
+  type LeaderboardQualificationFilter,
+} from '@/lib/leaderboard-filters'
 import {
   fetchEffectivePoolMatches,
   fetchMyPools,
@@ -27,16 +41,13 @@ const DEFAULT_SEASON = new Date().getFullYear()
 const TOOLTIP_POINTS_RUGBY =
   'Total points = correct winner (1) + margin accuracy (up to 1.0) + closest margin bonus (0.5). Max 2.5 per game.'
 const TOOLTIP_POINTS_SOCCER =
-  'Max 4 points per match: 4 exact score, 2 correct result + goal difference, 1 correct result only.'
+  'Max 3 points per match: 3 exact score, 2 correct result + close score, 1 correct result only.'
 const TOOLTIP_MARGIN_AVG = 'Lower is better. Your average distance from the actual margin.'
 const TOOLTIP_DELTA =
   'Season average minus your average margin error on your last 5 scored games (this season). Positive means recent games were closer to the actual margin than your season average.'
-const GLOBAL_QUALIFIED_MIN = 5
-const POOL_QUALIFIED_MIN = 3
 
 type LeaderTab = 'points' | 'margin_total' | 'margin_avg'
 type RankingSection = 'global' | 'pools'
-type QualificationFilter = 'all' | 'qualified'
 
 export type CompetitionLeaderboardPanelProps = {
   competitionId: string
@@ -163,6 +174,8 @@ export default function CompetitionLeaderboardPanel({
   scoringMode = 'rugby_margin',
 }: CompetitionLeaderboardPanelProps) {
   const soccerMode = isSoccerExactScoreMode(scoringMode)
+  const showQualificationFilter = leaderboardShowsQualificationFilter(scoringMode)
+  const filterControls = globalLeaderboardFilterControls(scoringMode)
   const tooltipPoints = soccerMode ? TOOLTIP_POINTS_SOCCER : TOOLTIP_POINTS_RUGBY
   const poolsPath = `/competitions/${competitionSlug}/pools`
   const [user, setUser] = useState<User | null>(null)
@@ -172,7 +185,9 @@ export default function CompetitionLeaderboardPanel({
   const [poolRows, setPoolRows] = useState<PoolLeaderboardRow[]>([])
   const [poolLoading, setPoolLoading] = useState(false)
   const [poolMetric, setPoolMetric] = useState<'total' | 'margin_total' | 'margin_avg'>('margin_avg')
-  const [qualification, setQualification] = useState<QualificationFilter>('qualified')
+  const [qualification, setQualification] = useState<LeaderboardQualificationFilter>(() =>
+    defaultLeaderboardQualificationFilter(scoringMode)
+  )
   const [season, setSeason] = useState(DEFAULT_SEASON)
   const [seasonOptions, setSeasonOptions] = useState<number[]>(() => [DEFAULT_SEASON])
   const [rows, setRows] = useState<SeasonLeaderboardRow[]>([])
@@ -181,15 +196,14 @@ export default function CompetitionLeaderboardPanel({
   const [error, setError] = useState('')
   const [viewMissing, setViewMissing] = useState(false)
   const [howModalOpen, setHowModalOpen] = useState(false)
+  const [scoringRulesOpen, setScoringRulesOpen] = useState(false)
+  const [breakdownTarget, setBreakdownTarget] = useState<SoccerScoringBreakdownTarget | null>(null)
   const [poolPredictionCounts, setPoolPredictionCounts] = useState<Record<string, number>>({})
   const [recentAvgByUser, setRecentAvgByUser] = useState<Record<string, number | null>>({})
 
   const baseGlobalRows = useMemo(
-    () =>
-      qualification === 'qualified'
-        ? rows.filter((r) => r.predictions_made >= GLOBAL_QUALIFIED_MIN)
-        : rows,
-    [rows, qualification]
+    () => filterGlobalLeaderboardRows(rows, scoringMode, qualification),
+    [rows, scoringMode, qualification]
   )
   const displayRows = useMemo(
     () => leaderboardForTab(baseGlobalRows, tab, soccerMode),
@@ -199,10 +213,11 @@ export default function CompetitionLeaderboardPanel({
     () => myPools.find((p) => p.id === selectedPoolId) ?? null,
     [myPools, selectedPoolId]
   )
-  const filteredPoolRows = useMemo(() => {
-    if (qualification === 'all') return poolRows
-    return poolRows.filter((r) => (poolPredictionCounts[r.user_id] ?? 0) >= POOL_QUALIFIED_MIN)
-  }, [poolRows, qualification, poolPredictionCounts])
+  const filteredPoolRows = useMemo(
+    () =>
+      filterPoolLeaderboardRows(poolRows, scoringMode, qualification, poolPredictionCounts, (r) => r.user_id),
+    [poolRows, scoringMode, qualification, poolPredictionCounts]
+  )
   const sortedPoolRows = useMemo(() => {
     const next = [...filteredPoolRows]
     if (poolMetric === 'total') {
@@ -360,26 +375,58 @@ export default function CompetitionLeaderboardPanel({
     })
   }, [selectedPoolId])
 
-  const emptyFiltered = !loading && rows.length > 0 && displayRows.length === 0
+  const openBreakdown = useCallback(
+    (userId: string, displayName: string | null, poolOptions?: { poolId: string; poolJoinedAt?: string }) => {
+      if (!soccerMode) return
+      setBreakdownTarget({
+        userId,
+        displayName: displayName?.trim() || 'Player',
+        poolId: poolOptions?.poolId,
+        poolJoinedAt: poolOptions?.poolJoinedAt,
+      })
+    },
+    [soccerMode]
+  )
+
+  const emptyFiltered =
+    showQualificationFilter &&
+    qualification === 'qualified' &&
+    !loading &&
+    rows.length > 0 &&
+    displayRows.length === 0
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-2 md:px-6 md:py-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-xl font-black tracking-tight text-gray-900 md:text-2xl">
-            Leaderboard{competitionName ? ` · ${competitionName}` : ''}
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-black tracking-tight text-gray-900 md:text-2xl">
+              Leaderboard{competitionName ? ` · ${competitionName}` : ''}
+            </h1>
+            {soccerMode ? (
+              <button
+                type="button"
+                onClick={() => setScoringRulesOpen(true)}
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-500 shadow-sm hover:border-gray-400 hover:text-gray-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-teal-800"
+                aria-label="View scoring rules"
+              >
+                <Info className="h-3.5 w-3.5" aria-hidden />
+              </button>
+            ) : null}
+          </div>
           <p className="mt-0.5 text-xs text-gray-600 md:text-sm">
             Rankings from scored matches in this competition only.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setHowModalOpen(true)}
-          className="shrink-0 pt-0.5 text-xs font-medium text-gray-600 underline decoration-gray-300 underline-offset-2 hover:text-gray-900 md:text-sm"
-        >
-          How it works
-        </button>
+        {!soccerMode ? (
+          <button
+            type="button"
+            onClick={() => setHowModalOpen(true)}
+            className="shrink-0 pt-0.5 text-xs font-medium text-gray-600 underline decoration-gray-300 underline-offset-2 hover:text-gray-900 md:text-sm"
+          >
+            How it works
+          </button>
+        ) : null}
       </div>
 
       <div className="mt-1.5 flex justify-center sm:justify-start">
@@ -422,45 +469,67 @@ export default function CompetitionLeaderboardPanel({
                 ))}
               </select>
             </label>
-            <span className="hidden h-4 w-px bg-gray-200 sm:block" aria-hidden />
-            <div className="flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 p-0.5">
-              <button
-                type="button"
-                onClick={() => setQualification('all')}
-                className={`rounded-full px-2.5 py-1 text-xs font-semibold md:px-3 ${
-                  qualification === 'all' ? 'bg-gray-900 text-white' : 'text-gray-700'
-                }`}
-              >
-                All
-              </button>
-              <button
-                type="button"
-                onClick={() => setQualification('qualified')}
-                className={`rounded-full px-2.5 py-1 text-xs font-semibold md:px-3 ${
-                  qualification === 'qualified' ? 'bg-gray-900 text-white' : 'text-gray-700'
-                }`}
-              >
-                Qualified
-              </button>
-            </div>
-            <label className="flex flex-1 items-center gap-1.5 text-xs font-semibold text-gray-700 sm:flex-initial md:text-sm">
-              <span className="text-gray-500">Sort by</span>
-              <select
-                value={tab}
-                onChange={(e) => setTab(e.target.value as LeaderTab)}
-                className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm sm:min-w-[11rem] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-red-700"
-              >
-                {soccerMode ? (
-                  <option value="points">Points</option>
-                ) : (
-                  <>
-                    <option value="margin_avg">Average margin error</option>
-                    <option value="points">Points</option>
-                    <option value="margin_total">Cumulative margin error</option>
-                  </>
-                )}
-              </select>
-            </label>
+            {filterControls.includes('all') ? (
+              <>
+                <span className="hidden h-4 w-px bg-gray-200 sm:block" aria-hidden />
+                <div
+                  className="flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 p-0.5"
+                  aria-label="Showing all players"
+                >
+                  <span className="rounded-full bg-gray-900 px-2.5 py-1 text-xs font-semibold text-white md:px-3">
+                    All
+                  </span>
+                </div>
+              </>
+            ) : null}
+            {filterControls.includes('qualification') ? (
+              <>
+                <span className="hidden h-4 w-px bg-gray-200 sm:block" aria-hidden />
+                <div className="flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setQualification('all')}
+                    className={`rounded-full px-2.5 py-1 text-xs font-semibold md:px-3 ${
+                      qualification === 'all' ? 'bg-gray-900 text-white' : 'text-gray-700'
+                    }`}
+                  >
+                    All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQualification('qualified')}
+                    className={`rounded-full px-2.5 py-1 text-xs font-semibold md:px-3 ${
+                      qualification === 'qualified' ? 'bg-gray-900 text-white' : 'text-gray-700'
+                    }`}
+                  >
+                    Qualified
+                  </button>
+                </div>
+              </>
+            ) : null}
+            {filterControls.includes('sort') ? (
+              <>
+                <span className="hidden h-4 w-px bg-gray-200 sm:block" aria-hidden />
+                <label className="flex flex-1 items-center gap-1.5 text-xs font-semibold text-gray-700 sm:flex-initial md:text-sm">
+                  <span className="text-gray-500">Sort by</span>
+                  <select
+                    value={tab}
+                    onChange={(e) => setTab(e.target.value as LeaderTab)}
+                    className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm sm:min-w-[11rem] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-red-700"
+                  >
+                    {soccerMode ? (
+                      <option value="points">Points</option>
+                    ) : (
+                      <>
+                        <option value="margin_avg">Average margin error</option>
+                        <option value="points">Points</option>
+                        <option value="margin_total">Cumulative margin error</option>
+                      </>
+                    )}
+                  </select>
+                </label>
+              </>
+            ) : null}
           </div>
 
           {viewMissing ? (
@@ -539,23 +608,35 @@ export default function CompetitionLeaderboardPanel({
                         >
                           <td className="py-2 pl-3 pr-2 font-medium whitespace-nowrap">{rankCell(rank)}</td>
                           <td className="py-2 pr-2">
-                            <div className="flex min-w-0 items-center gap-2">
-                              <LetterAvatar
-                                letter={r.avatar_letter}
-                                colour={r.avatar_colour}
-                                avatarUrl={r.avatar_url}
-                                displayName={r.display_name}
+                            {soccerMode ? (
+                              <SoccerLeaderboardPlayerButton
                                 name={name}
-                                size={32}
-                                className="shrink-0 ring-1 ring-gray-200"
+                                displayName={r.display_name}
+                                avatarUrl={r.avatar_url}
+                                avatarLetter={r.avatar_letter}
+                                avatarColour={r.avatar_colour}
+                                isYou={isYou}
+                                onOpen={() => openBreakdown(r.user_id, r.display_name)}
                               />
-                              <span className="min-w-0 truncate font-medium">
-                                {name}
-                                {isYou ? (
-                                  <span className="ml-1.5 text-xs font-semibold text-red-700">You</span>
-                                ) : null}
-                              </span>
-                            </div>
+                            ) : (
+                              <div className="flex min-w-0 items-center gap-2">
+                                <LetterAvatar
+                                  letter={r.avatar_letter}
+                                  colour={r.avatar_colour}
+                                  avatarUrl={r.avatar_url}
+                                  displayName={r.display_name}
+                                  name={name}
+                                  size={32}
+                                  className="shrink-0 ring-1 ring-gray-200"
+                                />
+                                <span className="min-w-0 truncate font-medium">
+                                  {name}
+                                  {isYou ? (
+                                    <span className="ml-1.5 text-xs font-semibold text-red-700">You</span>
+                                  ) : null}
+                                </span>
+                              </div>
+                            )}
                           </td>
                           {soccerMode ? (
                             <>
@@ -662,21 +743,43 @@ export default function CompetitionLeaderboardPanel({
                             <span className="w-8 shrink-0 text-xs font-bold text-gray-500">
                               {rankCell(poolRank)}
                             </span>
-                            <LetterAvatar
-                              letter={r.avatar_letter}
-                              colour={r.avatar_colour}
-                              avatarUrl={r.avatar_url}
-                              displayName={r.display_name}
-                              name={r.display_name}
-                              size={30}
-                              className="ring-1 ring-gray-200"
-                            />
-                            <span className="truncate text-sm font-semibold text-gray-900">
-                              {r.display_name}
-                              {isYou ? (
-                                <span className="ml-1.5 text-xs font-semibold text-red-700">You</span>
-                              ) : null}
-                            </span>
+                            {soccerMode ? (
+                              <SoccerLeaderboardPlayerButton
+                                name={r.display_name}
+                                displayName={r.display_name}
+                                avatarUrl={r.avatar_url}
+                                avatarLetter={r.avatar_letter}
+                                avatarColour={r.avatar_colour}
+                                size={30}
+                                isYou={isYou}
+                                onOpen={() => {
+                                  if (!selectedPoolId) return
+                                  openBreakdown(r.user_id, r.display_name, {
+                                    poolId: selectedPoolId,
+                                    poolJoinedAt: r.joined_at,
+                                  })
+                                }}
+                                className="min-w-0 flex-1"
+                              />
+                            ) : (
+                              <>
+                                <LetterAvatar
+                                  letter={r.avatar_letter}
+                                  colour={r.avatar_colour}
+                                  avatarUrl={r.avatar_url}
+                                  displayName={r.display_name}
+                                  name={r.display_name}
+                                  size={30}
+                                  className="ring-1 ring-gray-200"
+                                />
+                                <span className="truncate text-sm font-semibold text-gray-900">
+                                  {r.display_name}
+                                  {isYou ? (
+                                    <span className="ml-1.5 text-xs font-semibold text-red-700">You</span>
+                                  ) : null}
+                                </span>
+                              </>
+                            )}
                           </div>
                           <span className="shrink-0 text-xs font-semibold text-gray-800">
                             {poolMetric === 'total'
@@ -697,6 +800,26 @@ export default function CompetitionLeaderboardPanel({
       )}
 
       <HowItWorksModal open={howModalOpen} onClose={() => setHowModalOpen(false)} />
+      {soccerMode ? (
+        <HowItWorksModal
+          open={scoringRulesOpen}
+          onClose={() => setScoringRulesOpen(false)}
+          title="How scoring works"
+        >
+          <SoccerScoringRulesBody />
+        </HowItWorksModal>
+      ) : null}
+      {soccerMode ? (
+        <SoccerScoringBreakdownModal
+          open={breakdownTarget !== null}
+          onClose={() => setBreakdownTarget(null)}
+          client={supabase}
+          target={breakdownTarget}
+          competitionId={competitionId}
+          competitionSlug={competitionSlug}
+          season={section === 'global' ? season : undefined}
+        />
+      ) : null}
     </main>
   )
 }
