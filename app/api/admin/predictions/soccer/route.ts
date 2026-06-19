@@ -1,0 +1,59 @@
+import { NextResponse } from 'next/server'
+import { requireAdminApi } from '@/lib/admin-api-auth'
+import { parseSoccerPredictionScores, upsertSoccerPredictionRow } from '@/lib/soccer-prediction-mutation'
+
+type Body = {
+  user_id?: string
+  match_id?: string
+  predicted_home_score?: number
+  predicted_away_score?: number
+}
+
+export async function POST(request: Request) {
+  const auth = await requireAdminApi(request)
+  if (auth instanceof NextResponse) return auth
+
+  let body: Body
+  try {
+    body = (await request.json()) as Body
+  } catch {
+    return NextResponse.json({ ok: false, error: 'Invalid JSON' }, { status: 400 })
+  }
+
+  const userId = typeof body.user_id === 'string' ? body.user_id.trim() : ''
+  const matchId = typeof body.match_id === 'string' ? body.match_id.trim() : ''
+  if (!userId || !matchId) {
+    return NextResponse.json({ ok: false, error: 'user_id and match_id are required.' }, { status: 400 })
+  }
+
+  const parsed = parseSoccerPredictionScores(body.predicted_home_score, body.predicted_away_score)
+  if ('error' in parsed) {
+    return NextResponse.json({ ok: false, error: parsed.error }, { status: 400 })
+  }
+
+  const { data: matchRow, error: matchErr } = await auth.supabase
+    .from('game_matches')
+    .select('id')
+    .eq('id', matchId)
+    .maybeSingle()
+
+  if (matchErr) {
+    return NextResponse.json({ ok: false, error: 'Could not verify match.' }, { status: 500 })
+  }
+  if (!matchRow) {
+    return NextResponse.json({ ok: false, error: 'Match not found.' }, { status: 404 })
+  }
+
+  const { error } = await upsertSoccerPredictionRow(auth.supabase, {
+    matchId,
+    userId,
+    predictedHomeScore: parsed.home,
+    predictedAwayScore: parsed.away,
+  })
+
+  if (error) {
+    return NextResponse.json({ ok: false, error }, { status: 500 })
+  }
+
+  return NextResponse.json({ ok: true })
+}

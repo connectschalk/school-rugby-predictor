@@ -11,15 +11,17 @@ import PredictScoreAuthModal from '@/components/predict-score/PredictScoreAuthMo
 import PredictionMarginModal from '@/components/predict-score/PredictionMarginModal'
 import { buildLoginHref, buildSignupHref } from '@/lib/auth-return-path'
 import { fetchUserIsAdmin } from '@/lib/admin-access'
-import { canEditPredictionOnMatch, matchPredictionsClosed } from '@/lib/prediction-cutoff'
+import { canEditPredictionOnMatch, matchPredictionsClosed, PREDICTION_KICKOFF_LOCK_MESSAGE } from '@/lib/prediction-cutoff'
 import {
   defaultPick,
   defaultSoccerPick,
   groupByDateOnly,
   groupByProvinceThenDate,
+  hasSoccerPredictionSubmission,
   parseMarginFromInput,
   parseSoccerGoalsFromInput,
   predictionMap,
+  soccerPickFromPrediction,
   upsertSoccerUserPrediction,
   upsertUserPrediction,
   type PickState,
@@ -218,13 +220,14 @@ export default function PredictScorePanel({
     if (soccerMode) {
       setSoccerPicksByMatch((prev) => {
         const next = { ...prev }
+        const at = new Date(nowTick)
         for (const m of matches) {
           const p = predictions.get(m.id)
-          if (p?.predicted_home_score != null && p.predicted_away_score != null) {
-            next[m.id] = {
-              homeGoals: String(p.predicted_home_score),
-              awayGoals: String(p.predicted_away_score),
-            }
+          const closed = matchPredictionsClosed(m, at)
+          if (hasSoccerPredictionSubmission(p)) {
+            next[m.id] = soccerPickFromPrediction(p, closed)
+          } else if (closed) {
+            next[m.id] = soccerPickFromPrediction(undefined, true)
           } else if (next[m.id] === undefined) {
             next[m.id] = defaultSoccerPick()
           }
@@ -249,7 +252,7 @@ export default function PredictScorePanel({
       }
       return next
     })
-  }, [matches, predictions, soccerMode])
+  }, [matches, predictions, soccerMode, nowTick])
 
   useEffect(() => {
     if (!flashSubmittedId) return
@@ -340,7 +343,7 @@ export default function PredictScorePanel({
     }
     const rowMatch = matches.find((m) => m.id === matchId)
     if (!rowMatch || !canEditPredictionOnMatch(rowMatch, new Date())) {
-      setSubmitError('Predictions are closed for this match.')
+      setSubmitError(PREDICTION_KICKOFF_LOCK_MESSAGE)
       return
     }
 
@@ -403,7 +406,7 @@ export default function PredictScorePanel({
     if (!pred?.id || pred.is_locked) return
     const rowMatch = matches.find((m) => m.id === matchId)
     if (!rowMatch || !canEditPredictionOnMatch(rowMatch, new Date())) {
-      setSubmitError('Predictions are closed for this match.')
+      setSubmitError(PREDICTION_KICKOFF_LOCK_MESSAGE)
       return
     }
     setSubmitError('')
@@ -426,10 +429,15 @@ export default function PredictScorePanel({
     const closed = matchPredictionsClosed(m, atDate)
     const editable = canEditPredictionOnMatch(m, atDate)
     const rowBusy = submittingMatchId === m.id
-    const showLock = signedIn && Boolean(pred?.id) && !pred?.is_locked && editable && !closed
+    const showLock =
+      signedIn &&
+      (soccerMode ? hasSoccerPredictionSubmission(pred) : Boolean(pred?.id)) &&
+      !pred?.is_locked &&
+      editable &&
+      !closed
 
     if (soccerMode) {
-      const pick = soccerPicksByMatch[m.id] ?? defaultSoccerPick()
+      const pick = soccerPicksByMatch[m.id] ?? soccerPickFromPrediction(pred, closed)
       return (
         <div key={m.id} id={`predict-card-${m.id}`} className="scroll-mt-24">
           <SoccerMatchCard
@@ -446,7 +454,7 @@ export default function PredictScorePanel({
             predictionsClosed={closed}
             editable={editable}
             predictionRowLocked={Boolean(pred?.is_locked)}
-            hasExistingSubmission={Boolean(pred?.id)}
+            hasExistingSubmission={hasSoccerPredictionSubmission(pred)}
             submitting={rowBusy}
             flashSubmitted={flashSubmittedId === m.id}
             lockingPick={lockingMatchId === m.id}

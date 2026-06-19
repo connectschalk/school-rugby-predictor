@@ -7,6 +7,9 @@ export type MatchPredictionEditGate = WithKickoffForPredictions & {
   status: string
 }
 
+/** Shown when kickoff has passed and normal users can no longer save picks. */
+export const PREDICTION_KICKOFF_LOCK_MESSAGE = 'Prediction locked. The match has already started.'
+
 /** 60-minute window before kickoff for “starts soon” UI. */
 export const STARTING_SOON_WINDOW_MS = 60 * 60 * 1000
 

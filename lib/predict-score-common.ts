@@ -1,6 +1,7 @@
 import type { User } from '@supabase/supabase-js'
 import type { GameMatch, UserPredictionRow } from '@/lib/public-prediction-game'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { PREDICTION_KICKOFF_LOCK_MESSAGE } from '@/lib/prediction-cutoff'
 import { ensureUserProfileExists } from '@/lib/user-profile-metadata'
 
 /** Keep in sync with `MATCH_CARD_MARGIN_MAX` in `components/MatchCard.tsx`. */
@@ -47,6 +48,25 @@ export function parseSoccerGoalsFromInput(s: string): number | null {
 export const defaultPick = (): PickState => ({ winner: null, margin: '' })
 
 export const defaultSoccerPick = (): SoccerPickState => ({ homeGoals: '0', awayGoals: '0' })
+
+export const blankSoccerPick = (): SoccerPickState => ({ homeGoals: '', awayGoals: '' })
+
+export function hasSoccerPredictionSubmission(pred: UserPredictionRow | undefined): boolean {
+  return pred?.predicted_home_score != null && pred?.predicted_away_score != null
+}
+
+export function soccerPickFromPrediction(
+  pred: UserPredictionRow | undefined,
+  closed: boolean
+): SoccerPickState {
+  if (hasSoccerPredictionSubmission(pred)) {
+    return {
+      homeGoals: String(pred!.predicted_home_score),
+      awayGoals: String(pred!.predicted_away_score),
+    }
+  }
+  return closed ? blankSoccerPick() : defaultSoccerPick()
+}
 
 export async function ensureUserProfile(client: SupabaseClient, user: User) {
   const { error } = await ensureUserProfileExists(client, user)
@@ -158,20 +178,35 @@ export async function upsertSoccerUserPrediction(
   user: User,
   input: { matchId: string; predictedHomeScore: number; predictedAwayScore: number }
 ) {
-  const profileErr = await ensureUserProfile(client, user)
-  if (profileErr) return { error: new Error(profileErr.message) }
+  const {
+    data: { session },
+  } = await client.auth.getSession()
+  const token = session?.access_token
+  if (!token) return { error: new Error('Not signed in') }
 
-  const { error } = await client.from('user_predictions').upsert(
-    {
+  const res = await fetch('/api/predictions/soccer', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
       match_id: input.matchId,
-      user_id: user.id,
       predicted_home_score: input.predictedHomeScore,
       predicted_away_score: input.predictedAwayScore,
-      predicted_winner: null,
-      predicted_margin: null,
-      submitted_at: new Date().toISOString(),
-    },
-    { onConflict: 'user_id,match_id' }
-  )
-  return { error: error ? new Error(error.message) : null }
+    }),
+  })
+
+  let json: { error?: string } = {}
+  try {
+    json = (await res.json()) as { error?: string }
+  } catch {
+    return { error: new Error('Could not save prediction') }
+  }
+
+  if (!res.ok) {
+    return { error: new Error(json.error ?? PREDICTION_KICKOFF_LOCK_MESSAGE) }
+  }
+
+  return { error: null }
 }

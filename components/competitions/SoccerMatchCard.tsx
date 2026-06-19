@@ -4,6 +4,7 @@ import type { ChangeEvent } from 'react'
 import Link from 'next/link'
 import CompetitionTeamLogo from '@/components/CompetitionTeamLogo'
 import { SOCCER_GOALS_MAX } from '@/lib/predict-score-common'
+import { PREDICTION_KICKOFF_LOCK_MESSAGE } from '@/lib/prediction-cutoff'
 
 /** Desktop predict table header row (matches SoccerMatchCard columns). */
 export const SOCCER_PREDICT_HEADER_GRID =
@@ -36,6 +37,7 @@ function ScoreInput({
   onRequireAuth,
   ariaLabel,
   compact = false,
+  allowBlank = false,
 }: {
   value: string
   disabled: boolean
@@ -45,6 +47,7 @@ function ScoreInput({
   onRequireAuth?: () => void
   ariaLabel: string
   compact?: boolean
+  allowBlank?: boolean
 }) {
   function handleChange(e: ChangeEvent<HTMLInputElement>) {
     if (disabled) return
@@ -53,6 +56,10 @@ function ScoreInput({
       return
     }
     const raw = e.target.value.replace(/\D/g, '').slice(0, 2)
+    if (allowBlank && raw === '') {
+      onChange('')
+      return
+    }
     onChange(raw === '' ? '0' : String(Math.min(SOCCER_GOALS_MAX, Number.parseInt(raw, 10) || 0)))
   }
 
@@ -65,6 +72,7 @@ function ScoreInput({
       autoComplete="off"
       disabled={disabled}
       value={value}
+      placeholder={allowBlank && value === '' ? '—' : undefined}
       onChange={handleChange}
       aria-label={ariaLabel}
       onFocus={(e) => {
@@ -163,6 +171,7 @@ export default function SoccerMatchCard({
   competitionSlug,
 }: SoccerMatchCardProps) {
   const disablePickers = predictionsClosed || predictionRowLocked || !editable
+  const showBlankScores = predictionsClosed && !hasExistingSubmission
   const canSubmit =
     Boolean(onSubmit) &&
     signedIn &&
@@ -182,11 +191,11 @@ export default function SoccerMatchCard({
     >
       {savedScoreLabel ? (
         <>
-          <span className="block">Predictions closed</span>
+          <span className="block">{PREDICTION_KICKOFF_LOCK_MESSAGE}</span>
           <span className="mt-1 block text-xs font-black tabular-nums text-slate-900">{savedScoreLabel}</span>
         </>
       ) : (
-        'Predictions closed'
+        PREDICTION_KICKOFF_LOCK_MESSAGE
       )}
     </div>
   ) : !editable || predictionRowLocked ? (
@@ -249,7 +258,7 @@ export default function SoccerMatchCard({
         >
           <div className="w-full min-w-0 border-b border-slate-100 pb-2 text-[10px] leading-tight text-slate-600 md:border-b-0 md:pb-0">
             {predictionsClosed ? (
-              <span className="font-bold uppercase tracking-wide text-slate-500">Closed</span>
+              <span className="font-bold uppercase tracking-wide text-slate-500">Locked</span>
             ) : predictionRowLocked ? (
               <span className="font-bold uppercase tracking-wide text-amber-800">Locked</span>
             ) : (
@@ -272,6 +281,7 @@ export default function SoccerMatchCard({
               onRequireAuth={onRequireAuth}
               ariaLabel={`${homeTeam} predicted score`}
               compact
+              allowBlank={showBlankScores}
             />
             <span className="text-sm font-black text-slate-400" aria-hidden>
               -
@@ -285,6 +295,7 @@ export default function SoccerMatchCard({
               onRequireAuth={onRequireAuth}
               ariaLabel={`${awayTeam} predicted score`}
               compact
+              allowBlank={showBlankScores}
             />
           </div>
 
