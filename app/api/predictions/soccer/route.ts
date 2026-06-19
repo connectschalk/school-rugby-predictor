@@ -39,7 +39,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: gate.error }, { status: gate.status })
   }
 
-  const profileErr = await ensureUserProfileExists(auth.supabase, auth.user)
+  const { error: profileErr } = await ensureUserProfileExists(auth.supabase, auth.user)
   if (profileErr) {
     return NextResponse.json({ error: profileErr.message }, { status: 400 })
   }
