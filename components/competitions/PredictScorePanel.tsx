@@ -11,7 +11,7 @@ import PredictScoreAuthModal from '@/components/predict-score/PredictScoreAuthMo
 import PredictionMarginModal from '@/components/predict-score/PredictionMarginModal'
 import { buildLoginHref, buildSignupHref } from '@/lib/auth-return-path'
 import { fetchUserIsAdmin } from '@/lib/admin-access'
-import { canEditPredictionOnMatch, matchPredictionsClosed, PREDICTION_KICKOFF_LOCK_MESSAGE } from '@/lib/prediction-cutoff'
+import { canEditPredictionOnMatch, filterOpenPredictionFixtures, PREDICTION_KICKOFF_LOCK_MESSAGE } from '@/lib/prediction-cutoff'
 import {
   defaultPick,
   defaultSoccerPick,
@@ -107,7 +107,9 @@ export default function PredictScorePanel({
   const signedIn = !!user
   const atDate = useMemo(() => new Date(nowTick), [nowTick])
 
-  const matchIds = useMemo(() => matches.map((m) => m.id), [matches])
+  const openMatches = useMemo(() => filterOpenPredictionFixtures(matches, atDate), [matches, atDate])
+
+  const matchIds = useMemo(() => openMatches.map((m) => m.id), [openMatches])
 
   const reloadPredictions = useCallback(async (uid: string, ids: string[]) => {
     const { data, error } = await fetchUserPredictionsForMatches(supabase, uid, ids)
@@ -209,25 +211,21 @@ export default function PredictScorePanel({
   }, [selectedPoolId])
 
   useEffect(() => {
-    if (!user || matches.length === 0) {
+    if (!user || openMatches.length === 0) {
       if (!user) setPredictions(new Map())
       return
     }
     void reloadPredictions(user.id, matchIds)
-  }, [user, matches, matchIds, reloadPredictions])
+  }, [user, openMatches.length, matchIds, reloadPredictions])
 
   useEffect(() => {
     if (soccerMode) {
       setSoccerPicksByMatch((prev) => {
         const next = { ...prev }
-        const at = new Date(nowTick)
-        for (const m of matches) {
+        for (const m of openMatches) {
           const p = predictions.get(m.id)
-          const closed = matchPredictionsClosed(m, at)
           if (hasSoccerPredictionSubmission(p)) {
-            next[m.id] = soccerPickFromPrediction(p, closed)
-          } else if (closed) {
-            next[m.id] = soccerPickFromPrediction(undefined, true)
+            next[m.id] = soccerPickFromPrediction(p, false)
           } else if (next[m.id] === undefined) {
             next[m.id] = defaultSoccerPick()
           }
@@ -239,7 +237,7 @@ export default function PredictScorePanel({
 
     setPicksByMatch((prev) => {
       const next = { ...prev }
-      for (const m of matches) {
+      for (const m of openMatches) {
         const p = predictions.get(m.id)
         if (
           p?.predicted_winner === 'home' ||
@@ -252,7 +250,7 @@ export default function PredictScorePanel({
       }
       return next
     })
-  }, [matches, predictions, soccerMode, nowTick])
+  }, [openMatches, predictions, soccerMode])
 
   useEffect(() => {
     if (!flashSubmittedId) return
@@ -266,7 +264,7 @@ export default function PredictScorePanel({
   )
 
   const filteredMatches = useMemo(() => {
-    let list = matches
+    let list = openMatches
     if (selectedPoolId) {
       if (!poolFilterReady) {
         return []
@@ -286,7 +284,7 @@ export default function PredictScorePanel({
     }
     return list
   }, [
-    matches,
+    openMatches,
     selectedPoolId,
     poolFilterReady,
     poolScopeMatchIds,
@@ -341,7 +339,7 @@ export default function PredictScorePanel({
       setSubmitError('This prediction is locked and cannot be changed.')
       return
     }
-    const rowMatch = matches.find((m) => m.id === matchId)
+    const rowMatch = openMatches.find((m) => m.id === matchId)
     if (!rowMatch || !canEditPredictionOnMatch(rowMatch, new Date())) {
       setSubmitError(PREDICTION_KICKOFF_LOCK_MESSAGE)
       return
@@ -404,7 +402,7 @@ export default function PredictScorePanel({
     if (!user) return
     const pred = predictions.get(matchId)
     if (!pred?.id || pred.is_locked) return
-    const rowMatch = matches.find((m) => m.id === matchId)
+    const rowMatch = openMatches.find((m) => m.id === matchId)
     if (!rowMatch || !canEditPredictionOnMatch(rowMatch, new Date())) {
       setSubmitError(PREDICTION_KICKOFF_LOCK_MESSAGE)
       return
@@ -426,18 +424,16 @@ export default function PredictScorePanel({
 
   const renderPredictMatchRow = (m: GameMatch) => {
     const pred = predictions.get(m.id)
-    const closed = matchPredictionsClosed(m, atDate)
-    const editable = canEditPredictionOnMatch(m, atDate)
+    const closed = false
+    const editable = true
     const rowBusy = submittingMatchId === m.id
     const showLock =
       signedIn &&
       (soccerMode ? hasSoccerPredictionSubmission(pred) : Boolean(pred?.id)) &&
-      !pred?.is_locked &&
-      editable &&
-      !closed
+      !pred?.is_locked
 
     if (soccerMode) {
-      const pick = soccerPicksByMatch[m.id] ?? soccerPickFromPrediction(pred, closed)
+      const pick = soccerPicksByMatch[m.id] ?? soccerPickFromPrediction(pred, false)
       return (
         <div key={m.id} id={`predict-card-${m.id}`} className="scroll-mt-24">
           <SoccerMatchCard
@@ -657,6 +653,10 @@ export default function PredictScorePanel({
         ) : matches.length === 0 ? (
           <p className="py-12 text-center text-sm text-slate-600">
             Fixtures for this competition have not been loaded yet.
+          </p>
+        ) : openMatches.length === 0 ? (
+          <p className="py-12 text-center text-sm text-slate-600">
+            No open fixtures right now. Past games are on My Predictions and the results pages.
           </p>
         ) : selectedPoolId && !poolFilterReady ? (
           <p className="py-12 text-center text-sm text-slate-500">Loading pool…</p>

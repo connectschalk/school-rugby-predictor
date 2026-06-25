@@ -24,7 +24,7 @@ import {
   type SoccerPickState,
 } from '@/lib/predict-score-common'
 import { isSoccerExactScoreMode, resolveCompetitionScoringMode, type CompetitionScoringMode } from '@/lib/competitions'
-import { canEditPredictionOnMatch, matchPredictionsClosed, PREDICTION_KICKOFF_LOCK_MESSAGE } from '@/lib/prediction-cutoff'
+import { canEditPredictionOnMatch, filterOpenPredictionFixtures, PREDICTION_KICKOFF_LOCK_MESSAGE } from '@/lib/prediction-cutoff'
 import {
   fetchUpcomingPredictScoreMatches,
   fetchUserPredictionsForMatches,
@@ -66,8 +66,9 @@ export default function PoolPredictTabSection({
   const atDate = useMemo(() => new Date(nowTick), [nowTick])
 
   const poolMatches = useMemo(() => {
-    return upcoming.filter((m) => scopeIdSet.has(m.id))
-  }, [upcoming, scopeIdSet])
+    const scoped = upcoming.filter((m) => scopeIdSet.has(m.id))
+    return filterOpenPredictionFixtures(scoped, atDate)
+  }, [upcoming, scopeIdSet, atDate])
 
   const matchIds = useMemo(() => poolMatches.map((m) => m.id), [poolMatches])
 
@@ -128,14 +129,10 @@ export default function PoolPredictTabSection({
     if (soccerMode) {
       setSoccerPicksByMatch((prev) => {
         const next = { ...prev }
-        const at = new Date(nowTick)
         for (const m of poolMatches) {
           const p = predictions.get(m.id)
-          const closed = matchPredictionsClosed(m, at)
           if (hasSoccerPredictionSubmission(p)) {
-            next[m.id] = soccerPickFromPrediction(p, closed)
-          } else if (closed) {
-            next[m.id] = soccerPickFromPrediction(undefined, true)
+            next[m.id] = soccerPickFromPrediction(p, false)
           } else if (next[m.id] === undefined) {
             next[m.id] = defaultSoccerPick()
           }
@@ -157,7 +154,7 @@ export default function PoolPredictTabSection({
       }
       return next
     })
-  }, [poolMatches, predictions, soccerMode, nowTick])
+  }, [poolMatches, predictions, soccerMode])
 
   useEffect(() => {
     if (!flashSubmittedId) return
@@ -282,8 +279,8 @@ export default function PoolPredictTabSection({
 
   const renderMatchRow = (m: GameMatch) => {
     const pred = predictions.get(m.id)
-    const closed = matchPredictionsClosed(m, atDate)
-    const editable = canEditPredictionOnMatch(m, atDate)
+    const closed = false
+    const editable = true
     const rowBusy = submittingMatchId === m.id
     const showLock =
       (soccerMode ? hasSoccerPredictionSubmission(pred) : Boolean(pred?.id)) &&

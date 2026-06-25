@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   canEditPredictionOnMatch,
+  filterOpenPredictionFixtures,
+  isClosedPredictionStatus,
+  isFixtureOpenForPrediction,
   matchPredictionsClosed,
   predictionCutoffPassed,
   PREDICTION_KICKOFF_LOCK_MESSAGE,
@@ -54,6 +57,29 @@ describe('prediction kickoff lock', () => {
 
   it('uses the required locked message copy', () => {
     expect(PREDICTION_KICKOFF_LOCK_MESSAGE).toBe('Prediction locked. The match has already started.')
+  })
+})
+
+describe('filterOpenPredictionFixtures', () => {
+  it('keeps only fixtures still open for prediction', () => {
+    const at = new Date('2020-06-15T13:00:00.000Z')
+    const fixtures = [
+      matchAt('2020-06-15T15:00:00.000Z', 'upcoming'),
+      matchAt('2020-06-15T12:00:00.000Z', 'upcoming'),
+      matchAt('2099-06-15T15:00:00.000Z', 'completed'),
+      matchAt('2099-06-15T15:00:00.000Z', 'locked'),
+    ]
+    expect(filterOpenPredictionFixtures(fixtures, at)).toEqual([
+      matchAt('2020-06-15T15:00:00.000Z', 'upcoming'),
+    ])
+  })
+
+  it('treats live/started/final style statuses as closed', () => {
+    const at = new Date('2099-06-15T13:00:00.000Z')
+    expect(isClosedPredictionStatus('live')).toBe(true)
+    expect(isClosedPredictionStatus('started')).toBe(true)
+    expect(isClosedPredictionStatus('final')).toBe(true)
+    expect(isFixtureOpenForPrediction(matchAt(futureKickoff, 'live'), at)).toBe(false)
   })
 })
 

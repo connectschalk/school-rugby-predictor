@@ -55,7 +55,38 @@ export function matchStartsSoon(match: MatchPredictionEditGate, at: Date = new D
 
 /** User may insert/update predictions: upcoming only and kickoff strictly in the future. */
 export function canEditPredictionOnMatch(match: MatchPredictionEditGate, at: Date = new Date()): boolean {
-  return match.status === 'upcoming' && !predictionCutoffPassed(match, at)
+  return isFixtureOpenForPrediction(match, at)
+}
+
+const CLOSED_PREDICTION_STATUS_PARTS = [
+  'closed',
+  'started',
+  'live',
+  'completed',
+  'final',
+  'cancelled',
+  'locked',
+] as const
+
+/** True when fixture status indicates predictions are no longer accepted. */
+export function isClosedPredictionStatus(status: string | null | undefined): boolean {
+  const normalized = String(status ?? '').toLowerCase()
+  if (!normalized || normalized === 'upcoming') return false
+  return CLOSED_PREDICTION_STATUS_PARTS.some((part) => normalized.includes(part))
+}
+
+/** Predict page: upcoming, kickoff still in the future, and not a closed/live/completed status. */
+export function isFixtureOpenForPrediction(match: MatchPredictionEditGate, at: Date = new Date()): boolean {
+  if (isClosedPredictionStatus(match.status)) return false
+  if (predictionCutoffPassed(match, at)) return false
+  return match.status === 'upcoming'
+}
+
+export function filterOpenPredictionFixtures<T extends MatchPredictionEditGate>(
+  fixtures: T[],
+  at: Date = new Date()
+): T[] {
+  return fixtures.filter((fixture) => isFixtureOpenForPrediction(fixture, at))
 }
 
 /** Time only, e.g. for “Kickoff: 15:00”. */
