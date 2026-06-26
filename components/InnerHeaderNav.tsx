@@ -19,23 +19,36 @@ import {
 import { usePathname, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
+import {
+  CalendarDays,
+  Layers,
+  Target,
+  Trophy,
+  Users,
+  type LucideIcon,
+} from 'lucide-react'
 import LetterAvatar from '@/components/LetterAvatar'
-import CommunityPicksIcon from '@/components/icons/CommunityPicksIcon'
 import { fetchUserIsAdmin } from '@/lib/admin-access'
 import { supabase } from '@/lib/supabase'
 
-function PredictIconDot() {
-  return <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-red-500" aria-hidden />
+function NavIcon({ icon: Icon }: { icon: LucideIcon }) {
+  return <Icon className="h-4 w-4 shrink-0 stroke-[2] text-red-500" aria-hidden />
 }
 
-function RankingsListIcon() {
-  return (
-    <span className="inline-flex h-3.5 w-3.5 shrink-0 flex-col justify-center gap-[2px]" aria-hidden>
-      <span className="h-[2px] w-full rounded-full bg-red-500" />
-      <span className="h-[2px] w-full rounded-full bg-red-500" />
-      <span className="h-[2px] w-full rounded-full bg-red-500" />
-    </span>
-  )
+function navLinkClasses(active: boolean) {
+  return [
+    'inline-flex shrink-0 items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700',
+    active
+      ? 'border-gray-900 bg-gray-900 text-white hover:bg-black'
+      : 'border-gray-300 bg-white text-gray-900 hover:border-gray-400 hover:bg-gray-50',
+  ].join(' ')
+}
+
+function mobileNavLinkClasses(active: boolean) {
+  return [
+    'mx-2 flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition',
+    active ? 'bg-gray-900 text-white' : 'text-gray-900 hover:bg-gray-50',
+  ].join(' ')
 }
 
 export default function InnerHeaderNav() {
@@ -196,21 +209,6 @@ export default function InnerHeaderNav() {
     'Account'
   const fullNameLine = [profile?.first_name?.trim(), profile?.surname?.trim()].filter(Boolean).join(' ')
 
-  const predictClasses = (active: boolean) =>
-    [
-      'inline-flex shrink-0 items-center gap-2 rounded-full border border-gray-800 bg-[#111318] px-4 py-2 text-sm font-semibold text-white transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700',
-      'hover:bg-[#1a1d24]',
-      active ? 'scale-[1.02] shadow-[0_0_0_1px_rgba(239,68,68,0.18)]' : '',
-    ].join(' ')
-
-  const rankingsClasses = (active: boolean) =>
-    [
-      'inline-flex shrink-0 items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700',
-      active
-        ? 'border-gray-500 bg-gray-100 text-gray-900'
-        : 'border-gray-300 bg-white text-gray-900 hover:border-gray-400 hover:bg-gray-50',
-    ].join(' ')
-
   const btnBase =
     'inline-flex items-center justify-center rounded-full border px-4 py-2 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700'
 
@@ -218,43 +216,50 @@ export default function InnerHeaderNav() {
   const poolsActive = isCompetitionNavActive(pathname, 'pools')
   const predictActive = isCompetitionNavActive(pathname, 'predict')
   const communityActive = isCompetitionNavActive(pathname, 'community')
+  const fixturesActive = isCompetitionNavActive(pathname, 'fixtures')
   const competitionSlug = resolveCompetitionSlugFromPathname(pathname)
   const competitionLabel = competitionSwitcherLabel(competitionSlug)
   const predictHref = getCompetitionScopedHref(pathname, 'predict', competitionSlug)
   const communityHref = getCompetitionScopedHref(pathname, 'community', competitionSlug)
+  const fixturesHref = getCompetitionScopedHref(pathname, 'fixtures', competitionSlug)
   const rankingsHref = getCompetitionScopedHref(pathname, 'leaderboard', competitionSlug)
   const poolsHref = getCompetitionScopedHref(pathname, 'pools', competitionSlug)
   const howItWorksHref = `${predictHref}?how=1`
-  const activeDot = (
-    <span
-      className="absolute -bottom-0.5 left-1/2 h-2 w-2 -translate-x-1/2 rounded-full bg-red-600"
-      aria-hidden
-    />
-  )
+
+  const mobileNavItems = [
+    { href: predictHref, label: 'Predict', icon: Target, active: predictActive },
+    { href: communityHref, label: 'Community Picks', icon: Users, active: communityActive },
+    { href: fixturesHref, label: 'Fixtures', icon: CalendarDays, active: fixturesActive },
+    { href: rankingsHref, label: 'Rankings', icon: Trophy, active: rankingsActive },
+    { href: poolsHref, label: 'Pools', icon: Layers, active: poolsActive },
+  ] as const
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-x-4 gap-y-3 px-4 py-4 sm:px-6">
-      <div className="flex min-w-0 shrink-0 items-center gap-2 sm:gap-3">
-        <Link
-          href={PLATFORM_HOME_HREF}
-          className="flex shrink-0 items-center rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
-          onClick={() => {
-            closeMenu()
-            closeMobileMore()
-            closeCompetitionMenu()
-          }}
-        >
-          <Image
-            src={PLATFORM_LOGO_SRC}
-            alt={PLATFORM_LOGO_ALT}
-            width={160}
-            height={54}
-            className="h-10 w-auto sm:h-11"
-            priority
-          />
-        </Link>
+    <div className="mx-auto flex w-full max-w-6xl items-center gap-2 px-4 py-4 sm:gap-3 sm:px-6 lg:gap-4">
+      <Link
+        href={PLATFORM_HOME_HREF}
+        className="flex h-11 shrink-0 items-center rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
+        onClick={() => {
+          closeMenu()
+          closeMobileMore()
+          closeCompetitionMenu()
+        }}
+      >
+        <Image
+          src={PLATFORM_LOGO_SRC}
+          alt={PLATFORM_LOGO_ALT}
+          width={192}
+          height={64}
+          className="h-11 w-auto origin-left scale-[1.14]"
+          priority
+        />
+      </Link>
 
-        <div ref={competitionMenuRef} className="relative hidden sm:block">
+      <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+        <div
+          ref={competitionMenuRef}
+          className="relative hidden min-w-0 flex-1 sm:block sm:max-w-[11rem] sm:flex-none md:max-w-[12rem] lg:max-w-[11rem]"
+        >
           <button
             type="button"
             aria-expanded={competitionMenuOpen}
@@ -264,10 +269,10 @@ export default function InnerHeaderNav() {
               setMobileMoreOpen(false)
               setCompetitionMenuOpen((open) => !open)
             }}
-            className="inline-flex max-w-[12rem] items-center gap-1.5 rounded-full border border-gray-300 bg-white px-3 py-1.5 text-left text-xs font-semibold text-gray-800 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 md:max-w-[14rem] md:text-sm"
+            className="inline-flex w-full max-w-full items-center gap-1.5 rounded-full border border-gray-300 bg-gray-100 px-3 py-2 text-left text-xs font-semibold text-gray-800 hover:bg-gray-200/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 md:text-sm"
           >
             <span className="truncate">{competitionLabel}</span>
-            <span className="text-gray-500" aria-hidden>
+            <span className="shrink-0 text-gray-500" aria-hidden>
               ▾
             </span>
           </button>
@@ -275,7 +280,7 @@ export default function InnerHeaderNav() {
             <div
               role="listbox"
               aria-label="Choose competition"
-              className="absolute left-0 z-50 mt-2 w-64 rounded-xl border border-gray-200 bg-white py-1 shadow-lg shadow-black/10"
+              className="absolute left-0 z-50 mt-2 w-56 rounded-xl border border-gray-200 bg-white py-1 shadow-lg shadow-black/10"
             >
               {COMPETITION_SWITCHER_OPTIONS.map((option) => {
                 const selected = option.slug === competitionSlug
@@ -302,69 +307,27 @@ export default function InnerHeaderNav() {
             </div>
           ) : null}
         </div>
+
+        <nav className="hidden min-w-0 items-center gap-2 lg:flex lg:gap-3" aria-label="Main">
+          {mobileNavItems.map((item) => (
+            <Link
+              key={item.label}
+              href={item.href}
+              className={navLinkClasses(item.active)}
+              onClick={() => {
+                closeMenu()
+                closeMobileMore()
+              }}
+            >
+              <NavIcon icon={item.icon} />
+              {item.label}
+            </Link>
+          ))}
+        </nav>
       </div>
 
-      <div className="flex min-w-0 flex-1 items-center justify-end gap-3 sm:gap-4">
-        <nav className="flex items-center gap-3 sm:gap-4" aria-label="Main">
-          <div className="relative flex flex-col items-center pb-3">
-            <Link
-              href={predictHref}
-              className={predictClasses(predictActive)}
-              onClick={() => {
-                closeMenu()
-                closeMobileMore()
-              }}
-            >
-              <PredictIconDot />
-              Predict
-            </Link>
-            {predictActive ? activeDot : null}
-          </div>
-          <div className="relative hidden flex-col items-center pb-3 md:flex">
-            <Link
-              href={communityHref}
-              className={rankingsClasses(communityActive)}
-              onClick={() => {
-                closeMenu()
-                closeMobileMore()
-              }}
-            >
-              <CommunityPicksIcon />
-              Community Picks
-            </Link>
-            {communityActive ? activeDot : null}
-          </div>
-          <div className="relative hidden flex-col items-center pb-3 md:flex">
-            <Link
-              href={rankingsHref}
-              className={rankingsClasses(rankingsActive)}
-              onClick={() => {
-                closeMenu()
-                closeMobileMore()
-              }}
-            >
-              <RankingsListIcon />
-              Rankings
-            </Link>
-            {rankingsActive ? activeDot : null}
-          </div>
-          <div className="relative hidden flex-col items-center pb-3 md:flex">
-            <Link
-              href={poolsHref}
-              className={rankingsClasses(poolsActive)}
-              onClick={() => {
-                closeMenu()
-                closeMobileMore()
-              }}
-            >
-              <RankingsListIcon />
-              Pools
-            </Link>
-            {poolsActive ? activeDot : null}
-          </div>
-        </nav>
-
-        <div ref={mobileMoreRef} className="relative md:hidden">
+      <div className="flex shrink-0 items-center gap-2">
+        <div ref={mobileMoreRef} className="relative lg:hidden">
           <button
             type="button"
             aria-expanded={mobileMoreOpen}
@@ -372,6 +335,7 @@ export default function InnerHeaderNav() {
             aria-label="Open menu"
             onClick={() => {
               setMenuOpen(false)
+              setCompetitionMenuOpen(false)
               setMobileMoreOpen((o) => !o)
             }}
             className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-900 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
@@ -383,65 +347,59 @@ export default function InnerHeaderNav() {
             </span>
           </button>
           {mobileMoreOpen ? (
-            <div className="absolute right-0 z-50 mt-2 w-56 rounded-xl border border-gray-200 bg-white py-2 shadow-md shadow-black/10">
-              <p className="px-4 pb-2 pt-1 text-[10px] font-bold uppercase tracking-wide text-gray-500">
+            <div className="absolute right-0 z-50 mt-2 w-64 max-w-[calc(100vw-2rem)] rounded-xl border border-gray-200 bg-white py-2 shadow-md shadow-black/10">
+              <p className="px-4 pb-2 pt-1 text-[10px] font-bold uppercase tracking-wide text-gray-500 sm:hidden">
                 Competition
               </p>
-              {COMPETITION_SWITCHER_OPTIONS.map((option) => (
-                <button
-                  key={option.slug}
-                  type="button"
-                  onClick={() => {
-                    closeMobileMore()
-                    router.push(getEquivalentCompetitionPath(pathname, option.slug))
-                  }}
-                  className={`block w-full px-4 py-2.5 text-left text-sm ${
-                    option.slug === competitionSlug
-                      ? 'bg-gray-100 font-bold text-gray-900'
-                      : 'font-medium text-gray-800 hover:bg-gray-50'
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
-              <div className="my-1 border-t border-gray-100" />
-              <Link
-                href={communityHref}
-                className="flex items-center gap-2 px-4 py-3 text-sm font-semibold text-gray-900 hover:bg-gray-50"
-                onClick={closeMobileMore}
-              >
-                <CommunityPicksIcon />
-                Community Picks
-              </Link>
-              <Link
-                href={rankingsHref}
-                className="flex items-center gap-2 px-4 py-3 text-sm font-semibold text-gray-900 hover:bg-gray-50"
-                onClick={closeMobileMore}
-              >
-                <RankingsListIcon />
-                Rankings
-              </Link>
-              <Link
-                href={poolsHref}
-                className="flex items-center gap-2 px-4 py-3 text-sm font-semibold text-gray-900 hover:bg-gray-50"
-                onClick={closeMobileMore}
-              >
-                <RankingsListIcon />
-                Pools
-              </Link>
+              <div className="space-y-0.5 sm:hidden">
+                {COMPETITION_SWITCHER_OPTIONS.map((option) => (
+                  <button
+                    key={option.slug}
+                    type="button"
+                    onClick={() => {
+                      closeMobileMore()
+                      router.push(getEquivalentCompetitionPath(pathname, option.slug))
+                    }}
+                    className={`mx-2 block w-[calc(100%-1rem)] rounded-lg px-3 py-2 text-left text-sm ${
+                      option.slug === competitionSlug
+                        ? 'bg-gray-100 font-bold text-gray-900'
+                        : 'font-medium text-gray-800 hover:bg-gray-50'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              <div className="my-1 border-t border-gray-100 sm:hidden" />
+              <p className="px-4 pb-1 pt-1 text-[10px] font-bold uppercase tracking-wide text-gray-500">
+                Menu
+              </p>
+              <div className="space-y-0.5">
+                {mobileNavItems.map((item) => (
+                  <Link
+                    key={item.label}
+                    href={item.href}
+                    className={mobileNavLinkClasses(item.active)}
+                    onClick={closeMobileMore}
+                  >
+                    <NavIcon icon={item.icon} />
+                    {item.label}
+                  </Link>
+                ))}
+              </div>
               {!signedIn && authReady ? (
                 <>
                   <div className="my-1 border-t border-gray-100" />
                   <Link
                     href="/login"
-                    className="block px-4 py-3 text-sm font-semibold text-gray-900 hover:bg-gray-50"
+                    className="mx-2 block rounded-lg px-3 py-2.5 text-sm font-semibold text-gray-900 hover:bg-gray-50"
                     onClick={closeMobileMore}
                   >
                     Log in
                   </Link>
                   <Link
                     href="/signup"
-                    className="block px-4 py-3 text-sm font-semibold text-gray-900 hover:bg-gray-50"
+                    className="mx-2 block rounded-lg px-3 py-2.5 text-sm font-semibold text-gray-900 hover:bg-gray-50"
                     onClick={closeMobileMore}
                   >
                     Sign up
@@ -453,7 +411,7 @@ export default function InnerHeaderNav() {
         </div>
 
         <div
-          className={`flex items-center gap-3 sm:gap-4 ${authReady ? 'md:ml-1 md:border-l md:border-gray-200 md:pl-5' : ''}`}
+          className={`flex items-center gap-2 ${authReady ? 'lg:ml-1 lg:border-l lg:border-gray-200 lg:pl-4' : ''}`}
         >
           {!authReady ? (
             <span className="text-xs text-gray-400" aria-hidden>
@@ -469,7 +427,7 @@ export default function InnerHeaderNav() {
                   setMobileMoreOpen(false)
                   setMenuOpen((o) => !o)
                 }}
-                className="flex items-center gap-2 rounded-full border border-gray-300 bg-white px-2 py-1.5 pl-2 pr-3 text-left hover:border-gray-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
+                className="flex h-10 items-center gap-2 rounded-full border border-gray-300 bg-white p-1.5 text-left hover:border-gray-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 lg:px-2 lg:py-1.5 lg:pl-2 lg:pr-3"
               >
                 <LetterAvatar
                   letter={profile?.avatar_letter}
@@ -478,13 +436,13 @@ export default function InnerHeaderNav() {
                   firstName={profile?.first_name}
                   displayName={profile?.display_name}
                   name={displayName}
-                  size={36}
+                  size={32}
                   className="ring-1 ring-gray-200"
                 />
-                <span className="max-w-[10rem] truncate text-sm font-semibold text-gray-900 max-md:hidden">
+                <span className="max-w-[10rem] truncate text-sm font-semibold text-gray-900 max-lg:hidden">
                   {displayName}
                 </span>
-                <span className="text-gray-500" aria-hidden>
+                <span className="text-gray-500 max-lg:hidden" aria-hidden>
                   ▾
                 </span>
               </button>
@@ -545,7 +503,7 @@ export default function InnerHeaderNav() {
               ) : null}
             </div>
           ) : (
-            <div className="hidden items-center gap-3 sm:gap-4 md:flex">
+            <div className="hidden items-center gap-2 lg:flex">
               <Link
                 href="/login"
                 className={`${btnBase} border-gray-300 bg-white text-gray-900 hover:border-gray-400 hover:bg-gray-50`}

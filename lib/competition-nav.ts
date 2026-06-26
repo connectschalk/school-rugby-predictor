@@ -17,9 +17,9 @@ const TARGET_SEGMENTS: Record<Exclude<CompetitionNavTarget, 'home'>, string> = {
 }
 
 export const COMPETITION_SWITCHER_OPTIONS = [
-  { slug: 'nextplay-schools', label: 'School Rugby Predictor' },
-  { slug: 'craven-week', label: 'Craven Week Rugby Predictor' },
-  { slug: 'soccer-world-cup', label: 'Soccer World Cup Predictor' },
+  { slug: 'nextplay-schools', label: 'School Rugby' },
+  { slug: 'craven-week', label: 'Craven Week' },
+  { slug: 'soccer-world-cup', label: 'Soccer World Cup' },
 ] as const
 
 export function parseCompetitionSlugFromPathname(
@@ -69,6 +69,8 @@ export function isCompetitionNavActive(
         return pathname.startsWith('/user-rankings')
       case 'pools':
         return pathname.startsWith('/pools')
+      case 'fixtures':
+        return false
       default:
         return false
     }
