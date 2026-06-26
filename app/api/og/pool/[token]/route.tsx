@@ -22,9 +22,65 @@ type PoolOgPayload = {
   hasPool: boolean
 }
 
+const BRAND_LOGO_WIDTH = 260
+const BRAND_LOGO_HEIGHT = 66
+const POOL_LOGO_SIZE = 96
+const POOL_LOGO_RADIUS = 16
+
+function poolTitleFontSize(name: string): number {
+  const len = name.length
+  if (len > 42) return 44
+  if (len > 28) return 52
+  return 64
+}
+
+function PoolLogoFrame({
+  poolLogoSrc,
+  initials,
+  show,
+}: {
+  poolLogoSrc: string | null
+  initials: string
+  show: boolean
+}) {
+  if (!show) return null
+
+  return (
+    <div
+      style={{
+        width: POOL_LOGO_SIZE,
+        height: POOL_LOGO_SIZE,
+        display: 'flex',
+        flexShrink: 0,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: POOL_LOGO_RADIUS,
+        border: '2px solid #e5e7eb',
+        background: '#f3f4f6',
+        overflow: 'hidden',
+      }}
+    >
+      {poolLogoSrc ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={poolLogoSrc}
+          alt=""
+          width={POOL_LOGO_SIZE}
+          height={POOL_LOGO_SIZE}
+          style={{ objectFit: 'cover' }}
+        />
+      ) : (
+        <span style={{ fontSize: 36, fontWeight: 800, color: '#9ca3af' }}>{initials}</span>
+      )}
+    </div>
+  )
+}
+
 function PoolOgCard({ payload }: { payload: PoolOgPayload }) {
   const { poolName, competitionName, brandLogoSrc, poolLogoSrc, hasPool } = payload
   const initials = poolLogoInitials(poolName)
+  const title = hasPool ? poolName : 'Join a prediction pool'
+  const titleSize = hasPool ? poolTitleFontSize(poolName) : 52
 
   return (
     <div
@@ -40,52 +96,55 @@ function PoolOgCard({ payload }: { payload: PoolOgPayload }) {
         padding: '48px 64px',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+      <div style={{ display: 'flex', alignItems: 'center' }}>
         {brandLogoSrc ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={brandLogoSrc} alt="" width={220} height={56} style={{ objectFit: 'contain' }} />
+          <img
+            src={brandLogoSrc}
+            alt=""
+            width={BRAND_LOGO_WIDTH}
+            height={BRAND_LOGO_HEIGHT}
+            style={{ objectFit: 'contain' }}
+          />
         ) : (
-          <span style={{ fontSize: 28, fontWeight: 800, color: TEXT }}>{PLATFORM_NAME}</span>
+          <span style={{ fontSize: 36, fontWeight: 800, color: TEXT }}>{PLATFORM_NAME}</span>
         )}
-        <div
-          style={{
-            width: 132,
-            height: 132,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: 24,
-            border: '2px solid #e5e7eb',
-            background: '#f9fafb',
-          }}
-        >
-          {poolLogoSrc ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={poolLogoSrc} alt="" width={96} height={96} style={{ objectFit: 'contain' }} />
-          ) : (
-            <span style={{ fontSize: 40, fontWeight: 800, color: '#9ca3af' }}>{initials}</span>
-          )}
-        </div>
       </div>
 
-      <div style={{ display: 'flex', flex: 1, flexDirection: 'column', justifyContent: 'center', gap: 14 }}>
+      <div
+        style={{
+          display: 'flex',
+          flex: 1,
+          flexDirection: 'column',
+          justifyContent: 'center',
+          gap: 16,
+          marginTop: 12,
+        }}
+      >
         <div style={{ width: 10, height: 10, borderRadius: 999, background: RED }} />
-        <div
-          style={{
-            fontSize: hasPool && poolName.length > 34 ? 44 : 52,
-            fontWeight: 800,
-            lineHeight: 1.15,
-            letterSpacing: -0.5,
-            maxWidth: 900,
-          }}
-        >
-          {hasPool ? poolName : 'Join a prediction pool'}
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+          <PoolLogoFrame poolLogoSrc={poolLogoSrc} initials={initials} show={hasPool} />
+          <div
+            style={{
+              fontSize: titleSize,
+              fontWeight: 800,
+              lineHeight: 1.12,
+              letterSpacing: -0.5,
+              maxWidth: hasPool ? 940 : 1000,
+            }}
+          >
+            {title}
+          </div>
         </div>
-        <div style={{ fontSize: 26, fontWeight: 600, color: MUTED, maxWidth: 900 }}>
+
+        <div style={{ fontSize: 28, fontWeight: 600, color: MUTED, maxWidth: 1000 }}>
           {hasPool ? competitionName : PLATFORM_NAME}
         </div>
-        <div style={{ fontSize: 20, fontWeight: 500, color: MUTED }}>
-          {hasPool ? buildPoolShareDescription(competitionName).split('.')[0] : 'Predict scores and compete with friends'}
+        <div style={{ fontSize: 22, fontWeight: 500, color: MUTED, maxWidth: 1000 }}>
+          {hasPool
+            ? buildPoolShareDescription(competitionName).split('.')[0]
+            : 'Predict scores and compete with friends'}
         </div>
         <div
           style={{
