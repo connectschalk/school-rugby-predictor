@@ -2,7 +2,15 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { isCompetitionNavActive } from '@/lib/competition-nav'
+import {
+  CalendarDays,
+  Layers,
+  Target,
+  Trophy,
+  Users,
+  type LucideIcon,
+} from 'lucide-react'
+import { isCompetitionNavActive, type CompetitionNavTarget } from '@/lib/competition-nav'
 
 type Props = {
   competitionSlug: string
@@ -10,9 +18,24 @@ type Props = {
   variant?: 'light' | 'dark'
 }
 
-/** Competition-local nav — fixtures and overview (main sections live in top header). */
-const LINKS = [{ segment: 'fixtures', label: 'Fixtures', target: 'fixtures' as const }] as const
+const NAV_ITEMS: {
+  target: CompetitionNavTarget
+  segment: string
+  label: string
+  icon: LucideIcon
+}[] = [
+  { target: 'predict', segment: 'predict', label: 'Predict', icon: Target },
+  { target: 'community', segment: 'community', label: 'Community Picks', icon: Users },
+  { target: 'fixtures', segment: 'fixtures', label: 'Fixtures', icon: CalendarDays },
+  { target: 'leaderboard', segment: 'leaderboard', label: 'Rankings', icon: Trophy },
+  { target: 'pools', segment: 'pools', label: 'Pools', icon: Layers },
+]
 
+function NavIcon({ icon: Icon }: { icon: LucideIcon }) {
+  return <Icon className="h-4 w-4 shrink-0 stroke-[2] text-red-500" aria-hidden />
+}
+
+/** Competition-local nav — active section pill on mobile (main sections live in top header). */
 export default function CompetitionSubNav({
   competitionSlug,
   competitionName,
@@ -21,14 +44,15 @@ export default function CompetitionSubNav({
   const pathname = usePathname()
   const base = `/competitions/${competitionSlug}`
   const isDark = variant === 'dark'
+  const activeItem = NAV_ITEMS.find((item) => isCompetitionNavActive(pathname, item.target))
 
   return (
     <nav
-      className={
+      className={`lg:hidden ${
         isDark
           ? 'border-b border-white/10 bg-[#0a0a0b] text-white'
           : 'border-b border-slate-200 bg-white text-slate-900'
-      }
+      }`}
       aria-label={`${competitionName} navigation`}
     >
       <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-2 px-4 py-3 sm:px-6">
@@ -42,27 +66,19 @@ export default function CompetitionSubNav({
         >
           {competitionName}
         </Link>
-        {LINKS.map(({ segment, label, target }) => {
-          const href = `${base}/${segment}`
-          const active = isCompetitionNavActive(pathname, target)
-          return (
-            <Link
-              key={segment}
-              href={href}
-              className={
-                active
-                  ? isDark
-                    ? 'rounded-full border border-red-600/50 bg-red-600/20 px-4 py-1.5 text-sm font-bold text-white'
-                    : 'rounded-full border border-slate-900 bg-slate-900 px-4 py-1.5 text-sm font-bold text-white'
-                  : isDark
-                    ? 'rounded-full border border-white/10 px-4 py-1.5 text-sm font-semibold text-gray-300 transition hover:border-white/20 hover:text-white'
-                    : 'rounded-full border border-slate-200 px-4 py-1.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50'
-              }
-            >
-              {label}
-            </Link>
-          )
-        })}
+        {activeItem ? (
+          <Link
+            href={`${base}/${activeItem.segment}`}
+            className={
+              isDark
+                ? 'inline-flex items-center gap-2 rounded-full border border-white/70 bg-transparent px-4 py-1.5 text-sm font-bold text-white'
+                : 'inline-flex items-center gap-2 rounded-full border border-slate-900 bg-transparent px-4 py-1.5 text-sm font-bold text-slate-900'
+            }
+          >
+            <NavIcon icon={activeItem.icon} />
+            <span>{activeItem.label}</span>
+          </Link>
+        ) : null}
       </div>
     </nav>
   )
