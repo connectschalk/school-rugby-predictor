@@ -1,9 +1,10 @@
 @import "tailwindcss";
+@import "./mm-safe-area.css";
 
 /* Explicit scan roots (paths relative to this file). Use ../app so App Router is targeted, not ./app (which would mean app/app/). */
 @source "../app/**/*.{js,ts,jsx,tsx,mdx}";
 @source "../components/**/*.{js,ts,jsx,tsx,mdx}";
-@source "../lib/**/*.{js,ts,jsx,tsx}";
+@source "../lib/**/*.{js,ts,jsx,tsx,mdx}";
 
 :root {
   --background: #ffffff;
@@ -26,21 +27,4 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: ui-sans-serif, system-ui, sans-serif;
-}
-
-/* Do not put Tailwind arbitrary-class examples in comments here — Tailwind may extract them and emit broken CSS. */
-.safe-area-bottom {
-  padding-bottom: max(1rem, env(safe-area-inset-bottom));
-}
-
-.mm-safe-top {
-  padding-top: max(2.5rem, env(safe-area-inset-top));
-}
-
-.mm-safe-top-sm {
-  padding-top: max(1rem, env(safe-area-inset-top));
-}
-
-.mm-safe-bottom {
-  padding-bottom: max(1rem, env(safe-area-inset-bottom));
 }

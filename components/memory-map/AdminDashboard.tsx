@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { fetchAuditLogs, fetchAdminMemoryMapBundleClient } from '@/lib/memory-map/client-queries'
 import { fetchAllMembers } from '@/lib/memory-map/membership'
@@ -35,6 +36,8 @@ import AdminSponsorForm from '@/components/memory-map/admin/AdminSponsorForm'
 import AdminAreaForm from '@/components/memory-map/admin/AdminAreaForm'
 import AdminContributorsPanel from '@/components/memory-map/admin/AdminContributorsPanel'
 import AdminPilotChecklist from '@/components/memory-map/admin/AdminPilotChecklist'
+import AdminPilotQaPanel from '@/components/memory-map/admin/AdminPilotQaPanel'
+import StoryApprovalSummary, { needsPublishConfirmation } from '@/components/memory-map/admin/StoryApprovalSummary'
 import StoryGovernancePanel, {
   defaultGovernanceChecks,
   type GovernanceChecks,
@@ -61,15 +64,20 @@ const TABS: { id: AdminTab; label: string }[] = [
   { id: 'share', label: 'Share / QR' },
   { id: 'audit', label: 'Audit' },
   { id: 'pilot', label: 'Pilot Checklist' },
+  { id: 'qa', label: 'Pilot QA' },
 ]
 
 type PinDeleteAction = 'cancel' | 'move' | 'archive_stories' | 'delete_stories'
 
 export default function AdminDashboard({ mapId }: Props) {
+  const searchParams = useSearchParams()
+  const initialTab = searchParams.get('tab') as AdminTab | null
   const [bundle, setBundle] = useState<MemoryMapBundle | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [tab, setTab] = useState<AdminTab>('overview')
+  const [tab, setTab] = useState<AdminTab>(
+    initialTab && TABS.some((t) => t.id === initialTab) ? initialTab : 'overview'
+  )
   const [allMembers, setAllMembers] = useState<MemoryMapMember[]>([])
   const [auditLogs, setAuditLogs] = useState<MemoryAuditLog[]>([])
   const [analytics, setAnalytics] = useState<MemoryMapAnalyticsSummary | null>(null)
@@ -78,6 +86,7 @@ export default function AdminDashboard({ mapId }: Props) {
   const [governanceChecks, setGovernanceChecks] = useState<GovernanceChecks | null>(null)
   const [approvalNote, setApprovalNote] = useState('')
   const [highRiskConfirm, setHighRiskConfirm] = useState<MemoryStory | null>(null)
+  const [publishConfirmed, setPublishConfirmed] = useState(false)
 
   const [selectedStory, setSelectedStory] = useState<MemoryStory | null>(null)
   const [rejectStory, setRejectStory] = useState<MemoryStory | null>(null)
@@ -197,6 +206,7 @@ export default function AdminDashboard({ mapId }: Props) {
     setSelectedStory(story)
     setGovernanceChecks(defaultGovernanceChecks(story))
     setApprovalNote('')
+    setPublishConfirmed(false)
   }
 
   async function onApproveStory(storyId: string, skipWeakCheck = false, skipHighRiskCheck = false) {
@@ -221,6 +231,7 @@ export default function AdminDashboard({ mapId }: Props) {
       setHighRiskConfirm(null)
       setGovernanceChecks(null)
       setApprovalNote('')
+      setPublishConfirmed(false)
     }
   }
 
@@ -363,6 +374,9 @@ export default function AdminDashboard({ mapId }: Props) {
       <header className="mm-card border-x-0 border-t-0 px-4 py-4">
         <Link href="/memory-map" className="text-xs font-bold text-[var(--mm-accent)]">
           ← Memory Map
+        </Link>
+        <Link href={`/memory-map/admin/${mapId}/setup`} className="text-xs font-bold text-[var(--mm-accent)]">
+          Setup wizard →
         </Link>
         <h1 className="mt-2 text-xl font-black">{map.title} — Admin</h1>
         <p className="mm-muted text-sm">Moderation, branding and map management</p>
@@ -529,6 +543,8 @@ export default function AdminDashboard({ mapId }: Props) {
 
         {tab === 'contributors' ? (
           <AdminContributorsPanel
+            mapId={mapId}
+            mapSlug={map.slug}
             members={allMembers}
             isAppAdmin={isAppAdmin}
             onChanged={() => void reload()}
@@ -600,6 +616,10 @@ export default function AdminDashboard({ mapId }: Props) {
           />
         ) : null}
 
+        {tab === 'qa' && bundle ? (
+          <AdminPilotQaPanel bundle={bundle} mapId={mapId} />
+        ) : null}
+
         {tab === 'audit' ? (
           <div className="space-y-2">
             {auditLogs.length === 0 ? (
@@ -646,8 +666,15 @@ export default function AdminDashboard({ mapId }: Props) {
                 )}
               </div>
             ) : null}
-            {governanceChecks ? (
-              <div className="mt-4">
+            {governanceChecks && selectedStory ? (
+              <div className="mt-4 space-y-3">
+                <StoryApprovalSummary
+                  story={selectedStory}
+                  pin={pins.find((p) => p.id === selectedStory.pin_id) ?? null}
+                  area={areas.find((a) => a.id === pins.find((p) => p.id === selectedStory.pin_id)?.area_id) ?? null}
+                  category={categories.find((c) => c.id === pins.find((p) => p.id === selectedStory.pin_id)?.category_id) ?? null}
+                  checks={governanceChecks}
+                />
                 <StoryGovernancePanel
                   story={selectedStory}
                   checks={governanceChecks}
@@ -655,10 +682,34 @@ export default function AdminDashboard({ mapId }: Props) {
                   approvalNote={approvalNote}
                   onApprovalNoteChange={setApprovalNote}
                 />
+                {needsPublishConfirmation(selectedStory, governanceChecks) ? (
+                  <label className="flex items-start gap-2 text-xs">
+                    <input
+                      type="checkbox"
+                      checked={publishConfirmed}
+                      onChange={(e) => setPublishConfirmed(e.target.checked)}
+                      className="mt-0.5"
+                    />
+                    I have reviewed this story and confirm it may be published.
+                  </label>
+                ) : null}
               </div>
             ) : null}
             <div className="mt-4 flex flex-wrap gap-2">
-              <button type="button" disabled={busy} onClick={() => void onApproveStory(selectedStory.id)} className="mm-btn-primary rounded-lg px-3 py-2 text-xs font-bold disabled:opacity-50">
+              <button
+                type="button"
+                disabled={
+                  busy ||
+                  Boolean(
+                    selectedStory &&
+                      governanceChecks &&
+                      needsPublishConfirmation(selectedStory, governanceChecks) &&
+                      !publishConfirmed
+                  )
+                }
+                onClick={() => void onApproveStory(selectedStory.id)}
+                className="mm-btn-primary rounded-lg px-3 py-2 text-xs font-bold disabled:opacity-50"
+              >
                 Approve
               </button>
               <button

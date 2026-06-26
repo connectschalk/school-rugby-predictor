@@ -7,6 +7,7 @@ import { trackMemoryMapEvent } from '@/lib/memory-map/analytics'
 import type { MemoryMap, MemoryMapBundle } from '@/lib/memory-map/types'
 import { memoryMapThemeVars } from '@/lib/memory-map/theme'
 import { bundleStats } from '@/lib/memory-map/utils'
+import MemoryMapSponsorStrip from '@/components/memory-map/MemoryMapSponsorStrip'
 
 type Props = {
   map: MemoryMap
@@ -75,16 +76,8 @@ export default function MemoryMapLandingPage({ map, mapSlug, bundle, fromQr }: P
         </section>
 
         {map.sponsor_name ? (
-          <div className="mm-card mt-6 rounded-2xl border-white/15 bg-black/40 p-4 backdrop-blur-sm">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-white/60">Proudly sponsored by</p>
-            <div className="mt-2 flex items-center gap-3">
-              {map.sponsor_logo_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={map.sponsor_logo_url} alt="" className="h-9 max-w-[120px] object-contain" />
-              ) : null}
-              <span className="text-base font-bold">{map.sponsor_name}</span>
-            </div>
-            {map.sponsor_message ? <p className="mm-muted mt-2 text-xs leading-relaxed">{map.sponsor_message}</p> : null}
+          <div className="mt-6">
+            <MemoryMapSponsorStrip map={map} variant="footer" className="border-white/15 bg-black/40 backdrop-blur-sm" />
           </div>
         ) : null}
 

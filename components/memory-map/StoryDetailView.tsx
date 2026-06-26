@@ -7,6 +7,7 @@ import { memoryMapThemeVars } from '@/lib/memory-map/theme'
 import { storyTypeLabel, uploadModeLabel } from '@/lib/memory-map/utils'
 import MemoryMapHeader from '@/components/memory-map/MemoryMapHeader'
 import StoryCard from '@/components/memory-map/StoryCard'
+import MemoryMapSponsorStrip from '@/components/memory-map/MemoryMapSponsorStrip'
 import StatusBadge, { RiskBadge } from '@/components/memory-map/StatusBadge'
 
 type Props = {
@@ -123,17 +124,9 @@ export default function StoryDetailView({ bundle, story, isAdminView }: Props) {
         ) : null}
 
         {map.sponsor_name ? (
-          <footer className="mm-card mt-10 rounded-2xl p-4 text-center">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-white/50">Proudly sponsored by</p>
-            <div className="mt-2 flex items-center justify-center gap-2">
-              {map.sponsor_logo_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={map.sponsor_logo_url} alt="" className="h-8 object-contain" />
-              ) : null}
-              <span className="font-bold">{map.sponsor_name}</span>
-            </div>
-            {map.sponsor_message ? <p className="mm-muted mt-2 text-xs">{map.sponsor_message}</p> : null}
-          </footer>
+          <div className="mt-10">
+            <MemoryMapSponsorStrip map={map} variant="footer" />
+          </div>
         ) : null}
 
         <Link href={`/memory-map/${map.slug}/add?pin=${story.pin_id}`} className="mm-btn-primary mt-6 block rounded-2xl px-4 py-3 text-center text-sm font-black">

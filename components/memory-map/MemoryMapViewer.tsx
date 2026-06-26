@@ -14,6 +14,8 @@ import MapTypeToggle from '@/components/memory-map/MapTypeToggle'
 import MapCanvas from '@/components/memory-map/MapCanvas'
 import PinPreviewSheet from '@/components/memory-map/PinPreviewSheet'
 import MmEmptyState from '@/components/memory-map/MmEmptyState'
+import MapOnboardingOverlay from '@/components/memory-map/MapOnboardingOverlay'
+import MemoryMapSponsorStrip from '@/components/memory-map/MemoryMapSponsorStrip'
 
 type Props = {
   bundle: MemoryMapBundle
@@ -39,6 +41,7 @@ export default function MemoryMapViewer({ bundle, initialAreaId }: Props) {
   )
   const [activePin, setActivePin] = useState<MemoryPin | null>(null)
   const [locateMessage, setLocateMessage] = useState<string | null>(null)
+  const [locateTarget, setLocateTarget] = useState<{ lat: number; lng: number } | null>(null)
 
   useEffect(() => {
     void trackMemoryMapEvent(supabase, { memoryMapId: map.id, eventType: 'map_opened' })
@@ -89,7 +92,10 @@ export default function MemoryMapViewer({ bundle, initialAreaId }: Props) {
     }
     setLocateMessage('Finding your location…')
     navigator.geolocation.getCurrentPosition(
-      () => setLocateMessage('Location found. Explore pins on the map near you.'),
+      (pos) => {
+        setLocateTarget({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+        setLocateMessage('Location found. Map centred on your position.')
+      },
       () => setLocateMessage('Location permission denied. You can still browse the map manually.'),
       { timeout: 8000 }
     )
@@ -154,15 +160,7 @@ export default function MemoryMapViewer({ bundle, initialAreaId }: Props) {
         }
       />
 
-      {map.sponsor_name ? (
-        <div className="flex items-center gap-2 border-b border-white/10 px-4 py-2">
-          {map.sponsor_logo_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={map.sponsor_logo_url} alt="" className="h-5 w-auto max-w-[72px] object-contain" />
-          ) : null}
-          <p className="mm-muted truncate text-[10px]">Proudly sponsored by {map.sponsor_name}</p>
-        </div>
-      ) : null}
+      {map.sponsor_name ? <MemoryMapSponsorStrip map={map} variant="banner" /> : null}
 
       <div className="flex flex-wrap items-center gap-2 px-4 py-2">
         <MapTypeToggle
@@ -224,6 +222,7 @@ export default function MemoryMapViewer({ bundle, initialAreaId }: Props) {
           area={selectedArea}
           pins={visiblePins}
           mode={mapMode}
+          locateTarget={locateTarget}
           onPinClick={(pin) => {
             setActivePin(pin)
             void trackMemoryMapEvent(supabase, {
@@ -241,9 +240,12 @@ export default function MemoryMapViewer({ bundle, initialAreaId }: Props) {
         pin={activePin}
         stories={pinStories}
         mapSlug={map.slug}
+        map={map}
         areaName={selectedArea.name}
         onClose={() => setActivePin(null)}
       />
+
+      <MapOnboardingOverlay mapSlug={map.slug} />
     </div>
   )
 }

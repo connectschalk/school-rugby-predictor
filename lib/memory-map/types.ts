@@ -155,6 +155,7 @@ export type AdminTab =
   | 'share'
   | 'audit'
   | 'pilot'
+  | 'qa'
 
 export type MemoryMapMember = {
   id: string

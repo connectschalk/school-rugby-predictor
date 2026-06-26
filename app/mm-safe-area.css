@@ -1,0 +1,26 @@
+/* Memory Map + app safe-area spacing — plain CSS only (no Tailwind arbitrary classes). */
+
+:root {
+  --mm-env-safe-top: env(safe-area-inset-top);
+  --mm-env-safe-bottom: env(safe-area-inset-bottom);
+}
+
+.safe-area-bottom {
+  padding-bottom: max(1rem, var(--mm-env-safe-bottom));
+}
+
+.mm-safe-top {
+  padding-top: max(2.5rem, var(--mm-env-safe-top));
+}
+
+.mm-safe-top-sm {
+  padding-top: max(1rem, var(--mm-env-safe-top));
+}
+
+.mm-safe-bottom {
+  padding-bottom: max(1rem, var(--mm-env-safe-bottom));
+}
+
+.mm-safe-bottom-lg {
+  padding-bottom: max(2.5rem, var(--mm-env-safe-bottom));
+}

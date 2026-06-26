@@ -1,6 +1,8 @@
+import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import MemoryMapLandingPage from '@/components/memory-map/MemoryMapLandingPage'
 import MemoryMapVisibilityGate from '@/components/memory-map/MemoryMapVisibilityGate'
+import { buildMemoryMapMetadata } from '@/lib/memory-map/metadata'
 import { fetchMemoryMapBundleBySlug } from '@/lib/memory-map/queries'
 
 type Props = {
@@ -9,6 +11,13 @@ type Props = {
 }
 
 export const dynamic = 'force-dynamic'
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { mapSlug } = await params
+  const bundle = await fetchMemoryMapBundleBySlug(mapSlug)
+  if (!bundle) return { title: 'Memory Map' }
+  return buildMemoryMapMetadata(bundle.map)
+}
 
 export default async function MemoryMapPublicLandingPage({ params, searchParams }: Props) {
   const { mapSlug } = await params

@@ -2,22 +2,24 @@
 
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
-import type { MemoryPin, MemoryStory } from '@/lib/memory-map/types'
+import type { MemoryMap, MemoryPin, MemoryStory } from '@/lib/memory-map/types'
 import { uniqueContributors, yearRangeForStories } from '@/lib/memory-map/utils'
 import StoryCard from '@/components/memory-map/StoryCard'
+import MemoryMapSponsorStrip from '@/components/memory-map/MemoryMapSponsorStrip'
 
 type Props = {
   open: boolean
   pin: MemoryPin | null
   stories: MemoryStory[]
   mapSlug: string
+  map?: MemoryMap
   areaName?: string
   onClose: () => void
 }
 
 type Tab = 'stories' | 'about'
 
-export default function PinPreviewSheet({ open, pin, stories, mapSlug, areaName, onClose }: Props) {
+export default function PinPreviewSheet({ open, pin, stories, mapSlug, map, areaName, onClose }: Props) {
   const [tab, setTab] = useState<Tab>('stories')
   const [expanded, setExpanded] = useState(false)
 
@@ -132,6 +134,7 @@ export default function PinPreviewSheet({ open, pin, stories, mapSlug, areaName,
         </div>
 
         <div className="shrink-0 border-t border-white/10 p-4">
+          {map ? <MemoryMapSponsorStrip map={map} variant="subtle" className="mb-3 border-0 px-0" /> : null}
           <Link
             href={`/memory-map/${mapSlug}/add?pin=${pin.id}`}
             className="mm-btn-primary block rounded-2xl px-4 py-3 text-center text-sm font-black"

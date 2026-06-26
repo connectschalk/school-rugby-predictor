@@ -1,5 +1,7 @@
 /* NextPlay Memory Map — scoped dark theme (does not affect main app) */
 
+@import 'leaflet/dist/leaflet.css';
+
 .mm-root {
   min-height: 100dvh;
   background: var(--mm-bg, #05080d);
@@ -62,4 +64,44 @@
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* Leaflet — scoped under .mm-root */
+.mm-root .mm-leaflet-map {
+  z-index: 0;
+  background: #0b1220;
+}
+
+.mm-root .mm-leaflet-pin {
+  background: transparent !important;
+  border: none !important;
+}
+
+.mm-root .leaflet-control-attribution {
+  font-size: 9px;
+  background: rgba(0, 0, 0, 0.55) !important;
+  color: rgba(255, 255, 255, 0.7) !important;
+}
+
+.mm-root .leaflet-control-attribution a {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+/* Share / print assets */
+.mm-share-a4 {
+  max-width: 210mm;
+  margin: 0 auto;
+}
+
+.mm-social-card {
+  aspect-ratio: 1;
+  max-width: 480px;
+}
+
+@media print {
+  .mm-share-a4.mm-poster {
+    width: 210mm;
+    min-height: 297mm;
+    page-break-after: always;
+  }
 }

@@ -354,3 +354,34 @@ export async function manageMemoryMapMember(
   })
   return { error: error?.message ?? null }
 }
+
+export async function createMemoryMapInvite(
+  client: SupabaseClient,
+  mapId: string,
+  options?: { role?: string; autoApprove?: boolean; expiresAt?: string | null }
+): Promise<{ token: string | null; error: string | null }> {
+  const { data, error } = await client.rpc('create_memory_map_invite', {
+    p_map_id: mapId,
+    p_role: options?.role ?? 'contributor',
+    p_auto_approve: options?.autoApprove ?? false,
+    p_expires_at: options?.expiresAt ?? null,
+  })
+  if (error) return { token: null, error: error.message }
+  return { token: data == null ? null : String(data), error: null }
+}
+
+export async function redeemMemoryMapInvite(
+  client: SupabaseClient,
+  inviteToken: string,
+  relationship: string,
+  message: string
+): Promise<{ error: string | null; autoApproved?: boolean }> {
+  const { data, error } = await client.rpc('redeem_memory_map_invite', {
+    p_invite_token: inviteToken,
+    p_relationship: relationship || null,
+    p_request_message: message || null,
+  })
+  if (error) return { error: error.message }
+  const row = data as { auto_approved?: boolean } | null
+  return { error: null, autoApproved: Boolean(row?.auto_approved) }
+}

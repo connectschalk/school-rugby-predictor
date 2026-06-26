@@ -2,10 +2,13 @@
 
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { manageMemoryMapMember } from '@/lib/memory-map/mutations'
+import { manageMemoryMapMember, createMemoryMapInvite } from '@/lib/memory-map/mutations'
+import { absoluteMemoryMapJoinUrl } from '@/lib/site-url'
 import type { MemberStatus, MemoryMapMember } from '@/lib/memory-map/types'
 
 type Props = {
+  mapId: string
+  mapSlug: string
   members: MemoryMapMember[]
   isAppAdmin: boolean
   onChanged: () => void
@@ -20,12 +23,15 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'suspended', label: 'Suspended' },
 ]
 
-export default function AdminContributorsPanel({ members, isAppAdmin, onChanged }: Props) {
+export default function AdminContributorsPanel({ mapId, mapSlug, members, isAppAdmin, onChanged }: Props) {
   const [tab, setTab] = useState<Tab>('pending')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [rejectId, setRejectId] = useState<string | null>(null)
   const [rejectReason, setRejectReason] = useState('')
+  const [inviteUrl, setInviteUrl] = useState<string | null>(null)
+  const [autoApprove, setAutoApprove] = useState(false)
+  const [inviteCopied, setInviteCopied] = useState(false)
 
   const filtered = useMemo(() => members.filter((m) => m.status === tab), [members, tab])
 
@@ -42,8 +48,53 @@ export default function AdminContributorsPanel({ members, isAppAdmin, onChanged 
     }
   }
 
+  async function onCreateInvite() {
+    setBusy(true)
+    setError('')
+    const { token, error: err } = await createMemoryMapInvite(supabase, mapId, {
+      role: 'contributor',
+      autoApprove,
+    })
+    setBusy(false)
+    if (err || !token) {
+      setError(err ?? 'Could not create invite.')
+      return
+    }
+    setInviteUrl(absoluteMemoryMapJoinUrl(mapSlug, token))
+  }
+
+  async function copyInvite() {
+    if (!inviteUrl) return
+    try {
+      await navigator.clipboard.writeText(inviteUrl)
+      setInviteCopied(true)
+      setTimeout(() => setInviteCopied(false), 2000)
+    } catch {
+      /* ignore */
+    }
+  }
+
   return (
     <div className="space-y-4">
+      <div className="mm-card space-y-3 rounded-2xl p-4">
+        <p className="text-sm font-bold">Contributor invite link</p>
+        <p className="mm-muted text-xs">Share with old boys, staff or alumni. They sign in and submit a contributor request marked as invite.</p>
+        <label className="flex items-center gap-2 text-xs">
+          <input type="checkbox" checked={autoApprove} onChange={(e) => setAutoApprove(e.target.checked)} />
+          Auto-approve contributors who use this link
+        </label>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" disabled={busy} onClick={() => void onCreateInvite()} className="mm-btn-primary rounded-lg px-3 py-1.5 text-xs font-bold disabled:opacity-50">
+            Create contributor invite link
+          </button>
+          {inviteUrl ? (
+            <button type="button" onClick={() => void copyInvite()} className="mm-btn-secondary rounded-lg px-3 py-1.5 text-xs font-bold">
+              {inviteCopied ? 'Copied' : 'Copy invite link'}
+            </button>
+          ) : null}
+        </div>
+        {inviteUrl ? <p className="mm-muted break-all text-[10px]">{inviteUrl}</p> : null}
+      </div>
       {error ? <p className="text-sm text-red-300">{error}</p> : null}
       <div className="flex gap-2 overflow-x-auto">
         {TABS.map((t) => (

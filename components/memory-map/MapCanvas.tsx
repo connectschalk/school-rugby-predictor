@@ -7,6 +7,7 @@ import {
   imagePercentToStylePosition,
 } from '@/lib/memory-map/map-placement'
 import MemoryPinMarker from '@/components/memory-map/MemoryPinMarker'
+import GeoMapCanvas from '@/components/memory-map/GeoMapCanvas'
 
 type Props = {
   area: MemoryArea
@@ -17,16 +18,7 @@ type Props = {
   placementPreview?: MapPlacement | null
   onMapClick?: (placement: MapPlacement) => void
   showPlacementDebug?: boolean
-}
-
-function geoToPercent(lat: number, lng: number, area: MemoryArea): { left: string; top: string } {
-  const centreLat = area.centre_lat ?? -33.925
-  const centreLng = area.centre_lng ?? 18.425
-  const dx = (lng - centreLng) * 12000
-  const dy = (lat - centreLat) * -12000
-  const left = `${Math.min(95, Math.max(5, 50 + dx))}%`
-  const top = `${Math.min(95, Math.max(5, 50 + dy))}%`
-  return { left, top }
+  locateTarget?: { lat: number; lng: number } | null
 }
 
 export default function MapCanvas({
@@ -38,25 +30,33 @@ export default function MapCanvas({
   placementPreview,
   onMapClick,
   showPlacementDebug = false,
+  locateTarget,
 }: Props) {
   const isImage = mode === 'image' || area.map_type === 'image'
 
-  function handleClick(e: React.MouseEvent<HTMLDivElement>) {
+  function handleImageClick(e: React.MouseEvent<HTMLDivElement>) {
     if (!placementMode || !onMapClick) return
     const rect = e.currentTarget.getBoundingClientRect()
-    if (isImage) {
-      const bounds = containerBoundsFromRect(rect)
-      const pt = clientPointToImagePercent(e.clientX, e.clientY, bounds)
-      onMapClick({ x: pt.x, y: pt.y })
-    } else {
-      const xPct = ((e.clientX - rect.left) / rect.width) * 100
-      const yPct = ((e.clientY - rect.top) / rect.height) * 100
-      const centreLat = area.centre_lat ?? -33.925
-      const centreLng = area.centre_lng ?? 18.425
-      const dx = (xPct - 50) / 12000
-      const dy = (yPct - 50) / -12000
-      onMapClick({ lat: centreLat + dy, lng: centreLng + dx })
-    }
+    const bounds = containerBoundsFromRect(rect)
+    const pt = clientPointToImagePercent(e.clientX, e.clientY, bounds)
+    onMapClick({ x: pt.x, y: pt.y })
+  }
+
+  if (!isImage) {
+    return (
+      <div className="mx-4 mb-4">
+        <GeoMapCanvas
+          area={area}
+          pins={pins}
+          onPinClick={onPinClick}
+          placementMode={placementMode}
+          placementPreview={placementPreview}
+          onMapClick={onMapClick}
+          showPlacementDebug={showPlacementDebug}
+          locateTarget={locateTarget}
+        />
+      </div>
+    )
   }
 
   return (
@@ -65,44 +65,20 @@ export default function MapCanvas({
         className={`relative aspect-[4/3] overflow-hidden rounded-2xl border border-white/10 bg-[#0a1628] ${
           placementMode ? 'cursor-crosshair ring-2 ring-[var(--mm-accent)]' : ''
         }`}
-        onClick={handleClick}
+        onClick={handleImageClick}
         role={placementMode ? 'button' : undefined}
         aria-label={placementMode ? 'Tap to place pin' : undefined}
       >
-        {isImage ? (
-          <div
-            className="absolute inset-0 bg-cover bg-center opacity-90"
-            style={{
-              backgroundImage: area.map_image_url
-                ? `url(${area.map_image_url})`
-                : 'linear-gradient(135deg, #1e293b 0%, #0f172a 50%, #14532d 100%)',
-            }}
-          />
-        ) : (
-          <div
-            className="absolute inset-0"
-            style={{
-              backgroundImage:
-                'linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px)',
-              backgroundSize: '24px 24px',
-              backgroundColor: '#0b1220',
-            }}
-          />
-        )}
-
-        {!isImage ? (
-          <div className="absolute left-3 top-3 rounded-full bg-black/50 px-2 py-1 text-[10px] font-semibold text-white/80">
-            Geo preview
-          </div>
-        ) : null}
-
+        <div
+          className="absolute inset-0 bg-cover bg-center opacity-90"
+          style={{
+            backgroundImage: area.map_image_url
+              ? `url(${area.map_image_url})`
+              : 'linear-gradient(135deg, #1e293b 0%, #0f172a 50%, #14532d 100%)',
+          }}
+        />
         {pins.map((pin) => {
-          const pos = isImage
-            ? imagePercentToStylePosition(pin.x_position ?? 50, pin.y_position ?? 50)
-            : pin.lat != null && pin.lng != null
-              ? geoToPercent(pin.lat, pin.lng, area)
-              : { left: '50%', top: '50%' }
-
+          const pos = imagePercentToStylePosition(pin.x_position ?? 50, pin.y_position ?? 50)
           return (
             <MemoryPinMarker
               key={pin.id}
@@ -112,17 +88,10 @@ export default function MapCanvas({
             />
           )
         })}
-
-        {placementPreview ? (
+        {placementPreview?.x != null && placementPreview?.y != null ? (
           <span
             className="absolute flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white bg-[var(--mm-accent)] text-xs font-black text-black"
-            style={
-              isImage
-                ? imagePercentToStylePosition(placementPreview.x ?? 50, placementPreview.y ?? 50)
-                : placementPreview.lat != null && placementPreview.lng != null
-                  ? geoToPercent(placementPreview.lat, placementPreview.lng, area)
-                  : { left: '50%', top: '50%' }
-            }
+            style={imagePercentToStylePosition(placementPreview.x, placementPreview.y)}
           >
             +
           </span>
