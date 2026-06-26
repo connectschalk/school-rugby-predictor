@@ -72,12 +72,12 @@ export default function StoryGovernancePanel({ story, checks, onChange, approval
 
 export function defaultGovernanceChecks(story: MemoryStory): GovernanceChecks {
   return {
-    containsMinors: false,
-    mentionsFullNames: false,
-    showsInjury: false,
-    archiveHistorical: story.upload_mode === 'archive_submission',
-    sponsorReference: false,
-    permissionConfirmed: true,
+    containsMinors: story.contains_minors ?? false,
+    mentionsFullNames: story.mentions_full_names ?? false,
+    showsInjury: story.shows_injury ?? false,
+    archiveHistorical: story.is_archive_content ?? story.upload_mode === 'archive_submission',
+    sponsorReference: story.sponsor_or_brand_visible ?? false,
+    permissionConfirmed: story.has_permission_confirmed ?? true,
     highRiskContent: story.risk_level === 'high' || story.risk_level === 'admin_review',
   }
 }

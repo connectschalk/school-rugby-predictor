@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import type { MemoryArea, MemoryMap, MemoryPin, MemoryStory } from '@/lib/memory-map/types'
+import { getImageMapInitialFocus } from '@/lib/memory-map/map-starting-point'
 import { areaGroup, areaMapTypeLabel, type AreaGroup } from '@/lib/memory-map/utils'
 import MmEmptyState from '@/components/memory-map/MmEmptyState'
 
@@ -77,6 +78,7 @@ export default function AreaSelector({ areas, pins, stories, map, selectedAreaId
           const latestYear =
             areaStories.length > 0 ? Math.max(...areaStories.map((s) => s.event_year)) : null
           const thumb = area.map_image_url ?? map?.landing_background_url
+          const imageFocus = area.map_type === 'image' ? getImageMapInitialFocus(area) : null
 
           return (
             <button
@@ -95,6 +97,7 @@ export default function AreaSelector({ areas, pins, stories, map, selectedAreaId
                     : area.map_type === 'geo'
                       ? 'linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%)'
                       : 'linear-gradient(135deg, #14532d 0%, #0f172a 100%)',
+                  backgroundPosition: imageFocus ? `${imageFocus.x}% ${imageFocus.y}%` : 'center',
                 }}
               />
               <div className="p-4">

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { MemoryArea, MemoryPin, MapPlacement } from '@/lib/memory-map/types'
+import type { GeoView } from '@/lib/memory-map/map-starting-point'
 import MockGeoMapCanvas from '@/components/memory-map/MockGeoMapCanvas'
 
 type Props = {
@@ -13,6 +14,7 @@ type Props = {
   onMapClick?: (placement: MapPlacement) => void
   showPlacementDebug?: boolean
   locateTarget?: { lat: number; lng: number } | null
+  initialView?: GeoView | null
 }
 
 function pinIconHtml(colour: string, label: string): string {
@@ -28,6 +30,7 @@ export default function GeoMapCanvas({
   onMapClick,
   showPlacementDebug = false,
   locateTarget,
+  initialView,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<import('leaflet').Map | null>(null)
@@ -39,8 +42,9 @@ export default function GeoMapCanvas({
 
   onMapClickRef.current = onMapClick
 
-  const centreLat = area.centre_lat ?? -33.925
-  const centreLng = area.centre_lng ?? 18.425
+  const centreLat = initialView?.lat ?? area.centre_lat ?? -33.925
+  const centreLng = initialView?.lng ?? area.centre_lng ?? 18.425
+  const centreZoom = initialView?.zoom ?? area.default_zoom ?? 16
 
   useEffect(() => {
     if (useFallback || !containerRef.current) return
@@ -54,7 +58,7 @@ export default function GeoMapCanvas({
         map = L.map(containerRef.current, {
           zoomControl: true,
           attributionControl: true,
-        }).setView([centreLat, centreLng], 16)
+        }).setView([centreLat, centreLng], centreZoom)
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
           attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
@@ -85,7 +89,12 @@ export default function GeoMapCanvas({
       mapRef.current = null
       setReady(false)
     }
-  }, [area.id, centreLat, centreLng, useFallback, placementMode])
+  }, [area.id, centreLat, centreLng, centreZoom, useFallback, placementMode])
+
+  useEffect(() => {
+    if (!mapRef.current || !ready || !initialView) return
+    mapRef.current.setView([initialView.lat, initialView.lng], initialView.zoom, { animate: false })
+  }, [initialView?.lat, initialView?.lng, initialView?.zoom, ready])
 
   useEffect(() => {
     const map = mapRef.current
@@ -151,6 +160,7 @@ export default function GeoMapCanvas({
         onMapClick={onMapClick}
         showPlacementDebug={showPlacementDebug}
         fallbackLabel="Map unavailable — preview mode"
+        initialView={initialView}
       />
     )
   }

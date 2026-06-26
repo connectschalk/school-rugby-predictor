@@ -1,6 +1,7 @@
 'use client'
 
 import type { MemoryArea, MemoryPin, MapPlacement } from '@/lib/memory-map/types'
+import type { GeoView, ImageFocus } from '@/lib/memory-map/map-starting-point'
 import {
   clientPointToImagePercent,
   containerBoundsFromRect,
@@ -19,6 +20,8 @@ type Props = {
   onMapClick?: (placement: MapPlacement) => void
   showPlacementDebug?: boolean
   locateTarget?: { lat: number; lng: number } | null
+  initialView?: GeoView | null
+  imageFocus?: ImageFocus | null
 }
 
 export default function MapCanvas({
@@ -31,6 +34,8 @@ export default function MapCanvas({
   onMapClick,
   showPlacementDebug = false,
   locateTarget,
+  initialView,
+  imageFocus,
 }: Props) {
   const isImage = mode === 'image' || area.map_type === 'image'
 
@@ -54,10 +59,14 @@ export default function MapCanvas({
           onMapClick={onMapClick}
           showPlacementDebug={showPlacementDebug}
           locateTarget={locateTarget}
+          initialView={initialView}
         />
       </div>
     )
   }
+
+  const focusX = imageFocus?.x ?? 50
+  const focusY = imageFocus?.y ?? 50
 
   return (
     <div className="mx-4 mb-4">
@@ -70,11 +79,12 @@ export default function MapCanvas({
         aria-label={placementMode ? 'Tap to place pin' : undefined}
       >
         <div
-          className="absolute inset-0 bg-cover bg-center opacity-90"
+          className="absolute inset-0 bg-cover opacity-90"
           style={{
             backgroundImage: area.map_image_url
               ? `url(${area.map_image_url})`
               : 'linear-gradient(135deg, #1e293b 0%, #0f172a 50%, #14532d 100%)',
+            backgroundPosition: `${focusX}% ${focusY}%`,
           }}
         />
         {pins.map((pin) => {

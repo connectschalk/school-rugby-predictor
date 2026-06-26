@@ -49,6 +49,9 @@ export type MemoryMap = MemoryMapBranding & {
   description: string | null
   visibility: MapVisibility
   status: MapStatus
+  default_lat: number | null
+  default_lng: number | null
+  default_zoom: number | null
   sponsor_name: string | null
   sponsor_logo_url: string | null
   sponsor_website_url: string | null
@@ -65,6 +68,10 @@ export type MemoryArea = {
   geofence_polygon: unknown | null
   centre_lat: number | null
   centre_lng: number | null
+  default_zoom: number | null
+  default_x_position: number | null
+  default_y_position: number | null
+  default_image_zoom: number | null
   map_image_url: string | null
   image_width: number | null
   image_height: number | null
@@ -129,6 +136,12 @@ export type MemoryStory = {
   status: StoryStatus
   rejection_reason: string | null
   approval_note?: string | null
+  contains_minors?: boolean
+  mentions_full_names?: boolean
+  shows_injury?: boolean
+  is_archive_content?: boolean
+  sponsor_or_brand_visible?: boolean
+  has_permission_confirmed?: boolean
   tags?: string[]
   media?: MemoryStoryMedia[]
 }

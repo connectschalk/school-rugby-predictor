@@ -1,4 +1,5 @@
 import type { StoryStatus, RiskLevel, PinStatus } from '@/lib/memory-map/types'
+import { reviewLevelAdminLabel } from '@/lib/memory-map/review-level'
 
 const STATUS_LABELS: Record<StoryStatus | PinStatus, string> = {
   draft: 'Draft',
@@ -38,7 +39,7 @@ export function RiskBadge({ level }: { level: RiskLevel }) {
 
   return (
     <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${tone}`}>
-      {level.replace('_', ' ')}
+      {reviewLevelAdminLabel(level)}
     </span>
   )
 }

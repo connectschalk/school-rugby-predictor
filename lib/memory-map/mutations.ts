@@ -55,6 +55,11 @@ export type SubmitStoryInput = {
   riskLevel: RiskLevel
   loggedByDisplayName?: string
   hasPermissionConfirmed: boolean
+  containsMinors?: boolean
+  mentionsFullNames?: boolean
+  showsInjury?: boolean
+  isArchiveContent?: boolean
+  sponsorOrBrandVisible?: boolean
   tags: string[]
   media: StoryMediaPayload[]
 }
@@ -82,6 +87,11 @@ export async function submitMemoryStory(
     p_risk_level: input.riskLevel,
     p_logged_by_display_name: input.loggedByDisplayName ?? null,
     p_has_permission_confirmed: input.hasPermissionConfirmed,
+    p_contains_minors: input.containsMinors ?? false,
+    p_mentions_full_names: input.mentionsFullNames ?? false,
+    p_shows_injury: input.showsInjury ?? false,
+    p_is_archive_content: input.isArchiveContent ?? false,
+    p_sponsor_or_brand_visible: input.sponsorOrBrandVisible ?? false,
     p_tags: input.tags,
     p_media: input.media,
   })
@@ -199,6 +209,20 @@ export async function setMemoryPinStatus(
   return { error: error?.message ?? null }
 }
 
+export async function updateMemoryMapStartPoint(
+  client: SupabaseClient,
+  mapId: string,
+  fields: { default_lat: number | null; default_lng: number | null; default_zoom: number }
+) {
+  const { error } = await client.rpc('update_memory_map_start_point', {
+    p_map_id: mapId,
+    p_default_lat: fields.default_lat,
+    p_default_lng: fields.default_lng,
+    p_default_zoom: fields.default_zoom,
+  })
+  return { error: error?.message ?? null }
+}
+
 export async function updateMemoryMapBranding(
   client: SupabaseClient,
   mapId: string,
@@ -306,6 +330,10 @@ export type UpsertAreaInput = {
   mapType: 'geo' | 'image'
   centreLat?: number | null
   centreLng?: number | null
+  defaultZoom?: number | null
+  defaultXPosition?: number | null
+  defaultYPosition?: number | null
+  defaultImageZoom?: number | null
   geofencePolygon?: unknown
   mapImageUrl?: string
   imageWidth?: number | null
@@ -330,6 +358,10 @@ export async function upsertMemoryArea(client: SupabaseClient, input: UpsertArea
     p_image_height: input.imageHeight ?? null,
     p_sort_order: input.sortOrder ?? 0,
     p_is_active: input.isActive ?? true,
+    p_default_zoom: input.defaultZoom ?? null,
+    p_default_x_position: input.defaultXPosition ?? null,
+    p_default_y_position: input.defaultYPosition ?? null,
+    p_default_image_zoom: input.defaultImageZoom ?? null,
   })
   if (error) return { areaId: null, error: error.message }
   return { areaId: String(data), error: null }

@@ -29,6 +29,7 @@ import type {
   MemoryStory,
 } from '@/lib/memory-map/types'
 import { pinStats, storyTypeLabel, uploadModeLabel } from '@/lib/memory-map/utils'
+import { getImageMapInitialFocus, getPinMoveInitialView } from '@/lib/memory-map/map-starting-point'
 import { memoryMapThemeVars } from '@/lib/memory-map/theme'
 import AdminOverviewPanel from '@/components/memory-map/admin/AdminOverviewPanel'
 import AdminBrandingForm from '@/components/memory-map/admin/AdminBrandingForm'
@@ -556,6 +557,7 @@ export default function AdminDashboard({ mapId }: Props) {
             {areaFormArea !== undefined ? (
               <AdminAreaForm
                 mapId={mapId}
+                map={map}
                 area={areaFormArea}
                 onSaved={() => {
                   setAreaFormArea(undefined)
@@ -825,6 +827,18 @@ export default function AdminDashboard({ mapId }: Props) {
                       placementPreview={movePinPlacement}
                       onMapClick={(p) => setMovePinPlacement(p)}
                       showPlacementDebug
+                      initialView={getPinMoveInitialView({
+                        pin: selectedPin,
+                        area: selectedPinArea,
+                        memoryMap: map,
+                        pins,
+                      }).geo}
+                      imageFocus={getPinMoveInitialView({
+                        pin: selectedPin,
+                        area: selectedPinArea,
+                        memoryMap: map,
+                        pins,
+                      }).image}
                     />
                     <button type="button" disabled={busy || !movePinPlacement} onClick={() => void onSavePinMove()} className="mm-btn-primary mt-2 w-full rounded-lg px-3 py-2 text-xs font-bold disabled:opacity-50">
                       Save new position

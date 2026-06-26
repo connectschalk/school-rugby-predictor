@@ -8,7 +8,8 @@ import { storyTypeLabel, uploadModeLabel } from '@/lib/memory-map/utils'
 import MemoryMapHeader from '@/components/memory-map/MemoryMapHeader'
 import StoryCard from '@/components/memory-map/StoryCard'
 import MemoryMapSponsorStrip from '@/components/memory-map/MemoryMapSponsorStrip'
-import StatusBadge, { RiskBadge } from '@/components/memory-map/StatusBadge'
+import StatusBadge from '@/components/memory-map/StatusBadge'
+import { reviewLevelAdminLabel } from '@/lib/memory-map/review-level'
 
 type Props = {
   bundle: MemoryMapBundle
@@ -37,12 +38,7 @@ export default function StoryDetailView({ bundle, story, isAdminView }: Props) {
         <div className="flex flex-wrap items-center gap-2">
           <p className="text-xs font-bold uppercase tracking-wide text-[var(--mm-accent)]">{story.event_year}</p>
           <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold">{storyTypeLabel(story.story_type)}</span>
-          {isAdminView ? (
-            <>
-              <StatusBadge status={story.status} />
-              <RiskBadge level={story.risk_level} />
-            </>
-          ) : null}
+          {isAdminView ? <StatusBadge status={story.status} /> : null}
         </div>
 
         <h1 className="mt-2 text-2xl font-black leading-tight">{story.title}</h1>
@@ -96,7 +92,12 @@ export default function StoryDetailView({ bundle, story, isAdminView }: Props) {
             <p className="font-bold text-white/80">Admin details</p>
             <p><span className="mm-muted">Upload mode:</span> {uploadModeLabel(story.upload_mode)}</p>
             <p><span className="mm-muted">Status:</span> {story.status}</p>
-            <p><span className="mm-muted">Risk:</span> {story.risk_level}</p>
+            <p><span className="mm-muted">Review level:</span> {reviewLevelAdminLabel(story.risk_level)}</p>
+            {story.contains_minors ? <p><span className="mm-muted">Contains minors:</span> Yes</p> : null}
+            {story.mentions_full_names ? <p><span className="mm-muted">Mentions full names:</span> Yes</p> : null}
+            {story.shows_injury ? <p><span className="mm-muted">Shows injury:</span> Yes</p> : null}
+            {story.is_archive_content ? <p><span className="mm-muted">Historical/archive:</span> Yes</p> : null}
+            {story.sponsor_or_brand_visible ? <p><span className="mm-muted">Sponsor or brand visible:</span> Yes</p> : null}
             {story.rejection_reason ? <p><span className="mm-muted">Rejection:</span> {story.rejection_reason}</p> : null}
           </div>
         ) : null}

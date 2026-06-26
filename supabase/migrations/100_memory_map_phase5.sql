@@ -1,5 +1,7 @@
 -- Memory Map Phase 5: contributor invites, invite redemption.
 
+create extension if not exists pgcrypto;
+
 create table if not exists public.memory_map_invites (
   id uuid primary key default gen_random_uuid(),
   memory_map_id uuid not null references public.memory_maps (id) on delete cascade,

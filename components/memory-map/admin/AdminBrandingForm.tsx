@@ -14,6 +14,7 @@ import type { MemoryMap } from '@/lib/memory-map/types'
 import { contrastRatio, DEFAULT_MEMORY_MAP_BRANDING } from '@/lib/memory-map/utils'
 import { memoryMapThemeVars } from '@/lib/memory-map/theme'
 import MemoryMapLandingPage from '@/components/memory-map/MemoryMapLandingPage'
+import AdminMapStartPointForm from '@/components/memory-map/admin/AdminMapStartPointForm'
 
 type Props = {
   map: MemoryMap
@@ -189,6 +190,8 @@ export default function AdminBrandingForm({ map, onSaved }: Props) {
         <MemoryMapLandingPage map={previewMap} mapSlug={map.slug} />
       </div>
     </div>
+
+    <AdminMapStartPointForm map={map} onSaved={onSaved} />
     </div>
   )
 }

@@ -55,7 +55,7 @@ export function validateStoryContent(input: StoryContentInput): string | null {
   }
   if (!input.year || Number.isNaN(parseInt(input.year, 10))) return 'Year happened is required.'
   if (!input.categoryId) return 'Category is required.'
-  if (!input.riskLevel) return 'Risk level is required.'
+  if (!input.riskLevel) return 'Review level is required.'
   if (!input.permissionConfirmed) return 'Confirm you have permission to submit.'
   if (input.photoCount > MM_MAX_PHOTOS_PER_STORY) {
     return `Maximum ${MM_MAX_PHOTOS_PER_STORY} photos per story.`

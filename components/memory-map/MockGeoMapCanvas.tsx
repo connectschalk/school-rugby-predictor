@@ -1,6 +1,7 @@
 'use client'
 
 import type { MemoryArea, MemoryPin, MapPlacement } from '@/lib/memory-map/types'
+import type { GeoView, ImageFocus } from '@/lib/memory-map/map-starting-point'
 import MemoryPinMarker from '@/components/memory-map/MemoryPinMarker'
 
 type Props = {
@@ -12,11 +13,12 @@ type Props = {
   onMapClick?: (placement: MapPlacement) => void
   showPlacementDebug?: boolean
   fallbackLabel?: string
+  initialView?: GeoView | null
 }
 
-function geoToPercent(lat: number, lng: number, area: MemoryArea): { left: string; top: string } {
-  const centreLat = area.centre_lat ?? -33.925
-  const centreLng = area.centre_lng ?? 18.425
+function geoToPercent(lat: number, lng: number, area: MemoryArea, initialView?: GeoView | null): { left: string; top: string } {
+  const centreLat = initialView?.lat ?? area.centre_lat ?? -33.925
+  const centreLng = initialView?.lng ?? area.centre_lng ?? 18.425
   const dx = (lng - centreLng) * 12000
   const dy = (lat - centreLat) * -12000
   return {
@@ -34,14 +36,15 @@ export default function MockGeoMapCanvas({
   onMapClick,
   showPlacementDebug = false,
   fallbackLabel = 'Geo preview',
+  initialView,
 }: Props) {
   function handleClick(e: React.MouseEvent<HTMLDivElement>) {
     if (!placementMode || !onMapClick) return
     const rect = e.currentTarget.getBoundingClientRect()
     const xPct = ((e.clientX - rect.left) / rect.width) * 100
     const yPct = ((e.clientY - rect.top) / rect.height) * 100
-    const centreLat = area.centre_lat ?? -33.925
-    const centreLng = area.centre_lng ?? 18.425
+    const centreLat = initialView?.lat ?? area.centre_lat ?? -33.925
+    const centreLng = initialView?.lng ?? area.centre_lng ?? 18.425
     const dx = (xPct - 50) / 12000
     const dy = (yPct - 50) / -12000
     onMapClick({ lat: centreLat + dy, lng: centreLng + dx })
@@ -71,7 +74,7 @@ export default function MockGeoMapCanvas({
       {pins.map((pin) => {
         const pos =
           pin.lat != null && pin.lng != null
-            ? geoToPercent(pin.lat, pin.lng, area)
+            ? geoToPercent(pin.lat, pin.lng, area, initialView)
             : { left: '50%', top: '50%' }
         return (
           <MemoryPinMarker key={pin.id} pin={pin} onClick={() => onPinClick(pin)} style={{ left: pos.left, top: pos.top }} />
@@ -80,7 +83,7 @@ export default function MockGeoMapCanvas({
       {placementPreview?.lat != null && placementPreview?.lng != null ? (
         <span
           className="absolute flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white bg-[var(--mm-accent)] text-xs font-black text-black"
-          style={geoToPercent(placementPreview.lat, placementPreview.lng, area)}
+          style={geoToPercent(placementPreview.lat, placementPreview.lng, area, initialView)}
         >
           +
         </span>

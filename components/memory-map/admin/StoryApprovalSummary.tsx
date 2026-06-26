@@ -34,8 +34,13 @@ export default function StoryApprovalSummary({ story, pin, area, category, check
         <Row label="Pin" value={pin?.title ?? '—'} />
         <Row label="Year" value={String(story.event_year)} />
         <Row label="Category" value={category?.name ?? '—'} />
-        <Row label="Risk level" value={<RiskBadge level={story.risk_level} />} />
+        <Row label="Review level" value={<RiskBadge level={story.risk_level} />} />
         <Row label="Contains minors" value={checks.containsMinors ? 'Yes' : 'No'} />
+        <Row label="Mentions full names" value={checks.mentionsFullNames ? 'Yes' : 'No'} />
+        <Row label="Shows injury" value={checks.showsInjury ? 'Yes' : 'No'} />
+        <Row label="Historical/archive" value={checks.archiveHistorical ? 'Yes' : 'No'} />
+        <Row label="Sponsor or brand visible" value={checks.sponsorReference ? 'Yes' : 'No'} />
+        <Row label="Permission confirmed" value={checks.permissionConfirmed ? 'Yes' : 'No'} />
         <Row label="Media" value={`${mediaCount} file${mediaCount === 1 ? '' : 's'}`} />
         <Row label="Logged by" value={story.logged_by_display_name ?? 'Contributor'} />
       </dl>

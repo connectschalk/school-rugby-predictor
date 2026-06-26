@@ -18,6 +18,16 @@ import {
   resolveUploadMode,
 } from '@/lib/memory-map/add-story-placement'
 import {
+  getAreaDefaultCenter,
+  getImageMapInitialFocus,
+  getMapInitialView,
+  isFarFromArea,
+} from '@/lib/memory-map/map-starting-point'
+import {
+  CONTRIBUTOR_GOVERNANCE_CHECKBOXES,
+  REVIEW_LEVEL_OPTIONS,
+} from '@/lib/memory-map/review-level'
+import {
   MM_MAX_PHOTOS_PER_STORY,
   MM_MAX_VIDEOS_PER_STORY,
   validateImageFile,
@@ -140,6 +150,7 @@ export default function AddStoryWizard({ bundle, initialPinId }: Props) {
   const [pinPlacement, setPinPlacement] = useState<MapPlacement | null>(null)
   const [isArchiveMemory, setIsArchiveMemory] = useState(false)
   const [geoError, setGeoError] = useState<string | null>(null)
+  const [geoFarWarning, setGeoFarWarning] = useState<string | null>(null)
 
   const [title, setTitle] = useState('')
   const [year, setYear] = useState(String(new Date().getFullYear()))
@@ -152,12 +163,55 @@ export default function AddStoryWizard({ bundle, initialPinId }: Props) {
   const [photoFiles, setPhotoFiles] = useState<File[]>([])
   const [videoFile, setVideoFile] = useState<File | null>(null)
   const [permissionConfirmed, setPermissionConfirmed] = useState(false)
+  const [containsMinors, setContainsMinors] = useState(false)
+  const [mentionsFullNames, setMentionsFullNames] = useState(false)
+  const [showsInjury, setShowsInjury] = useState(false)
+  const [archiveContent, setArchiveContent] = useState(false)
+  const [sponsorBrandVisible, setSponsorBrandVisible] = useState(false)
   const [displayName, setDisplayName] = useState('')
   const [peopleInvolved, setPeopleInvolved] = useState('')
   const [groupClassYear, setGroupClassYear] = useState('')
   const [uploadProgress, setUploadProgress] = useState('')
   const [mediaWarning, setMediaWarning] = useState('')
   const [failedFileName, setFailedFileName] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (isArchiveMemory || locationMode === 'archive_submission') {
+      setArchiveContent(true)
+    }
+  }, [isArchiveMemory, locationMode])
+
+  const governanceValues = {
+    containsMinors,
+    mentionsFullNames,
+    showsInjury,
+    isArchiveContent: archiveContent,
+    sponsorOrBrandVisible: sponsorBrandVisible,
+    hasPermissionConfirmed: permissionConfirmed,
+  }
+
+  function setGovernanceFlag(key: keyof typeof governanceValues, value: boolean) {
+    switch (key) {
+      case 'containsMinors':
+        setContainsMinors(value)
+        break
+      case 'mentionsFullNames':
+        setMentionsFullNames(value)
+        break
+      case 'showsInjury':
+        setShowsInjury(value)
+        break
+      case 'isArchiveContent':
+        setArchiveContent(value)
+        break
+      case 'sponsorOrBrandVisible':
+        setSponsorBrandVisible(value)
+        break
+      case 'hasPermissionConfirmed':
+        setPermissionConfirmed(value)
+        break
+    }
+  }
 
   const returnPath = `/memory-map/${map.slug}/add${initialPinId ? `?pin=${initialPinId}` : ''}`
 
@@ -212,6 +266,16 @@ export default function AddStoryWizard({ bundle, initialPinId }: Props) {
       ? { lat: pinPlacement.lat, lng: pinPlacement.lng }
       : null
 
+  const areaInitialView = useMemo(() => {
+    if (!selectedArea) return null
+    return getMapInitialView({ area: selectedArea, memoryMap: map, pins })
+  }, [selectedArea, map, pins])
+
+  const areaImageFocus = useMemo(() => {
+    if (!selectedArea) return null
+    return getImageMapInitialFocus(selectedArea)
+  }, [selectedArea])
+
   const hasStoryDraft = Boolean(
     title.trim() || description.trim() || textBody.trim() || photoFiles.length || videoFile || tags.length
   )
@@ -221,18 +285,37 @@ export default function AddStoryWizard({ bundle, initialPinId }: Props) {
     setLocationMode(resolveUploadMode(method, area, archive))
   }
 
+  function fallbackToManualStartPoint(message: string, area?: typeof selectedArea) {
+    const targetArea = area ?? mapAreas[0]
+    if (!targetArea) {
+      setGeoError(message)
+      setPlaceSubstep('choice')
+      return
+    }
+    setPlaceMethod('manual')
+    setSelectedAreaId(targetArea.id)
+    const centre = getAreaDefaultCenter(targetArea, map)
+    if (centre && targetArea.map_type === 'geo') {
+      setPinPlacement({ lat: centre.lat, lng: centre.lng })
+    }
+    setGeoError(message)
+    setPlaceSubstep('map-tap')
+  }
+
   function startCurrentLocation() {
     setPlaceMethod('current')
     setIsArchiveMemory(false)
     setGeoError(null)
+    setGeoFarWarning(null)
     setSelectedPinId(null)
     setNewPinTitle('')
     setPinPlacement(null)
     setPlaceSubstep('gps-loading')
 
     if (!navigator.geolocation) {
-      setGeoError('We could not access your location. You can still place the memory manually.')
-      setPlaceSubstep('choice')
+      fallbackToManualStartPoint(
+        "We could not access your current location. We've opened the school's map starting point so you can place the pin manually."
+      )
       return
     }
 
@@ -242,18 +325,23 @@ export default function AddStoryWizard({ bundle, initialPinId }: Props) {
         const lng = pos.coords.longitude
         const nearest = findNearestGeoArea(mapAreas, lat, lng)
         if (!nearest) {
-          setGeoError('This Memory Map does not have any areas yet. Ask the school admin to add an area first.')
-          setPlaceSubstep('choice')
+          fallbackToManualStartPoint(
+            'This Memory Map does not have any areas yet. Ask the school admin to add an area first.'
+          )
           return
         }
         setPinPlacement({ lat, lng })
         setSelectedAreaId(nearest.id)
         setLocationMode('current_location')
+        if (isFarFromArea(lat, lng, nearest, map)) {
+          setGeoFarWarning('You seem to be away from this location. You can still place the memory manually.')
+        }
         setPlaceSubstep('gps-result')
       },
       () => {
-        setGeoError('We could not access your location. You can still place the memory manually.')
-        setPlaceSubstep('choice')
+        fallbackToManualStartPoint(
+          "We could not access your current location. We've opened the school's map starting point so you can place the pin manually."
+        )
       },
       { enableHighAccuracy: true, timeout: 15000 }
     )
@@ -378,6 +466,10 @@ export default function AddStoryWizard({ bundle, initialPinId }: Props) {
     if (step === 'story') {
       if (!title.trim() || !description.trim() || !year) {
         setError('Add a title, year, and description to continue.')
+        return
+      }
+      if (!permissionConfirmed) {
+        setError('Confirm you have permission to submit this content.')
         return
       }
       setStep('media')
@@ -536,6 +628,11 @@ export default function AddStoryWizard({ bundle, initialPinId }: Props) {
         riskLevel,
         loggedByDisplayName: displayName.trim() || undefined,
         hasPermissionConfirmed: permissionConfirmed,
+        containsMinors,
+        mentionsFullNames,
+        showsInjury,
+        isArchiveContent: archiveContent,
+        sponsorOrBrandVisible: sponsorBrandVisible,
         tags,
         media: mediaPayloads,
       })
@@ -695,6 +792,9 @@ export default function AddStoryWizard({ bundle, initialPinId }: Props) {
                   <h2 className="text-xl font-black">You are near {selectedArea.name}</h2>
                   <p className="mm-muted mt-1 text-sm">Tap the map to adjust, or choose a nearby pin below.</p>
                 </div>
+                {geoFarWarning ? (
+                  <p className="rounded-xl border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">{geoFarWarning}</p>
+                ) : null}
                 <div className="-mx-4">
                   <MapCanvas
                     area={selectedArea}
@@ -712,6 +812,7 @@ export default function AddStoryWizard({ bundle, initialPinId }: Props) {
                       setNewPinTitle('')
                     }}
                     locateTarget={locateTarget}
+                    initialView={areaInitialView}
                   />
                 </div>
                 <PinChoiceSection
@@ -782,6 +883,9 @@ export default function AddStoryWizard({ bundle, initialPinId }: Props) {
                       : 'Tap the map where this memory happened.'}
                   </p>
                 </div>
+                {geoError ? (
+                  <p className="rounded-xl border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">{geoError}</p>
+                ) : null}
                 {selectedArea.map_type === 'image' && !selectedArea.map_image_url ? (
                   <MmEmptyState
                     title="No school map uploaded"
@@ -799,6 +903,8 @@ export default function AddStoryWizard({ bundle, initialPinId }: Props) {
                       placementPreview={pinPlacement}
                       onMapClick={onMapTap}
                       locateTarget={locateTarget}
+                      initialView={areaInitialView}
+                      imageFocus={areaImageFocus}
                     />
                   </div>
                 )}
@@ -829,6 +935,8 @@ export default function AddStoryWizard({ bundle, initialPinId }: Props) {
                     placementMode={false}
                     placementPreview={pinPlacement}
                     locateTarget={locateTarget}
+                    initialView={areaInitialView}
+                    imageFocus={areaImageFocus}
                   />
                 </div>
                 <PinChoiceSection
@@ -878,6 +986,8 @@ export default function AddStoryWizard({ bundle, initialPinId }: Props) {
                       onPinClick={() => {}}
                       placementPreview={pinPlacement}
                       locateTarget={locateTarget}
+                      initialView={areaInitialView}
+                      imageFocus={areaImageFocus}
                     />
                   </div>
                 ) : null}
@@ -917,12 +1027,36 @@ export default function AddStoryWizard({ bundle, initialPinId }: Props) {
                   </button>
                 </div>
                 {tags.length > 0 ? <p className="text-xs text-white/60">{tags.map((t) => `#${t}`).join(' ')}</p> : null}
-                <select value={riskLevel} onChange={(e) => setRiskLevel(e.target.value as RiskLevel)} className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-3 text-sm">
-                  <option value="low">Low risk</option>
-                  <option value="medium">Medium risk</option>
-                  <option value="high">High risk</option>
-                  <option value="admin_review">Needs admin review</option>
-                </select>
+                <div className="space-y-2">
+                  <label className="block">
+                    <span className="mb-1 block text-sm font-semibold">Review level</span>
+                    <select value={riskLevel} onChange={(e) => setRiskLevel(e.target.value as RiskLevel)} className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-3 text-sm">
+                      {REVIEW_LEVEL_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mm-muted mt-2 text-xs leading-relaxed">
+                      This helps the school admin know how carefully to review the memory before publishing.
+                    </p>
+                  </label>
+                </div>
+                <div className="space-y-2 rounded-xl border border-white/10 bg-white/[0.02] p-3">
+                  <p className="text-xs font-semibold text-white/90">Content notes (optional)</p>
+                  {CONTRIBUTOR_GOVERNANCE_CHECKBOXES.map(({ key, label, required }) => (
+                    <label key={key} className="flex items-start gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={governanceValues[key]}
+                        onChange={(e) => setGovernanceFlag(key, e.target.checked)}
+                        className="mt-0.5"
+                        required={required}
+                      />
+                      <span>{label}{required ? ' *' : ''}</span>
+                    </label>
+                  ))}
+                </div>
                 {(isArchiveMemory || placeMethod === 'manual') ? (
                   <>
                     <input value={peopleInvolved} onChange={(e) => setPeopleInvolved(e.target.value)} placeholder="Who was involved? (optional)" className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-3 text-sm" />
@@ -1002,10 +1136,11 @@ export default function AddStoryWizard({ bundle, initialPinId }: Props) {
                   <p className="text-xs font-bold uppercase tracking-wide text-[var(--mm-accent)]">Media</p>
                   <p>{photoFiles.length} photo(s){videoFile ? ', 1 video' : ''}{textBody.trim() ? ', written text' : ''}</p>
                 </div>
-                <label className="flex items-start gap-2 text-xs">
-                  <input type="checkbox" checked={permissionConfirmed} onChange={(e) => setPermissionConfirmed(e.target.checked)} className="mt-1" />
-                  I confirm I have permission to submit this content
-                </label>
+                {!permissionConfirmed ? (
+                  <p className="rounded-xl border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                    Go back to the Story step and confirm you have permission to submit this content.
+                  </p>
+                ) : null}
                 <button
                   type="button"
                   disabled={submitting || !permissionConfirmed || !title || !description}

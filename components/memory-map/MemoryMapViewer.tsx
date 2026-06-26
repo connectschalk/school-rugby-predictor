@@ -6,6 +6,7 @@ import { trackMemoryMapEvent } from '@/lib/memory-map/analytics'
 import type { MemoryMapBundle, MemoryPin } from '@/lib/memory-map/types'
 import { memoryMapThemeVars } from '@/lib/memory-map/theme'
 import { matchesYearFilter, type YearFilterKey } from '@/lib/memory-map/utils'
+import { getImageMapInitialFocus, getMapInitialView } from '@/lib/memory-map/map-starting-point'
 import MemoryMapHeader from '@/components/memory-map/MemoryMapHeader'
 import AreaSelector from '@/components/memory-map/AreaSelector'
 import CategoryFilterPills from '@/components/memory-map/CategoryFilterPills'
@@ -71,6 +72,16 @@ export default function MemoryMapViewer({ bundle, initialAreaId }: Props) {
     if (!activePin) return []
     return stories.filter((s) => s.pin_id === activePin.id && s.status === 'approved')
   }, [activePin, stories])
+
+  const geoInitialView = useMemo(() => {
+    if (!selectedArea) return null
+    return getMapInitialView({ area: selectedArea, memoryMap: map, pins })
+  }, [selectedArea, map, pins])
+
+  const imageFocus = useMemo(() => {
+    if (!selectedArea) return null
+    return getImageMapInitialFocus(selectedArea)
+  }, [selectedArea])
 
   function openArea(areaId: string) {
     const area = activeAreas.find((a) => a.id === areaId)
@@ -223,6 +234,8 @@ export default function MemoryMapViewer({ bundle, initialAreaId }: Props) {
           pins={visiblePins}
           mode={mapMode}
           locateTarget={locateTarget}
+          initialView={geoInitialView}
+          imageFocus={imageFocus}
           onPinClick={(pin) => {
             setActivePin(pin)
             void trackMemoryMapEvent(supabase, {
