@@ -13,6 +13,7 @@ import SoccerScoringBreakdownModal, {
 } from '@/components/competitions/SoccerScoringBreakdownModal'
 import SoccerLeaderboardPlayerButton from '@/components/competitions/SoccerLeaderboardPlayerButton'
 import DeletePoolConfirmModal from '@/components/pools/DeletePoolConfirmModal'
+import PoolInformationModal from '@/components/pools/PoolInformationModal'
 import PoolLogo from '@/components/pools/PoolLogo'
 import PoolLogoUploadSection from '@/components/pools/PoolLogoUploadSection'
 import PoolPicksSection from '@/components/pools/PoolPicksSection'
@@ -146,11 +147,13 @@ function PoolsPageContent({
   const [poolTeamsRows, setPoolTeamsRows] = useState<PoolTeamRow[]>([])
   const [poolDetailTab, setPoolDetailTab] = useState<PoolDetailTab>('leaderboard')
   const [managePoolModalOpen, setManagePoolModalOpen] = useState(false)
+  const [poolInfoModalOpen, setPoolInfoModalOpen] = useState(false)
   const [scoringRulesOpen, setScoringRulesOpen] = useState(false)
   const [breakdownTarget, setBreakdownTarget] = useState<SoccerScoringBreakdownTarget | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deletingPool, setDeletingPool] = useState(false)
   const [isUserAdmin, setIsUserAdmin] = useState(false)
+  const [activePoolView, setActivePoolView] = useState<'my-pools' | 'join' | 'create'>('my-pools')
   const showManagement = competitionMode === 'official_fixed_fixtures'
   const poolsBase = `/competitions/${competitionSlug}/pools`
   const createPoolPath = `${poolsBase}/create`
@@ -472,6 +475,7 @@ function PoolsPageContent({
   useEffect(() => {
     setPoolDetailTab('leaderboard')
     setManagePoolModalOpen(false)
+    setPoolInfoModalOpen(false)
   }, [selectedPoolId])
 
   async function copyInviteLink() {
@@ -525,6 +529,7 @@ function PoolsPageContent({
       setCreateName('')
       setCreateJoinCode('')
       setCreatePublic(false)
+      setActivePoolView('my-pools')
       await loadPools()
       setSelectedPoolId(pool.id)
       setMessage(
@@ -653,13 +658,49 @@ function PoolsPageContent({
       <p className="mt-2 min-w-0 break-words text-sm text-gray-600">
         Private prediction groups with admin approvals, weekly match selection, and pool-only leaderboards.
       </p>
-      <div className="mt-4 flex flex-wrap gap-3">
-        <Link
-          href={createPoolPath}
-          className="inline-flex rounded-xl border border-gray-900 bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-black"
+      <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+        <button
+          type="button"
+          onClick={() => setActivePoolView('my-pools')}
+          className={`inline-flex w-full items-center justify-center rounded-xl border px-4 py-2.5 text-sm font-semibold transition sm:w-auto ${
+            activePoolView === 'my-pools'
+              ? 'border-gray-900 bg-gray-900 text-white hover:bg-black'
+              : 'border-gray-300 bg-white text-gray-900 hover:bg-gray-50'
+          }`}
         >
-          Create pool
-        </Link>
+          My pools
+        </button>
+        <button
+          type="button"
+          onClick={() => setActivePoolView('join')}
+          className={`inline-flex w-full items-center justify-center rounded-xl border px-4 py-2.5 text-sm font-semibold transition sm:w-auto ${
+            activePoolView === 'join'
+              ? 'border-gray-900 bg-gray-900 text-white hover:bg-black'
+              : 'border-gray-300 bg-white text-gray-900 hover:bg-gray-50'
+          }`}
+        >
+          Join pool
+        </button>
+        {showManagement ? (
+          <button
+            type="button"
+            onClick={() => setActivePoolView('create')}
+            className={`inline-flex w-full items-center justify-center rounded-xl border px-4 py-2.5 text-sm font-semibold transition sm:w-auto ${
+              activePoolView === 'create'
+                ? 'border-gray-900 bg-gray-900 text-white hover:bg-black'
+                : 'border-gray-300 bg-white text-gray-900 hover:bg-gray-50'
+            }`}
+          >
+            Create pool
+          </button>
+        ) : (
+          <Link
+            href={createPoolPath}
+            className="inline-flex w-full items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-900 transition hover:bg-gray-50 sm:w-auto"
+          >
+            Create pool
+          </Link>
+        )}
       </div>
       {message ? (
         <p className="mt-4 min-w-0 break-words rounded-xl border border-gray-200 bg-gray-50 px-4 py-2 text-sm text-gray-700">
@@ -667,25 +708,8 @@ function PoolsPageContent({
         </p>
       ) : null}
 
-      {myPools.length === 0 ? (
-        <section className="mt-8 w-full max-w-full min-w-0 rounded-2xl border border-gray-200 bg-white p-6">
-          <p className="min-w-0 break-words text-sm text-gray-700">
-            {competitionMode === 'official_fixed_fixtures'
-              ? 'Create your first pool for this competition.'
-              : 'Create or join a pool.'}
-          </p>
-          <Link
-            href={createPoolPath}
-            className="mt-4 inline-flex rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-black"
-          >
-            {competitionMode === 'official_fixed_fixtures' ? 'Create pool' : 'Create or join a pool'}
-          </Link>
-        </section>
-      ) : null}
-
-      {showManagement ? (
-      <section className="mt-8 grid min-w-0 max-w-full gap-4 lg:grid-cols-2">
-        <div className="w-full max-w-full min-w-0 rounded-2xl border border-gray-200 bg-white p-4">
+      {activePoolView === 'join' ? (
+        <section className="mt-6 w-full max-w-full min-w-0 rounded-2xl border border-gray-200 bg-white p-4">
           <h2 className="text-base font-black uppercase tracking-wide text-gray-900">Join / search pool</h2>
           <p className="mt-1 min-w-0 break-words text-xs text-gray-600">
             Enter a pool code, pool name, or paste an invite token.
@@ -715,42 +739,45 @@ function PoolsPageContent({
                 membershipByPool.has(r.id)
               const isMember = membershipByPool.has(r.id)
               return (
-              <div
-                key={r.id}
-                className="flex min-w-0 max-w-full items-center justify-between gap-2 rounded-xl border border-gray-200 px-3 py-2"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-gray-900" title={r.name}>
-                    {r.name}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {formatPoolJoinCodeDisplay(r.join_code)}
-                    {r.competition_name ? ` · ${r.competition_name}` : ''}
-                    {r.admin_display_name ? ` · ${r.admin_display_name}` : ''}
-                    {` · ${r.member_count} members`}
-                    {!r.is_public ? ' · Private' : ''}
-                  </p>
+                <div
+                  key={r.id}
+                  className="flex min-w-0 max-w-full items-center justify-between gap-2 rounded-xl border border-gray-200 px-3 py-2"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-gray-900" title={r.name}>
+                      {r.name}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {formatPoolJoinCodeDisplay(r.join_code)}
+                      {r.competition_name ? ` · ${r.competition_name}` : ''}
+                      {r.admin_display_name ? ` · ${r.admin_display_name}` : ''}
+                      {` · ${r.member_count} members`}
+                      {!r.is_public ? ' · Private' : ''}
+                    </p>
+                  </div>
+                  {isMember ? (
+                    <span className="shrink-0 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
+                      Member
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void onRequestJoin(r.id, r.join_code)}
+                      disabled={alreadyRequested}
+                      className="shrink-0 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-800 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-50 disabled:text-gray-500"
+                    >
+                      {alreadyRequested ? 'Request sent' : 'Request join'}
+                    </button>
+                  )}
                 </div>
-                {isMember ? (
-                  <span className="shrink-0 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
-                    Member
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => void onRequestJoin(r.id, r.join_code)}
-                    disabled={alreadyRequested}
-                    className="shrink-0 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-800 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-50 disabled:text-gray-500"
-                  >
-                    {alreadyRequested ? 'Request sent' : 'Request join'}
-                  </button>
-                )}
-              </div>
-            )})}
+              )
+            })}
           </div>
-        </div>
+        </section>
+      ) : null}
 
-        <div className="w-full max-w-full min-w-0 rounded-2xl border border-gray-200 bg-white p-4">
+      {showManagement && activePoolView === 'create' ? (
+        <section className="mt-6 w-full max-w-full min-w-0 rounded-2xl border border-gray-200 bg-white p-4">
           <h2 className="text-base font-black uppercase tracking-wide text-gray-900">Create your own pool</h2>
           {!canCreatePool ? (
             <p className="mt-2 text-xs font-semibold text-red-700">{POOL_CREATION_LIMIT_MESSAGE}</p>
@@ -798,8 +825,7 @@ function PoolsPageContent({
               </button>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
       ) : null}
 
       <section className="mt-8 grid min-w-0 max-w-full gap-4 lg:grid-cols-[minmax(0,280px)_minmax(0,1fr)]">
@@ -864,9 +890,38 @@ function PoolsPageContent({
                     </span>
                   ) : null}
                 </div>
-                <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-                  {!isAdmin ? (
-                    <p className="text-xs font-semibold text-gray-600">Member view</p>
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPoolInfoModalOpen(true)
+                      void loadPoolDetails()
+                    }}
+                    aria-expanded={poolInfoModalOpen}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-800 shadow-sm transition hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
+                  >
+                    <Info className="size-4 shrink-0 text-gray-600" aria-hidden />
+                    Info
+                  </button>
+                  {canManagePool ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setManagePoolModalOpen(true)
+                      void loadPoolDetails()
+                    }}
+                    aria-expanded={managePoolModalOpen}
+                    aria-controls="manage-pool-dialog"
+                    className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-800 shadow-sm transition hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
+                  >
+                    <Settings className="size-4 shrink-0 text-gray-600" aria-hidden />
+                    Manage Pool
+                    {selectedPoolPendingCount > 0 ? (
+                      <span className="rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                        {selectedPoolPendingCount}
+                      </span>
+                    ) : null}
+                  </button>
                   ) : null}
                 </div>
               </div>
@@ -928,26 +983,6 @@ function PoolsPageContent({
                     )}
                   </div>
                 </div>
-                {canManagePool ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setManagePoolModalOpen(true)
-                    void loadPoolDetails()
-                  }}
-                  aria-expanded={managePoolModalOpen}
-                  aria-controls="manage-pool-dialog"
-                  className="inline-flex w-full shrink-0 items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-800 shadow-sm transition hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 sm:w-auto sm:justify-start"
-                >
-                  <Settings className="size-4 shrink-0 text-gray-600" aria-hidden />
-                  Manage Pool
-                  {selectedPoolPendingCount > 0 ? (
-                    <span className="rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
-                      {selectedPoolPendingCount}
-                    </span>
-                  ) : null}
-                </button>
-                ) : null}
               </div>
 
               {poolDetailTab === 'leaderboard' ? (
@@ -966,10 +1001,6 @@ function PoolsPageContent({
                         </button>
                       ) : null}
                     </div>
-                    <p className="mt-1 min-w-0 break-words text-xs text-gray-500">
-                      Pool members only, scored on games in this pool&apos;s fixture scope (groups and optional team
-                      filter).
-                    </p>
                     {leaderLoading ? (
                       <p className="mt-3 text-sm text-gray-500">Loading leaderboard…</p>
                     ) : (
@@ -1063,72 +1094,6 @@ function PoolsPageContent({
                       </div>
                     )}
                   </div>
-
-                  <div className="mt-6 min-w-0 max-w-full">
-                    <h3 className="text-sm font-black uppercase tracking-wide text-gray-700">Pool scope</h3>
-                    <p className="mt-1 min-w-0 break-words text-xs text-gray-500">
-                      Groups and teams that define which fixtures count for this pool.
-                    </p>
-                    <div className="mt-3 space-y-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
-                      <div>
-                        <p className="text-xs font-bold uppercase tracking-wide text-gray-500">Included groups</p>
-                        {selectedPoolGroups.length === 0 ? (
-                          <p className="mt-1 text-sm text-gray-600">No groups selected</p>
-                        ) : (
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {selectedPoolGroups.map((g) => (
-                              <span
-                                key={g.id}
-                                className="max-w-full truncate rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700"
-                                title={g.name}
-                              >
-                                {g.name}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold uppercase tracking-wide text-gray-500">Pool teams</p>
-                        {poolTeamsRows.length === 0 ? (
-                          <p className="mt-1 text-sm text-gray-600">No specific teams selected</p>
-                        ) : (
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {poolTeamsRows.map((r) => (
-                              <span
-                                key={r.id}
-                                className="max-w-full truncate rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-800"
-                                title={r.team_name}
-                              >
-                                {r.team_name}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-6 min-w-0 max-w-full">
-                    <h3 className="text-sm font-black uppercase tracking-wide text-gray-700">Weekly matches</h3>
-                    <p className="mt-1 min-w-0 break-words text-xs text-gray-500">
-                      Pool fixture scope (prestige fallback when no groups selected).
-                    </p>
-                    {effectiveMatches.length === 0 ? (
-                      <p className="mt-3 text-sm text-gray-500">No pool matches in scope yet.</p>
-                    ) : (
-                      <div className="mt-3 space-y-2">
-                        {effectiveMatches.map((m) => (
-                          <div
-                            key={m.id}
-                            className="min-w-0 max-w-full break-words rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-800"
-                          >
-                            {teamVs(m)}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
                 </>
               ) : poolDetailTab === 'picks' ? (
                 isPoolMember && user ? (
@@ -1158,6 +1123,17 @@ function PoolsPageContent({
                     Predictions for this pool are available to members only.
                   </p>
                 )
+              ) : null}
+
+              {poolInfoModalOpen && selectedPool ? (
+                <PoolInformationModal
+                  open={poolInfoModalOpen}
+                  onClose={() => setPoolInfoModalOpen(false)}
+                  pool={selectedPool}
+                  groups={selectedPoolGroups}
+                  teams={poolTeamsRows}
+                  matches={effectiveMatches}
+                />
               ) : null}
 
               {managePoolModalOpen && selectedPool && canManagePool ? (
