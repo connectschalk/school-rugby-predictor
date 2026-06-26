@@ -118,8 +118,15 @@ export async function reviewMemoryMapMember(
   return { error: error?.message ?? null }
 }
 
-export async function approveMemoryStory(client: SupabaseClient, storyId: string) {
-  const { error } = await client.rpc('approve_memory_story', { p_story_id: storyId })
+export async function approveMemoryStory(
+  client: SupabaseClient,
+  storyId: string,
+  approvalNote?: string
+) {
+  const { error } = await client.rpc('approve_memory_story', {
+    p_story_id: storyId,
+    p_approval_note: approvalNote ?? null,
+  })
   return { error: error?.message ?? null }
 }
 
@@ -238,6 +245,112 @@ export async function updateMemoryMapSponsor(
     p_sponsor_logo_url: fields.sponsor_logo_url,
     p_sponsor_website_url: fields.sponsor_website_url,
     p_sponsor_message: fields.sponsor_message,
+  })
+  return { error: error?.message ?? null }
+}
+
+export type CreateMemoryMapInput = {
+  orgName: string
+  orgType: string
+  orgSlug: string
+  orgDescription?: string
+  orgLogoUrl?: string
+  mapTitle: string
+  mapSlug: string
+  tagline?: string
+  description?: string
+  visibility: string
+  status: string
+  profileImageUrl?: string
+  landingBackgroundUrl?: string
+  primaryColor?: string
+  accentColor?: string
+  sponsorName?: string
+  sponsorLogoUrl?: string
+  sponsorWebsiteUrl?: string
+  sponsorMessage?: string
+}
+
+export async function createMemoryMapPlatform(client: SupabaseClient, input: CreateMemoryMapInput) {
+  const { data, error } = await client.rpc('create_memory_map_platform', {
+    p_org_name: input.orgName,
+    p_org_type: input.orgType,
+    p_org_slug: input.orgSlug,
+    p_org_description: input.orgDescription ?? null,
+    p_org_logo_url: input.orgLogoUrl ?? null,
+    p_map_title: input.mapTitle,
+    p_map_slug: input.mapSlug,
+    p_tagline: input.tagline ?? null,
+    p_description: input.description ?? null,
+    p_visibility: input.visibility,
+    p_status: input.status,
+    p_profile_image_url: input.profileImageUrl ?? null,
+    p_landing_background_url: input.landingBackgroundUrl ?? null,
+    p_primary_color: input.primaryColor ?? '#FFD400',
+    p_accent_color: input.accentColor ?? '#FFD400',
+    p_sponsor_name: input.sponsorName ?? null,
+    p_sponsor_logo_url: input.sponsorLogoUrl ?? null,
+    p_sponsor_website_url: input.sponsorWebsiteUrl ?? null,
+    p_sponsor_message: input.sponsorMessage ?? null,
+  })
+  if (error) return { mapId: null, error: error.message }
+  return { mapId: String(data), error: null }
+}
+
+export type UpsertAreaInput = {
+  mapId: string
+  areaId?: string | null
+  name: string
+  description?: string
+  areaGroup?: string
+  mapType: 'geo' | 'image'
+  centreLat?: number | null
+  centreLng?: number | null
+  geofencePolygon?: unknown
+  mapImageUrl?: string
+  imageWidth?: number | null
+  imageHeight?: number | null
+  sortOrder?: number
+  isActive?: boolean
+}
+
+export async function upsertMemoryArea(client: SupabaseClient, input: UpsertAreaInput) {
+  const { data, error } = await client.rpc('upsert_memory_area', {
+    p_map_id: input.mapId,
+    p_area_id: input.areaId ?? null,
+    p_name: input.name,
+    p_description: input.description ?? null,
+    p_area_group: input.areaGroup ?? null,
+    p_map_type: input.mapType,
+    p_centre_lat: input.centreLat ?? null,
+    p_centre_lng: input.centreLng ?? null,
+    p_geofence_polygon: input.geofencePolygon ?? null,
+    p_map_image_url: input.mapImageUrl ?? null,
+    p_image_width: input.imageWidth ?? null,
+    p_image_height: input.imageHeight ?? null,
+    p_sort_order: input.sortOrder ?? 0,
+    p_is_active: input.isActive ?? true,
+  })
+  if (error) return { areaId: null, error: error.message }
+  return { areaId: String(data), error: null }
+}
+
+export async function archiveMemoryArea(client: SupabaseClient, areaId: string) {
+  const { error } = await client.rpc('archive_memory_area', { p_area_id: areaId })
+  return { error: error?.message ?? null }
+}
+
+export async function manageMemoryMapMember(
+  client: SupabaseClient,
+  memberId: string,
+  action: 'approve' | 'reject' | 'suspend' | 'reactivate' | 'remove' | 'change_role',
+  options?: { reason?: string; newRole?: string }
+) {
+  const { error } = await client.rpc('manage_memory_map_member', {
+    p_member_id: memberId,
+    p_action: action,
+    p_reason: options?.reason ?? null,
+    p_new_role: options?.newRole ?? null,
   })
   return { error: error?.message ?? null }
 }

@@ -1,6 +1,8 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { supabase } from '@/lib/supabase'
+import { trackMemoryMapEvent } from '@/lib/memory-map/analytics'
 import type { MemoryMapBundle, MemoryPin } from '@/lib/memory-map/types'
 import { memoryMapThemeVars } from '@/lib/memory-map/theme'
 import { matchesYearFilter, type YearFilterKey } from '@/lib/memory-map/utils'
@@ -38,6 +40,10 @@ export default function MemoryMapViewer({ bundle, initialAreaId }: Props) {
   const [activePin, setActivePin] = useState<MemoryPin | null>(null)
   const [locateMessage, setLocateMessage] = useState<string | null>(null)
 
+  useEffect(() => {
+    void trackMemoryMapEvent(supabase, { memoryMapId: map.id, eventType: 'map_opened' })
+  }, [map.id])
+
   const selectedArea = activeAreas.find((a) => a.id === selectedAreaId) ?? activeAreas[0]
 
   const visiblePins = useMemo(() => {
@@ -69,6 +75,11 @@ export default function MemoryMapViewer({ bundle, initialAreaId }: Props) {
     if (area) setMapMode(area.map_type === 'image' ? 'image' : 'geo')
     setScreen('map')
     setActivePin(null)
+    void trackMemoryMapEvent(supabase, {
+      memoryMapId: map.id,
+      eventType: 'area_selected',
+      areaId,
+    })
   }
 
   function onLocateMe() {
@@ -209,7 +220,20 @@ export default function MemoryMapViewer({ bundle, initialAreaId }: Props) {
           icon="📍"
         />
       ) : (
-        <MapCanvas area={selectedArea} pins={visiblePins} mode={mapMode} onPinClick={setActivePin} />
+        <MapCanvas
+          area={selectedArea}
+          pins={visiblePins}
+          mode={mapMode}
+          onPinClick={(pin) => {
+            setActivePin(pin)
+            void trackMemoryMapEvent(supabase, {
+              memoryMapId: map.id,
+              eventType: 'pin_opened',
+              areaId: selectedArea?.id,
+              pinId: pin.id,
+            })
+          }}
+        />
       )}
 
       <PinPreviewSheet

@@ -4,13 +4,14 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { fetchAuditLogs, fetchAdminMemoryMapBundleClient } from '@/lib/memory-map/client-queries'
-import { fetchPendingMembers } from '@/lib/memory-map/membership'
+import { fetchAllMembers } from '@/lib/memory-map/membership'
+import { fetchMemoryMapAnalytics, type MemoryMapAnalyticsSummary } from '@/lib/memory-map/analytics'
+import { fetchUserIsAdmin } from '@/lib/admin-access'
 import {
   approveMemoryStory,
   moveMemoryPin,
   moveMemoryStory,
   rejectMemoryStory,
-  reviewMemoryMapMember,
   setMemoryPinStatus,
   setMemoryStoryStatus,
 } from '@/lib/memory-map/mutations'
@@ -21,6 +22,7 @@ import type {
   MemoryAuditLog,
   MemoryMap,
   MemoryMapBundle,
+  MemoryArea,
   MemoryMapMember,
   MemoryPin,
   MemoryStory,
@@ -30,6 +32,13 @@ import { memoryMapThemeVars } from '@/lib/memory-map/theme'
 import AdminOverviewPanel from '@/components/memory-map/admin/AdminOverviewPanel'
 import AdminBrandingForm from '@/components/memory-map/admin/AdminBrandingForm'
 import AdminSponsorForm from '@/components/memory-map/admin/AdminSponsorForm'
+import AdminAreaForm from '@/components/memory-map/admin/AdminAreaForm'
+import AdminContributorsPanel from '@/components/memory-map/admin/AdminContributorsPanel'
+import AdminPilotChecklist from '@/components/memory-map/admin/AdminPilotChecklist'
+import StoryGovernancePanel, {
+  defaultGovernanceChecks,
+  type GovernanceChecks,
+} from '@/components/memory-map/admin/StoryGovernancePanel'
 import MapCanvas from '@/components/memory-map/MapCanvas'
 import StatusBadge, { RiskBadge } from '@/components/memory-map/StatusBadge'
 import ShareQrPanel from '@/components/memory-map/ShareQrPanel'
@@ -51,6 +60,7 @@ const TABS: { id: AdminTab; label: string }[] = [
   { id: 'sponsor', label: 'Sponsor' },
   { id: 'share', label: 'Share / QR' },
   { id: 'audit', label: 'Audit' },
+  { id: 'pilot', label: 'Pilot Checklist' },
 ]
 
 type PinDeleteAction = 'cancel' | 'move' | 'archive_stories' | 'delete_stories'
@@ -60,8 +70,14 @@ export default function AdminDashboard({ mapId }: Props) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [tab, setTab] = useState<AdminTab>('overview')
-  const [pendingMembers, setPendingMembers] = useState<MemoryMapMember[]>([])
+  const [allMembers, setAllMembers] = useState<MemoryMapMember[]>([])
   const [auditLogs, setAuditLogs] = useState<MemoryAuditLog[]>([])
+  const [analytics, setAnalytics] = useState<MemoryMapAnalyticsSummary | null>(null)
+  const [isAppAdmin, setIsAppAdmin] = useState(false)
+  const [areaFormArea, setAreaFormArea] = useState<MemoryArea | null | undefined>(undefined)
+  const [governanceChecks, setGovernanceChecks] = useState<GovernanceChecks | null>(null)
+  const [approvalNote, setApprovalNote] = useState('')
+  const [highRiskConfirm, setHighRiskConfirm] = useState<MemoryStory | null>(null)
 
   const [selectedStory, setSelectedStory] = useState<MemoryStory | null>(null)
   const [rejectStory, setRejectStory] = useState<MemoryStory | null>(null)
@@ -91,12 +107,18 @@ export default function AdminDashboard({ mapId }: Props) {
       const fromDb = await fetchAdminMemoryMapBundleClient(supabase, mapId)
       if (fromDb) {
         setBundle(fromDb)
-        const [members, logs] = await Promise.all([
-          fetchPendingMembers(supabase, mapId),
+        const session = await supabase.auth.getSession()
+        const userId = session.data.session?.user?.id ?? ''
+        const [members, logs, stats, adminCheck] = await Promise.all([
+          fetchAllMembers(supabase, mapId),
           fetchAuditLogs(supabase, mapId),
+          fetchMemoryMapAnalytics(supabase, mapId),
+          fetchUserIsAdmin(supabase, userId),
         ])
-        setPendingMembers(members)
+        setAllMembers(members)
         setAuditLogs(logs)
+        setAnalytics(stats)
+        setIsAppAdmin(adminCheck.isAdmin)
       } else if (mapId === DEMO_MEMORY_MAP_BUNDLE.map.id) {
         setBundle({ ...DEMO_MEMORY_MAP_BUNDLE, stories: [...DEMO_MEMORY_MAP_BUNDLE.stories] })
       } else {
@@ -119,7 +141,12 @@ export default function AdminDashboard({ mapId }: Props) {
   const pins = bundle?.pins ?? []
   const stories = bundle?.stories ?? []
 
+  const pendingMembers = useMemo(() => allMembers.filter((m) => m.status === 'pending'), [allMembers])
   const pending = useMemo(() => stories.filter((s) => s.status === 'pending_review'), [stories])
+  const highRiskPending = useMemo(
+    () => pending.filter((s) => s.risk_level === 'high' || s.risk_level === 'admin_review').length,
+    [pending]
+  )
   const filteredPending = useMemo(() => {
     const q = pendingSearch.trim().toLowerCase()
     let list = [...pending]
@@ -166,7 +193,13 @@ export default function AdminDashboard({ mapId }: Props) {
     return true
   }
 
-  async function onApproveStory(storyId: string, skipWeakCheck = false) {
+  function openStoryReview(story: MemoryStory) {
+    setSelectedStory(story)
+    setGovernanceChecks(defaultGovernanceChecks(story))
+    setApprovalNote('')
+  }
+
+  async function onApproveStory(storyId: string, skipWeakCheck = false, skipHighRiskCheck = false) {
     const story = stories.find((s) => s.id === storyId)
     if (story && !skipWeakCheck) {
       const weak = (!story.media || story.media.length === 0) && (story.description?.trim().length ?? 0) < 40
@@ -175,11 +208,19 @@ export default function AdminDashboard({ mapId }: Props) {
         return
       }
     }
-    const ok = await runAction(() => approveMemoryStory(supabase, storyId))
+    if (story && !skipHighRiskCheck && (story.risk_level === 'high' || story.risk_level === 'admin_review')) {
+      setHighRiskConfirm(story)
+      return
+    }
+    const note = approvalNote.trim() || undefined
+    const ok = await runAction(() => approveMemoryStory(supabase, storyId, note))
     if (ok) {
       setSelectedStory(null)
       setRejectStory(null)
       setApproveWeakWarning(null)
+      setHighRiskConfirm(null)
+      setGovernanceChecks(null)
+      setApprovalNote('')
     }
   }
 
@@ -293,10 +334,6 @@ export default function AdminDashboard({ mapId }: Props) {
     }
   }
 
-  async function onReviewMember(memberId: string, action: 'approve' | 'reject' | 'suspend') {
-    await runAction(() => reviewMemoryMapMember(supabase, memberId, action))
-  }
-
   if (loading && !bundle) {
     return (
       <div className="mm-root flex min-h-dvh items-center justify-center p-8 text-sm text-white/70">
@@ -322,7 +359,7 @@ export default function AdminDashboard({ mapId }: Props) {
     : 0
 
   return (
-    <div className="min-h-dvh pb-8" style={memoryMapThemeVars(map)}>
+    <div className="mm-root min-h-dvh pb-8" style={memoryMapThemeVars(map)}>
       <header className="mm-card border-x-0 border-t-0 px-4 py-4">
         <Link href="/memory-map" className="text-xs font-bold text-[var(--mm-accent)]">
           ← Memory Map
@@ -355,6 +392,7 @@ export default function AdminDashboard({ mapId }: Props) {
           <AdminOverviewPanel
             bundle={bundle}
             pendingContributors={pendingMembers.length}
+            analytics={analytics}
             onNavigate={(t) => setTab(t as AdminTab)}
           />
         ) : null}
@@ -413,7 +451,7 @@ export default function AdminDashboard({ mapId }: Props) {
                       </div>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <button type="button" onClick={() => setSelectedStory(story)} className="mm-btn-secondary rounded-lg px-3 py-1.5 text-xs font-bold">Review</button>
+                      <button type="button" onClick={() => openStoryReview(story)} className="mm-btn-secondary rounded-lg px-3 py-1.5 text-xs font-bold">Review</button>
                       <button type="button" disabled={busy} onClick={() => void onApproveStory(story.id)} className="mm-btn-primary rounded-lg px-3 py-1.5 text-xs font-bold disabled:opacity-50">Approve</button>
                       <button type="button" disabled={busy} onClick={() => { setRejectStory(story); setRejectReason('') }} className="rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-1.5 text-xs font-bold text-red-300 disabled:opacity-50">Reject</button>
                     </div>
@@ -490,43 +528,48 @@ export default function AdminDashboard({ mapId }: Props) {
         ) : null}
 
         {tab === 'contributors' ? (
-          <div className="space-y-3">
-            {pendingMembers.length === 0 ? (
-              <p className="mm-muted text-sm">No pending contributor requests.</p>
-            ) : (
-              pendingMembers.map((member) => (
-                <div key={member.id} className="mm-card rounded-2xl p-4">
-                  <p className="font-bold">User {member.user_id.slice(0, 8)}…</p>
-                  <p className="mm-muted text-xs">{member.relationship ?? 'No relationship given'}</p>
-                  {member.request_message ? <p className="mt-2 text-sm">{member.request_message}</p> : null}
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <button type="button" disabled={busy} onClick={() => void onReviewMember(member.id, 'approve')} className="mm-btn-primary rounded-lg px-3 py-1.5 text-xs font-bold disabled:opacity-50">
-                      Approve
-                    </button>
-                    <button type="button" disabled={busy} onClick={() => void onReviewMember(member.id, 'reject')} className="rounded-lg border border-red-400/40 px-3 py-1.5 text-xs font-bold text-red-300 disabled:opacity-50">
-                      Reject
-                    </button>
-                    <button type="button" disabled={busy} onClick={() => void onReviewMember(member.id, 'suspend')} className="mm-btn-secondary rounded-lg px-3 py-1.5 text-xs font-bold disabled:opacity-50">
-                      Suspend
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
+          <AdminContributorsPanel
+            members={allMembers}
+            isAppAdmin={isAppAdmin}
+            onChanged={() => void reload()}
+          />
         ) : null}
 
         {tab === 'areas' ? (
           <div className="space-y-3">
-            {areas.map((area) => (
-              <div key={area.id} className="mm-card rounded-2xl p-4">
-                <div className="flex items-center justify-between">
-                  <p className="font-bold">{area.name}</p>
-                  <span className="text-xs uppercase text-white/60">{area.map_type} map</span>
-                </div>
-                <p className="mm-muted mt-1 text-xs">{area.description}</p>
-              </div>
-            ))}
+            {areaFormArea !== undefined ? (
+              <AdminAreaForm
+                mapId={mapId}
+                area={areaFormArea}
+                onSaved={() => {
+                  setAreaFormArea(undefined)
+                  void reload()
+                }}
+                onCancel={() => setAreaFormArea(undefined)}
+              />
+            ) : (
+              <>
+                <button type="button" onClick={() => setAreaFormArea(null)} className="mm-btn-primary rounded-xl px-4 py-2 text-sm font-bold">
+                  Create area
+                </button>
+                {areas.map((area) => (
+                  <div key={area.id} className="mm-card rounded-2xl p-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-bold">{area.name}</p>
+                      <span className="text-xs uppercase text-white/60">
+                        {area.is_active ? area.map_type : 'archived'}
+                      </span>
+                    </div>
+                    <p className="mm-muted mt-1 text-xs">{area.description}</p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button type="button" onClick={() => setAreaFormArea(area)} className="mm-btn-secondary rounded-lg px-3 py-1 text-xs font-bold">
+                        Edit
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
         ) : null}
 
@@ -547,6 +590,15 @@ export default function AdminDashboard({ mapId }: Props) {
         {tab === 'branding' ? <AdminBrandingForm map={map} onSaved={(m) => updateMap(m)} /> : null}
         {tab === 'sponsor' ? <AdminSponsorForm map={map} onSaved={(m) => updateMap(m)} /> : null}
         {tab === 'share' ? <ShareQrPanel map={map} /> : null}
+
+        {tab === 'pilot' && bundle ? (
+          <AdminPilotChecklist
+            bundle={bundle}
+            members={allMembers}
+            pendingCount={pending.length}
+            highRiskPending={highRiskPending}
+          />
+        ) : null}
 
         {tab === 'audit' ? (
           <div className="space-y-2">
@@ -592,6 +644,17 @@ export default function AdminDashboard({ mapId }: Props) {
                     <video key={m.id} src={m.file_url} controls className="rounded-lg" />
                   )
                 )}
+              </div>
+            ) : null}
+            {governanceChecks ? (
+              <div className="mt-4">
+                <StoryGovernancePanel
+                  story={selectedStory}
+                  checks={governanceChecks}
+                  onChange={setGovernanceChecks}
+                  approvalNote={approvalNote}
+                  onApprovalNoteChange={setApprovalNote}
+                />
               </div>
             ) : null}
             <div className="mt-4 flex flex-wrap gap-2">
@@ -710,6 +773,7 @@ export default function AdminDashboard({ mapId }: Props) {
                       placementMode
                       placementPreview={movePinPlacement}
                       onMapClick={(p) => setMovePinPlacement(p)}
+                      showPlacementDebug
                     />
                     <button type="button" disabled={busy || !movePinPlacement} onClick={() => void onSavePinMove()} className="mm-btn-primary mt-2 w-full rounded-lg px-3 py-2 text-xs font-bold disabled:opacity-50">
                       Save new position
@@ -832,6 +896,35 @@ export default function AdminDashboard({ mapId }: Props) {
             <div className="mt-4 flex gap-2">
               <button type="button" disabled={busy} onClick={() => void onApproveStory(approveWeakWarning.id, true)} className="mm-btn-primary rounded-lg px-3 py-2 text-xs font-bold disabled:opacity-50">Approve anyway</button>
               <button type="button" onClick={() => setApproveWeakWarning(null)} className="mm-btn-secondary rounded-lg px-3 py-2 text-xs font-bold">Cancel</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {highRiskConfirm ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-4">
+          <div className="mm-card max-w-md rounded-2xl p-5">
+            <h3 className="text-lg font-black">High-risk content</h3>
+            <p className="mt-2 text-sm text-red-200">
+              This story is marked high-risk/admin review. Confirm you have checked school policy before publishing.
+            </p>
+            {governanceChecks?.containsMinors ? (
+              <p className="mt-2 rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                Ensure this aligns with the school&apos;s media/consent policy.
+              </p>
+            ) : null}
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void onApproveStory(highRiskConfirm.id, true, true)}
+                className="mm-btn-primary rounded-lg px-3 py-2 text-xs font-bold disabled:opacity-50"
+              >
+                Confirm approval
+              </button>
+              <button type="button" onClick={() => setHighRiskConfirm(null)} className="mm-btn-secondary rounded-lg px-3 py-2 text-xs font-bold">
+                Cancel
+              </button>
             </div>
           </div>
         </div>

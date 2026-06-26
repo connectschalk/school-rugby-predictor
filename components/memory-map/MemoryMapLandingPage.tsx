@@ -1,6 +1,9 @@
 'use client'
 
+import { useEffect } from 'react'
 import Link from 'next/link'
+import { supabase } from '@/lib/supabase'
+import { trackMemoryMapEvent } from '@/lib/memory-map/analytics'
 import type { MemoryMap, MemoryMapBundle } from '@/lib/memory-map/types'
 import { memoryMapThemeVars } from '@/lib/memory-map/theme'
 import { bundleStats } from '@/lib/memory-map/utils'
@@ -9,12 +12,20 @@ type Props = {
   map: MemoryMap
   mapSlug: string
   bundle?: MemoryMapBundle
+  fromQr?: boolean
 }
 
-export default function MemoryMapLandingPage({ map, mapSlug, bundle }: Props) {
+export default function MemoryMapLandingPage({ map, mapSlug, bundle, fromQr }: Props) {
   const theme = memoryMapThemeVars(map)
   const bg = map.landing_background_url
   const stats = bundle ? bundleStats(bundle) : { areaCount: 0, pinCount: 0, storyCount: 0 }
+
+  useEffect(() => {
+    void trackMemoryMapEvent(supabase, { memoryMapId: map.id, eventType: 'map_landing_viewed' })
+    if (fromQr) {
+      void trackMemoryMapEvent(supabase, { memoryMapId: map.id, eventType: 'qr_link_opened' })
+    }
+  }, [map.id, fromQr])
 
   return (
     <main className="relative min-h-dvh" style={theme}>
@@ -27,7 +38,7 @@ export default function MemoryMapLandingPage({ map, mapSlug, bundle }: Props) {
         }}
       />
 
-      <div className="relative mx-auto flex min-h-dvh max-w-lg flex-col px-5 pb-8 pt-[max(2.5rem,env(safe-area-inset-top))]">
+      <div className="mm-safe-top relative mx-auto flex min-h-dvh max-w-lg flex-col px-5 pb-8">
         <section className="flex min-h-[58dvh] flex-col justify-end">
           <div className="flex items-center gap-4">
             <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border-2 border-white/20 bg-white/10 shadow-lg backdrop-blur-sm">

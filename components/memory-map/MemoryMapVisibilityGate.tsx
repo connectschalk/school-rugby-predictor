@@ -57,7 +57,9 @@ export default function MemoryMapVisibilityGate({ bundle, children, returnPath }
         title="This Memory Map is private"
         description="Request access or sign in with an approved account to view this map."
         showAuth
+        showRequestAccess
         returnPath={returnPath}
+        mapSlug={map.slug}
       />
     )
   }
@@ -70,13 +72,17 @@ function UnavailableState({
   title,
   description,
   showAuth,
+  showRequestAccess,
   returnPath,
+  mapSlug,
 }: {
   map: MemoryMap
   title: string
   description: string
   showAuth?: boolean
+  showRequestAccess?: boolean
   returnPath?: string
+  mapSlug?: string
 }) {
   return (
     <div className="mm-root flex min-h-dvh flex-col items-center justify-center px-6 text-center" style={memoryMapThemeVars(map)}>
@@ -84,8 +90,13 @@ function UnavailableState({
         <h1 className="text-xl font-black">{title}</h1>
         <p className="mm-muted mt-3 text-sm leading-relaxed">{description}</p>
         <div className="mt-6 flex flex-col gap-2">
+          {showRequestAccess && mapSlug ? (
+            <Link href={`/memory-map/${mapSlug}/add`} className="mm-btn-primary rounded-xl px-4 py-3 text-sm font-black">
+              Request access
+            </Link>
+          ) : null}
           {showAuth && returnPath ? (
-            <Link href={buildLoginHref(returnPath)} className="mm-btn-primary rounded-xl px-4 py-3 text-sm font-black">
+            <Link href={buildLoginHref(returnPath)} className="mm-btn-secondary rounded-xl px-4 py-3 text-sm font-bold">
               Sign in
             </Link>
           ) : null}

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import StoryDetailView from '@/components/memory-map/StoryDetailView'
 import { fetchContributorAccess } from '@/lib/memory-map/membership'
+import { trackMemoryMapEvent } from '@/lib/memory-map/analytics'
 import { fetchAdminMemoryMapBundleClient } from '@/lib/memory-map/client-queries'
 import type { MemoryMapBundle, MemoryStory } from '@/lib/memory-map/types'
 import { memoryMapThemeVars } from '@/lib/memory-map/theme'
@@ -53,6 +54,16 @@ export default function StoryDetailPageClient({ publicBundle, storyId, mapSlug }
       cancelled = true
     }
   }, [publicBundle, storyId, publicStory])
+
+  useEffect(() => {
+    if (!story || unavailable) return
+    void trackMemoryMapEvent(supabase, {
+      memoryMapId: publicBundle.map.id,
+      eventType: 'story_opened',
+      storyId: story.id,
+      pinId: story.pin_id,
+    })
+  }, [story, unavailable, publicBundle.map.id])
 
   if (loading) {
     return (

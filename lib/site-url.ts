@@ -35,6 +35,11 @@ export function absolutePoolOgImageUrl(token: string, version?: string | number)
   return `${base}?v=${encodeURIComponent(String(version))}`
 }
 
+/** Absolute public Memory Map landing URL. */
+export function absoluteMemoryMapUrl(slug: string): string {
+  return `${getPublicSiteUrl()}/memory-map/${encodeURIComponent(slug.trim())}`
+}
+
 /** Canonical absolute pool join URL for share metadata. */
 export function absolutePoolJoinUrl(
   competitionSlug: string,

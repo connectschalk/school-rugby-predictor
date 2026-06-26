@@ -32,3 +32,15 @@ body {
 .safe-area-bottom {
   padding-bottom: max(1rem, env(safe-area-inset-bottom));
 }
+
+.mm-safe-top {
+  padding-top: max(2.5rem, env(safe-area-inset-top));
+}
+
+.mm-safe-top-sm {
+  padding-top: max(1rem, env(safe-area-inset-top));
+}
+
+.mm-safe-bottom {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}

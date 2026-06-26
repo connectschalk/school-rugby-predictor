@@ -70,6 +70,7 @@ export type MemoryArea = {
   image_height: number | null
   sort_order: number
   is_active: boolean
+  area_group?: string | null
   pin_count?: number
   story_count?: number
 }
@@ -127,6 +128,7 @@ export type MemoryStory = {
   risk_level: RiskLevel
   status: StoryStatus
   rejection_reason: string | null
+  approval_note?: string | null
   tags?: string[]
   media?: MemoryStoryMedia[]
 }
@@ -152,6 +154,7 @@ export type AdminTab =
   | 'sponsor'
   | 'share'
   | 'audit'
+  | 'pilot'
 
 export type MemoryMapMember = {
   id: string
@@ -162,6 +165,8 @@ export type MemoryMapMember = {
   relationship: string | null
   request_message: string | null
   approved_at: string | null
+  created_at?: string | null
+  approved_by?: string | null
 }
 
 export type MemoryAuditLog = {

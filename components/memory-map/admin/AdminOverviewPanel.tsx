@@ -2,15 +2,17 @@
 
 import Link from 'next/link'
 import type { MemoryMapBundle } from '@/lib/memory-map/types'
+import type { MemoryMapAnalyticsSummary } from '@/lib/memory-map/analytics'
 import { bundleStats, mapHealthChecklist } from '@/lib/memory-map/utils'
 
 type Props = {
   bundle: MemoryMapBundle
   pendingContributors: number
+  analytics?: MemoryMapAnalyticsSummary | null
   onNavigate: (tab: string) => void
 }
 
-export default function AdminOverviewPanel({ bundle, pendingContributors, onNavigate }: Props) {
+export default function AdminOverviewPanel({ bundle, pendingContributors, analytics, onNavigate }: Props) {
   const stats = bundleStats(bundle)
   const health = mapHealthChecklist(bundle)
   const healthOk = health.filter((h) => h.ok).length
@@ -53,6 +55,27 @@ export default function AdminOverviewPanel({ bundle, pendingContributors, onNavi
           ))}
         </div>
       </div>
+
+      {analytics ? (
+        <div className="mm-card rounded-2xl p-4">
+          <p className="text-sm font-black">Pilot analytics (30 days)</p>
+          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {[
+              ['Landing views', analytics.landing_views],
+              ['Map opens', analytics.map_opens],
+              ['Story opens', analytics.story_opens],
+              ['Pin opens', analytics.pin_opens],
+              ['Contributor requests', analytics.contributor_requests],
+              ['Story submissions', analytics.story_submissions],
+            ].map(([label, value]) => (
+              <div key={String(label)}>
+                <p className="mm-muted text-[10px] uppercase">{label}</p>
+                <p className="text-lg font-black">{value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <div className="mm-card rounded-2xl p-4">
         <div className="flex items-center justify-between">

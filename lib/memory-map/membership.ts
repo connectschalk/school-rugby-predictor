@@ -72,6 +72,30 @@ export async function fetchContributorAccess(
   }
 }
 
+export async function fetchAllMembers(
+  client: SupabaseClient,
+  memoryMapId: string
+): Promise<MemoryMapMember[]> {
+  const { data } = await client
+    .from('memory_map_members')
+    .select('*')
+    .eq('memory_map_id', memoryMapId)
+    .order('created_at', { ascending: false })
+
+  return (data ?? []).map((row) => ({
+    id: String(row.id),
+    memory_map_id: String(row.memory_map_id),
+    user_id: String(row.user_id),
+    role: row.role as MemberRole,
+    status: row.status as MemberStatus,
+    relationship: row.relationship == null ? null : String(row.relationship),
+    request_message: row.request_message == null ? null : String(row.request_message),
+    approved_at: row.approved_at == null ? null : String(row.approved_at),
+    created_at: row.created_at == null ? null : String(row.created_at),
+    approved_by: row.approved_by == null ? null : String(row.approved_by),
+  }))
+}
+
 export async function fetchPendingMembers(
   client: SupabaseClient,
   memoryMapId: string

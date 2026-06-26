@@ -6,8 +6,16 @@ import { supabase } from '@/lib/supabase'
 import { buildLoginHref } from '@/lib/auth-return-path'
 import type { ContributorAccess } from '@/lib/memory-map/membership'
 import { fetchContributorAccess } from '@/lib/memory-map/membership'
-import { requestContributorAccess, submitMemoryStory } from '@/lib/memory-map/mutations'
+import { requestContributorAccess, submitMemoryStory, type StoryMediaPayload } from '@/lib/memory-map/mutations'
 import { uploadPendingStoryMedia } from '@/lib/memory-map/storage'
+import { trackMemoryMapEvent } from '@/lib/memory-map/analytics'
+import {
+  MM_MAX_PHOTOS_PER_STORY,
+  MM_MAX_VIDEOS_PER_STORY,
+  validateImageFile,
+  validateStoryContent,
+  validateVideoFile,
+} from '@/lib/memory-map/validation'
 import type { MemoryMapBundle, MemoryPin, RiskLevel, StoryType, UploadMode, MapPlacement } from '@/lib/memory-map/types'
 import { memoryMapThemeVars } from '@/lib/memory-map/theme'
 import MemoryMapHeader from '@/components/memory-map/MemoryMapHeader'
@@ -90,6 +98,8 @@ export default function AddStoryWizard({ bundle, initialPinId }: Props) {
   const [pinSearch, setPinSearch] = useState('')
   const [useExistingPinOnly, setUseExistingPinOnly] = useState(Boolean(initialPinId))
   const [uploadProgress, setUploadProgress] = useState('')
+  const [mediaWarning, setMediaWarning] = useState('')
+  const [failedFileName, setFailedFileName] = useState<string | null>(null)
 
   const returnPath = `/memory-map/${map.slug}/add${initialPinId ? `?pin=${initialPinId}` : ''}`
 
@@ -142,22 +152,96 @@ export default function AddStoryWizard({ bundle, initialPinId }: Props) {
       return
     }
     setRequestSent(true)
+    void trackMemoryMapEvent(supabase, {
+      memoryMapId: map.id,
+      eventType: 'contributor_request_submitted',
+    })
     await loadAccess()
+  }
+
+  function addPhotoFiles(files: File[]) {
+    setError('')
+    setFailedFileName(null)
+    const next: File[] = [...photoFiles]
+    for (const file of files) {
+      if (next.length >= MM_MAX_PHOTOS_PER_STORY) {
+        setError(`Maximum ${MM_MAX_PHOTOS_PER_STORY} photos per story.`)
+        break
+      }
+      const result = validateImageFile(file)
+      if (!result.ok) {
+        setError(result.error)
+        continue
+      }
+      next.push(file)
+    }
+    setPhotoFiles(next)
+  }
+
+  function setVideo(file: File | null) {
+    setError('')
+    setFailedFileName(null)
+    setMediaWarning('')
+    if (!file) {
+      setVideoFile(null)
+      return
+    }
+    if (videoFile || file) {
+      const result = validateVideoFile(file)
+      if (!result.ok) {
+        setError(result.error)
+        return
+      }
+      if (result.warning) setMediaWarning(result.warning)
+      setVideoFile(file)
+    }
+  }
+
+  async function uploadMediaWithProgress(): Promise<StoryMediaPayload[]> {
+    const payloads: StoryMediaPayload[] = []
+    let sort = 0
+    const files: { file: File; kind: 'video' | 'image' }[] = []
+    if (videoFile) files.push({ file: videoFile, kind: 'video' })
+    for (const f of photoFiles) files.push({ file: f, kind: 'image' })
+
+    for (const { file, kind } of files) {
+      setUploadProgress(`Uploading ${file.name}…`)
+      const up = await uploadPendingStoryMedia(supabase, map.id, file, sort++)
+      if ('error' in up) {
+        setFailedFileName(file.name)
+        throw new Error(`Upload failed for ${file.name}: ${up.error}`)
+      }
+      payloads.push({
+        ...up,
+        // Images use file URL as thumbnail; video thumbnails need server-side generation.
+        thumbnail_url: kind === 'image' ? up.file_url : null,
+      })
+    }
+    return payloads
   }
 
   async function onSubmit() {
     setError('')
+    setFailedFileName(null)
     const eventYear = parseInt(year, 10)
     const finalDescription = [description.trim(), textBody.trim()].filter(Boolean).join('\n\n')
     const hasText = Boolean(textBody.trim() || description.trim())
     const hasPhoto = photoFiles.length > 0
     const hasVideo = Boolean(videoFile)
-    if (!hasText && !hasPhoto && !hasVideo) {
-      setError('Add a description, photo, or video.')
-      return
-    }
-    if (!categoryId) {
-      setError('Choose a category.')
+
+    const contentErr = validateStoryContent({
+      title,
+      description: finalDescription,
+      year,
+      categoryId,
+      riskLevel,
+      photoCount: photoFiles.length,
+      hasVideo,
+      hasText,
+      permissionConfirmed,
+    })
+    if (contentErr) {
+      setError(contentErr)
       return
     }
 
@@ -177,21 +261,15 @@ export default function AddStoryWizard({ bundle, initialPinId }: Props) {
       }
     }
 
+    if (hasVideo && photoFiles.length > 0 && videoFile && photoFiles.length + 1 > MM_MAX_PHOTOS_PER_STORY + MM_MAX_VIDEOS_PER_STORY) {
+      setError('Too many media files for this story.')
+      return
+    }
+
     setSubmitting(true)
-    setUploadProgress('Uploading media…')
+    setUploadProgress('Preparing upload…')
     try {
-      const mediaPayloads = []
-      let sort = 0
-      if (videoFile) {
-        const up = await uploadPendingStoryMedia(supabase, map.id, videoFile, sort++)
-        if ('error' in up) throw new Error(up.error)
-        mediaPayloads.push(up)
-      }
-      for (const file of photoFiles) {
-        const up = await uploadPendingStoryMedia(supabase, map.id, file, sort++)
-        if ('error' in up) throw new Error(up.error)
-        mediaPayloads.push(up)
-      }
+      const mediaPayloads = await uploadMediaWithProgress()
 
       const storyType = inferStoryType(hasVideo, hasPhoto, hasText)
       const { error: submitErr } = await submitMemoryStory(supabase, {
@@ -218,6 +296,11 @@ export default function AddStoryWizard({ bundle, initialPinId }: Props) {
 
       if (submitErr) throw new Error(submitErr)
       setUploadProgress('')
+      void trackMemoryMapEvent(supabase, {
+        memoryMapId: map.id,
+        eventType: 'story_submitted',
+        areaId: selectedArea!.id,
+      })
       setStep('done')
     } catch (e) {
       setUploadProgress('')
@@ -236,6 +319,12 @@ export default function AddStoryWizard({ bundle, initialPinId }: Props) {
       <div className="mx-auto max-w-lg px-4 py-6">
         <WizardProgress step={step} />
         {error ? <p className="mb-4 rounded-xl border border-red-400/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">{error}</p> : null}
+        {failedFileName ? (
+          <p className="mb-4 rounded-xl border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+            Failed: {failedFileName}. Remove the file or retry submit.
+          </p>
+        ) : null}
+        {mediaWarning ? <p className="mb-4 text-sm text-amber-200">{mediaWarning}</p> : null}
         {uploadProgress ? <p className="mb-4 text-sm text-[var(--mm-accent)]">{uploadProgress}</p> : null}
 
         {step === 'access' ? (
@@ -251,7 +340,14 @@ export default function AddStoryWizard({ bundle, initialPinId }: Props) {
                 </Link>
               </>
             ) : access.canSubmit || access.isMapAdmin ? (
-              <button type="button" onClick={next} className="mm-btn-primary w-full rounded-2xl px-4 py-3 text-sm font-black">
+              <button
+                type="button"
+                onClick={() => {
+                  void trackMemoryMapEvent(supabase, { memoryMapId: map.id, eventType: 'add_memory_started' })
+                  next()
+                }}
+                className="mm-btn-primary w-full rounded-2xl px-4 py-3 text-sm font-black"
+              >
                 Continue
               </button>
             ) : access.member?.status === 'pending' || requestSent ? (
@@ -444,8 +540,17 @@ export default function AddStoryWizard({ bundle, initialPinId }: Props) {
             </div>
 
             <div className="mm-card rounded-2xl border-dashed p-4">
-              <p className="text-sm font-bold">Photos</p>
-              <input type="file" accept="image/*" multiple className="mt-2 w-full text-xs" onChange={(e) => setPhotoFiles(Array.from(e.target.files ?? []))} />
+              <p className="text-sm font-bold">Photos (max {MM_MAX_PHOTOS_PER_STORY})</p>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                multiple
+                className="mt-2 w-full text-xs"
+                onChange={(e) => {
+                  addPhotoFiles(Array.from(e.target.files ?? []))
+                  e.target.value = ''
+                }}
+              />
               {photoFiles.length > 0 ? (
                 <ul className="mt-2 space-y-1 text-xs">
                   {photoFiles.map((f, i) => (
@@ -459,9 +564,14 @@ export default function AddStoryWizard({ bundle, initialPinId }: Props) {
             </div>
 
             <div className="mm-card rounded-2xl border-dashed p-4">
-              <p className="text-sm font-bold">Video</p>
+              <p className="text-sm font-bold">Video (max {MM_MAX_VIDEOS_PER_STORY})</p>
               <p className="mm-muted text-xs">Recommended under 3 minutes for faster review.</p>
-              <input type="file" accept="video/mp4,video/quicktime,video/webm" className="mt-2 w-full text-xs" onChange={(e) => setVideoFile(e.target.files?.[0] ?? null)} />
+              <input
+                type="file"
+                accept="video/mp4,video/quicktime,video/webm"
+                className="mt-2 w-full text-xs"
+                onChange={(e) => setVideo(e.target.files?.[0] ?? null)}
+              />
               {videoFile ? (
                 <div className="mt-2 flex justify-between text-xs">
                   <span className="truncate">{videoFile.name}</span>

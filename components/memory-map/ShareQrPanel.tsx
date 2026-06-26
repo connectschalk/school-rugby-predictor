@@ -1,31 +1,25 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import QRCode from 'qrcode'
+import { absoluteMemoryMapUrl } from '@/lib/site-url'
 import type { MemoryMap } from '@/lib/memory-map/types'
 
 type Props = {
   map: MemoryMap
 }
 
-function resolvePublicUrl(slug: string): string {
-  if (typeof window !== 'undefined') {
-    return `${window.location.origin}/memory-map/${slug}`
-  }
-  return `https://www.thenextplay.co.za/memory-map/${slug}`
-}
-
 export default function ShareQrPanel({ map }: Props) {
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
-  const posterRef = useRef<HTMLDivElement>(null)
-  const publicUrl = resolvePublicUrl(map.slug)
+  const publicUrl = absoluteMemoryMapUrl(map.slug)
+  const qrUrl = `${publicUrl}?qr=1`
 
   useEffect(() => {
-    void QRCode.toDataURL(publicUrl, { width: 320, margin: 2, color: { dark: '#050505', light: '#FFFFFF' } }).then(
+    void QRCode.toDataURL(qrUrl, { width: 320, margin: 2, color: { dark: '#050505', light: '#FFFFFF' } }).then(
       setQrDataUrl
     )
-  }, [publicUrl])
+  }, [qrUrl])
 
   async function copyLink() {
     try {
@@ -55,8 +49,8 @@ export default function ShareQrPanel({ map }: Props) {
         Place this QR code at entrances, pavilions, hostels or event spaces so visitors can open the Memory Map on-site.
       </p>
 
-      <div ref={posterRef} className="mm-poster mm-card overflow-hidden rounded-2xl">
-        <div className="bg-gradient-to-b from-[#1a2332] to-[#05080d] p-8 text-center">
+      <div className="mm-poster mm-card overflow-hidden rounded-2xl">
+        <div className="bg-gradient-to-b from-[#1a2332] to-[#05080d] p-8 text-center print:bg-white print:text-black">
           <div className="flex flex-col items-center gap-4">
             {map.profile_image_url ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -65,9 +59,9 @@ export default function ShareQrPanel({ map }: Props) {
               <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/10 text-xl font-black text-[var(--mm-accent)]">NP</div>
             )}
             <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-[var(--mm-accent)]">Memory Map</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-[var(--mm-accent)] print:text-gray-600">NextPlay Memory Map</p>
               <h2 className="text-2xl font-black">{map.title}</h2>
-              {map.tagline ? <p className="mm-muted mt-1 text-sm">{map.tagline}</p> : null}
+              {map.tagline ? <p className="mm-muted mt-1 text-sm print:text-gray-600">{map.tagline}</p> : null}
             </div>
             {qrDataUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -75,13 +69,13 @@ export default function ShareQrPanel({ map }: Props) {
             ) : (
               <div className="h-[240px] w-[240px] animate-pulse rounded-xl bg-white/10" />
             )}
-            <p className="max-w-xs text-sm font-medium leading-relaxed text-white/90">
+            <p className="max-w-xs text-sm font-medium leading-relaxed text-white/90 print:text-gray-800">
               Scan to explore the stories that happened here.
             </p>
-            <p className="mm-muted break-all text-[10px]">{publicUrl}</p>
+            <p className="mm-muted break-all text-[10px] print:text-gray-500">{publicUrl}</p>
             {map.sponsor_name ? (
-              <div className="mt-2 flex items-center gap-2 border-t border-white/10 pt-4">
-                <p className="text-[10px] uppercase text-white/50">Proudly sponsored by</p>
+              <div className="mt-2 flex items-center justify-center gap-2 border-t border-white/10 pt-4 print:border-gray-200">
+                <p className="text-[10px] uppercase text-white/50 print:text-gray-500">Proudly sponsored by</p>
                 {map.sponsor_logo_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={map.sponsor_logo_url} alt="" className="h-6 object-contain" />
@@ -89,6 +83,7 @@ export default function ShareQrPanel({ map }: Props) {
                 <span className="text-xs font-bold">{map.sponsor_name}</span>
               </div>
             ) : null}
+            <p className="mt-4 text-[10px] text-white/40 print:text-gray-400">NextPlay Memory Map · thenextplay.co.za</p>
           </div>
         </div>
       </div>
