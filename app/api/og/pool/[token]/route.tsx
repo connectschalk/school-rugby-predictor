@@ -22,9 +22,9 @@ type PoolOgPayload = {
   hasPool: boolean
 }
 
-const BRAND_LOGO_WIDTH = 260
-const BRAND_LOGO_HEIGHT = 66
-const POOL_LOGO_SIZE = 96
+const BRAND_LOGO_WIDTH = 280
+const BRAND_LOGO_HEIGHT = 71
+const POOL_LOGO_SIZE = 100
 const POOL_LOGO_RADIUS = 16
 
 function poolTitleFontSize(name: string): number {
@@ -107,7 +107,7 @@ function PoolOgCard({ payload }: { payload: PoolOgPayload }) {
             style={{ objectFit: 'contain' }}
           />
         ) : (
-          <span style={{ fontSize: 36, fontWeight: 800, color: TEXT }}>{PLATFORM_NAME}</span>
+          <span style={{ fontSize: 40, fontWeight: 800, color: TEXT }}>{PLATFORM_NAME}</span>
         )}
       </div>
 
