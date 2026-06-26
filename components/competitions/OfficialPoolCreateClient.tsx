@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { competitionCardTitle, type Competition } from '@/lib/competitions'
 import { buildPoolJoinPath } from '@/lib/pool-invite-path'
+import { buildPoolSharePayload, sharePoolInvite } from '@/lib/pool-share'
 import {
   formatPoolJoinCodeDisplay,
   validatePoolJoinCodeInput,
@@ -36,6 +37,7 @@ export default function OfficialPoolCreateClient({ competition }: Props) {
   const [message, setMessage] = useState('')
   const [createdPool, setCreatedPool] = useState<PoolRow | null>(null)
   const [inviteCopied, setInviteCopied] = useState(false)
+  const [shareCopied, setShareCopied] = useState(false)
   const [codeCopied, setCodeCopied] = useState(false)
 
   const title = competitionCardTitle(competition.slug, competition.name)
@@ -134,6 +136,20 @@ export default function OfficialPoolCreateClient({ competition }: Props) {
     }
   }
 
+  async function shareInvite() {
+    if (!createdPool || !user || typeof window === 'undefined') return
+    const url = `${window.location.origin}${buildPoolJoinPath(createdPool.invite_token, user.id, competition.slug)}`
+    const payload = buildPoolSharePayload(createdPool.name, competition.name, url)
+    const result = await sharePoolInvite(payload)
+    if (result === 'shared' || result === 'copied') {
+      setShareCopied(true)
+      return
+    }
+    if (result === 'failed') {
+      setMessage('Could not share invite. Try copying the link instead.')
+    }
+  }
+
   async function copyJoinCode() {
     if (!createdPool?.join_code || typeof window === 'undefined') return
     try {
@@ -202,6 +218,13 @@ export default function OfficialPoolCreateClient({ competition }: Props) {
               className="w-full rounded-xl border border-white/15 bg-[#111318] px-4 py-3 text-sm font-semibold text-white hover:bg-[#161a22]"
             >
               {codeCopied ? 'Pool code copied' : 'Copy pool code'}
+            </button>
+            <button
+              type="button"
+              onClick={() => void shareInvite()}
+              className="w-full rounded-xl bg-red-600 px-4 py-3 text-sm font-bold text-white hover:bg-red-700"
+            >
+              {shareCopied ? 'Share ready' : 'Share pool'}
             </button>
             <button
               type="button"

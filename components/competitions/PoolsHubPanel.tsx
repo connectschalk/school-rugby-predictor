@@ -50,6 +50,7 @@ import {
   type PoolTeamRow,
 } from '@/lib/pools'
 import { buildPoolJoinPath } from '@/lib/pool-invite-path'
+import { buildPoolSharePayload, sharePoolInvite } from '@/lib/pool-share'
 import {
   formatPoolJoinCodeDisplay,
   validatePoolJoinCodeInput,
@@ -138,6 +139,7 @@ function PoolsPageContent({
   const [savingMatches, setSavingMatches] = useState(false)
 
   const [inviteCopied, setInviteCopied] = useState(false)
+  const [shareCopied, setShareCopied] = useState(false)
   const [codeCopied, setCodeCopied] = useState(false)
   const loadPoolsRef = useRef<(explicitUserId?: string) => Promise<void>>(async () => {})
   const inviteHandledRef = useRef<string | null>(null)
@@ -391,6 +393,12 @@ function PoolsPageContent({
   }, [codeCopied])
 
   useEffect(() => {
+    if (!shareCopied) return
+    const id = window.setTimeout(() => setShareCopied(false), 4000)
+    return () => window.clearTimeout(id)
+  }, [shareCopied])
+
+  useEffect(() => {
     if (!authReady) return
     const pendingFromStorage =
       typeof window === 'undefined' ? '' : (window.localStorage.getItem(PENDING_POOL_INVITE_KEY) ?? '').trim()
@@ -486,6 +494,24 @@ function PoolsPageContent({
       setInviteCopied(true)
     } catch {
       setMessage('Could not copy link. Try copying from the address bar after opening the invite page.')
+    }
+  }
+
+  async function shareInviteLink() {
+    if (!selectedPool || typeof window === 'undefined' || !user) return
+    const url = `${window.location.origin}${buildPoolJoinPath(selectedPool.invite_token, user.id, competitionSlug)}`
+    const payload = buildPoolSharePayload(
+      selectedPool.name,
+      competitionName ?? 'your competition',
+      url
+    )
+    const result = await sharePoolInvite(payload)
+    if (result === 'shared' || result === 'copied') {
+      setShareCopied(true)
+      return
+    }
+    if (result === 'failed') {
+      setMessage('Could not share invite. Try copying the link instead.')
     }
   }
 
@@ -1207,11 +1233,21 @@ function PoolsPageContent({
                         <div className="mt-2 flex flex-wrap items-center gap-2">
                           <button
                             type="button"
+                            onClick={() => void shareInviteLink()}
+                            className="rounded-lg border border-gray-900 bg-gray-900 px-3 py-2 text-xs font-semibold text-white hover:bg-black"
+                          >
+                            Share pool
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => void copyInviteLink()}
                             className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-900 hover:bg-gray-50"
                           >
                             Copy invite link
                           </button>
+                          {shareCopied ? (
+                            <span className="text-xs font-medium text-emerald-700">Share ready</span>
+                          ) : null}
                           {inviteCopied ? (
                             <span className="text-xs font-medium text-emerald-700">Link copied</span>
                           ) : null}

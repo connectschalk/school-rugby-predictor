@@ -21,18 +21,21 @@ export default function PoolLogo({ logoUrl, name, size = 'md', className = '' }:
   const letterColour = pickAvatarLetterTextColor(DEFAULT_AVATAR_COLOUR)
   const alt = `${name} logo`
 
+  const sizeClass = size === 'xl' ? XL_RESPONSIVE_CLASS : ''
+  const sizeStyle = size === 'xl' ? undefined : { width: pixels, height: pixels }
+  const frameClass = `inline-flex shrink-0 overflow-hidden rounded-xl border border-slate-200 shadow-sm ${sizeClass} ${className}`
+
   if (showImage) {
     return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={logoUrl!}
-        alt={alt}
-        onError={() => setImageFailed(true)}
-        className={`shrink-0 rounded-xl border border-slate-200 bg-white object-contain p-1 shadow-sm ${
-          size === 'xl' ? XL_RESPONSIVE_CLASS : ''
-        } ${className}`}
-        style={size === 'xl' ? undefined : { width: pixels, height: pixels }}
-      />
+      <div className={frameClass} style={sizeStyle}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={logoUrl!}
+          alt={alt}
+          onError={() => setImageFailed(true)}
+          className="h-full w-full object-cover"
+        />
+      </div>
     )
   }
 
@@ -40,15 +43,14 @@ export default function PoolLogo({ logoUrl, name, size = 'md', className = '' }:
     <span
       role="img"
       aria-label={alt}
-      className={`inline-flex shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-100 font-black uppercase shadow-sm ${
-        size === 'xl' ? `${XL_RESPONSIVE_CLASS} text-2xl md:text-4xl` : 'text-xs'
-      } ${className}`}
+      className={`${frameClass} items-center justify-center bg-slate-100 font-black uppercase ${
+        size === 'xl' ? 'text-2xl md:text-4xl' : 'text-xs'
+      }`}
       style={
         size === 'xl'
           ? { color: letterColour, backgroundColor: DEFAULT_AVATAR_COLOUR }
           : {
-              width: pixels,
-              height: pixels,
+              ...sizeStyle,
               color: letterColour,
               backgroundColor: DEFAULT_AVATAR_COLOUR,
               fontSize: Math.max(10, Math.round(pixels * 0.38)),

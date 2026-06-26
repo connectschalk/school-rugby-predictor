@@ -65,6 +65,7 @@ import {
   type PoolPreviewMatch,
 } from '@/lib/pool-creation-preview'
 import { buildPoolJoinPath } from '@/lib/pool-invite-path'
+import { buildPoolSharePayload, sharePoolInvite } from '@/lib/pool-share'
 import {
   formatPoolJoinCodeDisplay,
   validatePoolJoinCodeInput,
@@ -102,6 +103,7 @@ export default function ManagePoolsPage() {
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
   const [inviteCopied, setInviteCopied] = useState(false)
+  const [shareCopied, setShareCopied] = useState(false)
   const [codeCopied, setCodeCopied] = useState(false)
 
   const [myPools, setMyPools] = useState<PoolRow[]>([])
@@ -883,6 +885,20 @@ export default function ManagePoolsPage() {
     }
   }
 
+  async function shareInviteLink() {
+    if (!selectedPool || typeof window === 'undefined' || !user) return
+    const url = `${window.location.origin}${buildPoolJoinPath(selectedPool.invite_token, user.id, SCHOOLS_COMPETITION_SLUG)}`
+    const payload = buildPoolSharePayload(selectedPool.name, 'NextPlay Schools', url)
+    const result = await sharePoolInvite(payload)
+    if (result === 'shared' || result === 'copied') {
+      setShareCopied(true)
+      return
+    }
+    if (result === 'failed') {
+      setMessage('Could not share invite. Try copying the link instead.')
+    }
+  }
+
   async function copyJoinCode() {
     if (!selectedPool?.join_code || typeof window === 'undefined') return
     try {
@@ -1331,8 +1347,16 @@ export default function ManagePoolsPage() {
                 {codeCopied ? <span className="text-sm font-medium text-emerald-800">Pool code copied.</span> : null}
                 <button
                   type="button"
-                  onClick={() => void copyInviteLink()}
+                  onClick={() => void shareInviteLink()}
                   className="rounded-xl border border-gray-900 bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-black"
+                >
+                  Share pool
+                </button>
+                {shareCopied ? <span className="text-sm font-medium text-emerald-800">Share ready.</span> : null}
+                <button
+                  type="button"
+                  onClick={() => void copyInviteLink()}
+                  className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-900 transition hover:bg-gray-50"
                 >
                   Copy invite link
                 </button>

@@ -104,6 +104,9 @@ export async function buildPoolShareMetadata(
   return {
     title,
     description,
+    alternates: {
+      canonical: pageUrl,
+    },
     openGraph: {
       title,
       description,
@@ -113,6 +116,7 @@ export async function buildPoolShareMetadata(
       images: [
         {
           url: ogImageUrl,
+          secureUrl: ogImageUrl,
           width: 1200,
           height: 630,
           alt: `${pool.name} — ${PLATFORM_LOGO_ALT}`,
@@ -124,7 +128,7 @@ export async function buildPoolShareMetadata(
       card: 'summary_large_image',
       title,
       description,
-      images: [ogImageUrl],
+      images: [{ url: ogImageUrl, alt: `${pool.name} — ${PLATFORM_LOGO_ALT}` }],
     },
   }
 }
