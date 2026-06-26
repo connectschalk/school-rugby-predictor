@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
-import StoryDetailView from '@/components/memory-map/StoryDetailView'
+import StoryDetailPageClient from '@/components/memory-map/StoryDetailPageClient'
+import MemoryMapVisibilityGate from '@/components/memory-map/MemoryMapVisibilityGate'
 import { fetchMemoryMapBundleBySlug } from '@/lib/memory-map/queries'
 
 type Props = { params: Promise<{ mapSlug: string; storyId: string }> }
@@ -11,8 +12,9 @@ export default async function MemoryMapStoryPage({ params }: Props) {
   const bundle = await fetchMemoryMapBundleBySlug(mapSlug)
   if (!bundle) notFound()
 
-  const story = bundle.stories.find((s) => s.id === storyId)
-  if (!story || story.status !== 'approved') notFound()
-
-  return <StoryDetailView bundle={bundle} story={story} />
+  return (
+    <MemoryMapVisibilityGate bundle={bundle} returnPath={`/memory-map/${mapSlug}/story/${storyId}`}>
+      <StoryDetailPageClient publicBundle={bundle} storyId={storyId} mapSlug={mapSlug} />
+    </MemoryMapVisibilityGate>
+  )
 }

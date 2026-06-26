@@ -15,7 +15,10 @@ export default function MemoryPinMarker({ pin, onClick, style }: Props) {
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
       className="absolute -translate-x-1/2 -translate-y-1/2"
       style={style}
       aria-label={pin.title}

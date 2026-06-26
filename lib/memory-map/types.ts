@@ -152,3 +152,32 @@ export type AdminTab =
   | 'sponsor'
   | 'share'
   | 'audit'
+
+export type MemoryMapMember = {
+  id: string
+  memory_map_id: string
+  user_id: string
+  role: MemberRole
+  status: MemberStatus
+  relationship: string | null
+  request_message: string | null
+  approved_at: string | null
+}
+
+export type MemoryAuditLog = {
+  id: string
+  memory_map_id: string
+  actor_user_id: string | null
+  action_type: string
+  entity_type: string
+  entity_id: string | null
+  reason: string | null
+  created_at: string
+}
+
+export type MapPlacement = {
+  lat?: number | null
+  lng?: number | null
+  x?: number | null
+  y?: number | null
+}

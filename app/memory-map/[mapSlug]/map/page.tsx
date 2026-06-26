@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import MemoryMapViewer from '@/components/memory-map/MemoryMapViewer'
+import MemoryMapVisibilityGate from '@/components/memory-map/MemoryMapVisibilityGate'
 import { fetchMemoryMapBundleBySlug } from '@/lib/memory-map/queries'
 
 type Props = {
@@ -15,5 +16,9 @@ export default async function MemoryMapViewPage({ params, searchParams }: Props)
   const bundle = await fetchMemoryMapBundleBySlug(mapSlug)
   if (!bundle) notFound()
 
-  return <MemoryMapViewer bundle={bundle} initialAreaId={area ?? null} />
+  return (
+    <MemoryMapVisibilityGate bundle={bundle} returnPath={`/memory-map/${mapSlug}/map`}>
+      <MemoryMapViewer bundle={bundle} initialAreaId={area ?? null} />
+    </MemoryMapVisibilityGate>
+  )
 }

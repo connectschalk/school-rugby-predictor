@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { attachStoryMediaAndTags } from '@/lib/memory-map/client-queries'
 import { DEMO_MAP_SLUG } from '@/lib/memory-map/constants'
 import { DEMO_MEMORY_MAP_BUNDLE, enrichBundle, getDemoBundle } from '@/lib/memory-map/demo-data'
 import type { MemoryMap, MemoryMapBundle, MemoryStory } from '@/lib/memory-map/types'
@@ -49,9 +50,12 @@ export async function fetchMemoryMapBundleBySlug(slug: string): Promise<MemoryMa
           (
             await client.from('memory_pins').select('id').eq('status', 'approved')
           ).data?.map((p: { id: string }) => p.id) ?? []
-        ),
+        )
+        .eq('status', 'approved'),
       client.from('memory_tags').select('id, name').eq('memory_map_id', mapId),
     ])
+
+    const stories = await attachStoryMediaAndTags(client, (storiesRes.data ?? []) as MemoryStory[])
 
     const org = map.organisations as Record<string, unknown> | null
     const bundle: MemoryMapBundle = {
@@ -93,7 +97,7 @@ export async function fetchMemoryMapBundleBySlug(slug: string): Promise<MemoryMa
       areas: (areasRes.data ?? []) as MemoryMapBundle['areas'],
       categories: (categoriesRes.data ?? []) as MemoryMapBundle['categories'],
       pins: (pinsRes.data ?? []) as MemoryMapBundle['pins'],
-      stories: ((storiesRes.data ?? []) as MemoryStory[]).filter((s) => s.status === 'approved'),
+      stories,
       tags: (tagsRes.data ?? []) as MemoryMapBundle['tags'],
     }
 

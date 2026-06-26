@@ -33,3 +33,33 @@
 .mm-accent {
   color: var(--mm-accent, #ffd400);
 }
+
+.mm-sheet-handle {
+  touch-action: none;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .mm-poster,
+  .mm-poster * {
+    visibility: visible;
+  }
+  .mm-poster {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 100%;
+    border: none;
+    background: white;
+    color: black;
+  }
+}
+
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
