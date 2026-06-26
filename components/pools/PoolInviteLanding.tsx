@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { User } from '@supabase/supabase-js'
 import LetterAvatar from '@/components/LetterAvatar'
+import PoolLogo from '@/components/pools/PoolLogo'
 import { competitionLogoSrc } from '@/lib/competition-branding'
 import {
   buildPoolJoinPath,
@@ -227,9 +228,12 @@ export default function PoolInviteLanding({ inviteToken, routeCompetitionSlug }:
           Join {pool.competition_name}
         </h1>
 
-        <div className="mt-8 rounded-2xl border border-gray-200 bg-gray-50/80 px-4 py-5 text-center">
-          <p className="text-lg font-bold text-gray-900">{pool.name}</p>
-          <p className="mt-3 text-sm text-gray-700">{inviterLine}</p>
+        <div className="mt-8 rounded-2xl border border-gray-200 bg-gray-50/80 px-4 py-6 text-center">
+          <div className="flex flex-col items-center gap-3">
+            <PoolLogo logoUrl={pool.logo_url} name={pool.name} size="xl" />
+            <p className="text-lg font-bold text-gray-900">{pool.name}</p>
+          </div>
+          <p className="mt-4 text-sm text-gray-700">{inviterLine}</p>
           {showInviterAvatar ? (
             <div className="mt-4 flex justify-center">
               <LetterAvatar
