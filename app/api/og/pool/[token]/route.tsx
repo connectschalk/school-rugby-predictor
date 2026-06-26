@@ -9,10 +9,8 @@ import { getPublicSiteUrl } from '@/lib/site-url'
 export const runtime = 'edge'
 
 const OG_CACHE_CONTROL = 'public, max-age=300, s-maxage=300, stale-while-revalidate=86400'
-const RED = '#ef4444'
 const TEXT = '#111827'
 const MUTED = '#6b7280'
-const SITE_HOST = 'thenextplay.co.za'
 
 type PoolOgPayload = {
   poolName: string
@@ -22,8 +20,8 @@ type PoolOgPayload = {
   hasPool: boolean
 }
 
-const BRAND_LOGO_WIDTH = 280
-const BRAND_LOGO_HEIGHT = 71
+const BRAND_LOGO_WIDTH = 560
+const BRAND_LOGO_HEIGHT = 142
 const POOL_LOGO_SIZE = 100
 const POOL_LOGO_RADIUS = 16
 
@@ -96,7 +94,14 @@ function PoolOgCard({ payload }: { payload: PoolOgPayload }) {
         padding: '48px 64px',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center' }}>
+      <div
+        style={{
+          display: 'flex',
+          width: '100%',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
         {brandLogoSrc ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -107,7 +112,9 @@ function PoolOgCard({ payload }: { payload: PoolOgPayload }) {
             style={{ objectFit: 'contain' }}
           />
         ) : (
-          <span style={{ fontSize: 40, fontWeight: 800, color: TEXT }}>{PLATFORM_NAME}</span>
+          <span style={{ fontSize: 56, fontWeight: 800, color: TEXT, textAlign: 'center' }}>
+            {PLATFORM_NAME}
+          </span>
         )}
       </div>
 
@@ -118,11 +125,9 @@ function PoolOgCard({ payload }: { payload: PoolOgPayload }) {
           flexDirection: 'column',
           justifyContent: 'center',
           gap: 16,
-          marginTop: 12,
+          marginTop: 20,
         }}
       >
-        <div style={{ width: 10, height: 10, borderRadius: 999, background: RED }} />
-
         <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
           <PoolLogoFrame poolLogoSrc={poolLogoSrc} initials={initials} show={hasPool} />
           <div
@@ -163,8 +168,6 @@ function PoolOgCard({ payload }: { payload: PoolOgPayload }) {
           Join the pool
         </div>
       </div>
-
-      <div style={{ fontSize: 18, fontWeight: 600, color: MUTED }}>{SITE_HOST}</div>
     </div>
   )
 }
