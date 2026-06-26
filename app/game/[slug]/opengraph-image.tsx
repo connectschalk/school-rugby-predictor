@@ -3,7 +3,7 @@ import { fetchOneMatchOgBySlug, formatOneMatchKickoffOg } from '@/lib/one-match-
 import { normalizeOneMatchSlug } from '@/lib/one-match-challenge-lookup'
 import { fetchImageAsDataUrl } from '@/lib/og-image-data-url'
 import { getPublicSiteUrl } from '@/lib/site-url'
-import { PLATFORM_OG_IMAGE_SRC } from '@/lib/platform-branding'
+import { PLATFORM_LOGO_SRC } from '@/lib/platform-branding'
 
 export const runtime = 'edge'
 
@@ -282,7 +282,7 @@ async function buildMatchOgPayload(slug: string): Promise<MatchOgPayload> {
   const kickoff = match ? formatOneMatchKickoffOg(match.kickoff_time) : 'NextPlay Predictor'
 
   const [brandLogoSrc, homeLogoSrc, awayLogoSrc] = await Promise.all([
-    fetchImageAsDataUrl(`${base}${PLATFORM_OG_IMAGE_SRC}`),
+    fetchImageAsDataUrl(`${base}${PLATFORM_LOGO_SRC}`),
     match?.home_team_logo ? fetchImageAsDataUrl(match.home_team_logo) : Promise.resolve(null),
     match?.away_team_logo ? fetchImageAsDataUrl(match.away_team_logo) : Promise.resolve(null),
   ])
@@ -320,7 +320,7 @@ function renderOgImage(payload: MatchOgPayload) {
 
 async function buildBrandedFallbackPayload(): Promise<MatchOgPayload> {
   const base = getPublicSiteUrl()
-  const brandLogoSrc = await fetchImageAsDataUrl(`${base}${PLATFORM_OG_IMAGE_SRC}`)
+  const brandLogoSrc = await fetchImageAsDataUrl(`${base}${PLATFORM_LOGO_SRC}`)
   return {
     home: '',
     away: '',

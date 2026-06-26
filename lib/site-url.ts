@@ -1,3 +1,5 @@
+import { buildPoolJoinPath } from '@/lib/pool-invite-path'
+
 /** Canonical public site when `NEXT_PUBLIC_SITE_URL` is unset (not the Vercel preview URL). */
 export const DEFAULT_PUBLIC_SITE_URL = 'https://thenextplay.co.za'
 
@@ -23,4 +25,21 @@ export function absoluteOneMatchChallengeUrl(slug: string): string {
 /** Absolute OG image URL for crawlers (Facebook, WhatsApp, Twitter). */
 export function absoluteOneMatchOgImageUrl(slug: string): string {
   return `${getPublicSiteUrl()}/game/${encodeURIComponent(slug.trim())}/opengraph-image`
+}
+
+/** Absolute pool invite OG image URL; optional version busts WhatsApp cache when logo changes. */
+export function absolutePoolOgImageUrl(token: string, version?: string | number): string {
+  const t = encodeURIComponent(token.trim())
+  const base = `${getPublicSiteUrl()}/api/og/pool/${t}`
+  if (version == null || version === '') return base
+  return `${base}?v=${encodeURIComponent(String(version))}`
+}
+
+/** Canonical absolute pool join URL for share metadata. */
+export function absolutePoolJoinUrl(
+  competitionSlug: string,
+  token: string,
+  fromUserId?: string | null
+): string {
+  return `${getPublicSiteUrl()}${buildPoolJoinPath(token, fromUserId, competitionSlug)}`
 }

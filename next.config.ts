@@ -12,6 +12,10 @@ const nextConfig: NextConfig = {
         source: '/game/:slug/opengraph-image',
         headers: [{ key: 'Cache-Control', value: OG_IMAGE_CACHE }],
       },
+      {
+        source: '/api/og/pool/:token',
+        headers: [{ key: 'Cache-Control', value: OG_IMAGE_CACHE }],
+      },
     ]
   },
   async redirects() {

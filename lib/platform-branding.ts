@@ -7,16 +7,16 @@ export const PLATFORM_NAME = 'NextPlay Predictor'
 /** Black wordmark on light/transparent — header, auth, exports. */
 export const PLATFORM_LOGO_SRC = '/nextplay-predictor.png'
 
-/** Square P mark — WhatsApp, Facebook, LinkedIn, X, iMessage Open Graph. */
-export const PLATFORM_OG_IMAGE_SRC = '/nextplay-predictor-logo.png'
+/** Wordmark / full logo for Open Graph (1200×630 via /opengraph-image). */
+export const PLATFORM_OG_IMAGE_SRC = '/opengraph-image'
+
+export const PLATFORM_OG_IMAGE_WIDTH = 1200
+export const PLATFORM_OG_IMAGE_HEIGHT = 630
 
 /** P mark for admin avatars and predictor position on community voting charts. */
 export const ADMIN_AVATAR_SRC = '/admin-avatar.png'
 
-export const PLATFORM_PREDICTOR_MARK_SRC = PLATFORM_OG_IMAGE_SRC
-
-export const PLATFORM_OG_IMAGE_WIDTH = 374
-export const PLATFORM_OG_IMAGE_HEIGHT = 406
+export const PLATFORM_PREDICTOR_MARK_SRC = '/nextplay-predictor-logo.png'
 
 /** White wordmark on dark — landing hero. */
 export const PLATFORM_LOGO_LANDING_DARK_SRC = '/nextplay-predictor-landing-dark.png'
