@@ -10,6 +10,7 @@ import PoolLogo from '@/components/pools/PoolLogo'
 import PoolCreateScopeModal from '@/components/pools/PoolCreateScopeModal'
 import PoolCreateSelectTeamsModal from '@/components/pools/PoolCreateSelectTeamsModal'
 import PoolTeamPicker from '@/components/pools/PoolTeamPicker'
+import PoolVisibilitySetting from '@/components/pools/PoolVisibilitySetting'
 import ProvinceLogoMark from '@/components/ProvinceLogoMark'
 import CompetitionTeamLogo from '@/components/CompetitionTeamLogo'
 import { fetchUserIsAdmin } from '@/lib/admin-access'
@@ -43,6 +44,7 @@ import {
   isPoolJoinRequestAlreadySentError,
   searchPublicPools,
   setPoolGroups,
+  updatePoolVisibility,
   fetchGameMatchGroupLinksForGroups,
   fetchFixtureGroupTeamsForGroups,
   fetchFixtureGroupAliasesMap,
@@ -155,6 +157,7 @@ export default function ManagePoolsPage() {
   const [editPoolTeamNames, setEditPoolTeamNames] = useState<string[]>([])
   const [poolTeamsRows, setPoolTeamsRows] = useState<PoolTeamRow[]>([])
   const [savingPoolTeams, setSavingPoolTeams] = useState(false)
+  const [savingVisibility, setSavingVisibility] = useState(false)
   const [createClientGraph, setCreateClientGraph] = useState<PoolPreviewGraph | null>(null)
   const [teamsModalOpen, setTeamsModalOpen] = useState(false)
   const [scopeModalOpen, setScopeModalOpen] = useState(false)
@@ -707,6 +710,23 @@ export default function ManagePoolsPage() {
     () => mergePoolPreviewSources(editPreview, clientEditPreview),
     [editPreview, clientEditPreview]
   )
+
+  async function onTogglePoolVisibility(isPublic: boolean) {
+    if (!selectedPoolId || !canManageSelectedPool) return
+    setSavingVisibility(true)
+    setMessage('')
+    try {
+      const { pool, error } = await updatePoolVisibility(supabase, selectedPoolId, isPublic)
+      if (error || !pool) {
+        setMessage(error?.message ?? 'Could not update pool visibility.')
+        return
+      }
+      setMyPools((prev) => prev.map((p) => (p.id === pool.id ? pool : p)))
+      setMessage(pool.is_public ? 'Pool is now public.' : 'Pool is now private.')
+    } finally {
+      setSavingVisibility(false)
+    }
+  }
 
   async function onCreatePool() {
     const nameTrim = createName.trim()
@@ -1331,6 +1351,18 @@ export default function ManagePoolsPage() {
           ) : (
             <>
               <h2 className="text-lg font-black text-gray-900">{selectedPool.name}</h2>
+
+              <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50/80 p-4">
+                <h3 className="text-xs font-black uppercase tracking-wide text-gray-600">Pool visibility</h3>
+                <div className="mt-2">
+                  <PoolVisibilitySetting
+                    isPublic={selectedPool.is_public}
+                    saving={savingVisibility}
+                    onChange={(next) => void onTogglePoolVisibility(next)}
+                  />
+                </div>
+              </div>
+
               <div className="mt-3 flex flex-wrap items-center gap-3">
                 {selectedPool.join_code ? (
                   <span className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-bold uppercase tracking-wide text-gray-800">

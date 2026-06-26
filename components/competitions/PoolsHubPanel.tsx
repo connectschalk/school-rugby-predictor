@@ -16,6 +16,7 @@ import DeletePoolConfirmModal from '@/components/pools/DeletePoolConfirmModal'
 import PoolInformationModal from '@/components/pools/PoolInformationModal'
 import PoolLogo from '@/components/pools/PoolLogo'
 import PoolLogoUploadSection from '@/components/pools/PoolLogoUploadSection'
+import PoolVisibilitySetting from '@/components/pools/PoolVisibilitySetting'
 import PoolPicksSection from '@/components/pools/PoolPicksSection'
 import PoolPredictTabSection from '@/components/pools/PoolPredictTabSection'
 import { buildLoginHref } from '@/lib/auth-return-path'
@@ -39,6 +40,7 @@ import {
   removePoolMember,
   requestJoinPool,
   searchPublicPools,
+  updatePoolVisibility,
   upsertPoolMatches,
   MAX_POOLS_PER_COMPETITION,
   POOL_CREATION_LIMIT_MESSAGE,
@@ -154,6 +156,7 @@ function PoolsPageContent({
   const [breakdownTarget, setBreakdownTarget] = useState<SoccerScoringBreakdownTarget | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deletingPool, setDeletingPool] = useState(false)
+  const [savingVisibility, setSavingVisibility] = useState(false)
   const [isUserAdmin, setIsUserAdmin] = useState(false)
   const [activePoolView, setActivePoolView] = useState<'my-pools' | 'join' | 'create'>('my-pools')
   const showManagement = competitionMode === 'official_fixed_fixtures'
@@ -623,6 +626,23 @@ function PoolsPageContent({
     }
     setMessage('Member removed from pool.')
     await loadPoolDetails()
+  }
+
+  async function onTogglePoolVisibility(isPublic: boolean) {
+    if (!selectedPoolId || !canManagePool) return
+    setSavingVisibility(true)
+    setMessage('')
+    try {
+      const { pool, error } = await updatePoolVisibility(supabase, selectedPoolId, isPublic)
+      if (error || !pool) {
+        setMessage(error?.message ?? 'Could not update pool visibility.')
+        return
+      }
+      handlePoolLogoUpdated(pool)
+      setMessage(pool.is_public ? 'Pool is now public.' : 'Pool is now private.')
+    } finally {
+      setSavingVisibility(false)
+    }
   }
 
   async function onConfirmDeletePool() {
@@ -1204,6 +1224,19 @@ function PoolsPageContent({
                         canManagePool={canManagePool}
                         onPoolUpdated={handlePoolLogoUpdated}
                       />
+
+                      <section>
+                        <h3 className="text-xs font-black uppercase tracking-wide text-gray-500">
+                          Pool visibility
+                        </h3>
+                        <div className="mt-2">
+                          <PoolVisibilitySetting
+                            isPublic={selectedPool.is_public}
+                            saving={savingVisibility}
+                            onChange={(next) => void onTogglePoolVisibility(next)}
+                          />
+                        </div>
+                      </section>
 
                       <section>
                         <h3 className="text-xs font-black uppercase tracking-wide text-gray-500">Pool code</h3>

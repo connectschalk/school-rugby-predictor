@@ -540,6 +540,20 @@ export async function deletePool(client: SupabaseClient, poolId: string) {
   return { error }
 }
 
+export async function updatePoolVisibility(
+  client: SupabaseClient,
+  poolId: string,
+  isPublic: boolean
+): Promise<{ pool: PoolRow | null; error: Error | null }> {
+  const { data, error } = await client.rpc('update_pool_visibility', {
+    p_pool_id: poolId,
+    p_is_public: isPublic,
+  })
+  if (error) return { pool: null, error: new Error(error.message) }
+  if (!data) return { pool: null, error: new Error('Could not update pool visibility.') }
+  return { pool: normalizePoolRow(data as Record<string, unknown>), error: null }
+}
+
 export async function fetchFixtureGroups(client: SupabaseClient) {
   const { data, error } = await client
     .from('fixture_groups')
