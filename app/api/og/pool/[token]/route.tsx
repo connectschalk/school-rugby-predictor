@@ -20,8 +20,10 @@ type PoolOgPayload = {
   hasPool: boolean
 }
 
-const BRAND_LOGO_WIDTH = 560
-const BRAND_LOGO_HEIGHT = 142
+/** 2× prior 560×142 wordmark, capped to padded content width (1200 − 64×2). */
+const BRAND_LOGO_WIDTH = 1072
+const BRAND_LOGO_HEIGHT = 271
+const CONTENT_GAP_BELOW_BRAND = 28
 const POOL_LOGO_SIZE = 100
 const POOL_LOGO_RADIUS = 16
 
@@ -94,14 +96,7 @@ function PoolOgCard({ payload }: { payload: PoolOgPayload }) {
         padding: '48px 64px',
       }}
     >
-      <div
-        style={{
-          display: 'flex',
-          width: '100%',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
+      <div style={{ display: 'flex', alignItems: 'flex-start' }}>
         {brandLogoSrc ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -112,9 +107,7 @@ function PoolOgCard({ payload }: { payload: PoolOgPayload }) {
             style={{ objectFit: 'contain' }}
           />
         ) : (
-          <span style={{ fontSize: 56, fontWeight: 800, color: TEXT, textAlign: 'center' }}>
-            {PLATFORM_NAME}
-          </span>
+          <span style={{ fontSize: 72, fontWeight: 800, color: TEXT }}>{PLATFORM_NAME}</span>
         )}
       </div>
 
@@ -123,9 +116,9 @@ function PoolOgCard({ payload }: { payload: PoolOgPayload }) {
           display: 'flex',
           flex: 1,
           flexDirection: 'column',
-          justifyContent: 'center',
+          justifyContent: 'flex-start',
           gap: 16,
-          marginTop: 20,
+          marginTop: CONTENT_GAP_BELOW_BRAND,
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
