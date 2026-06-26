@@ -171,6 +171,9 @@ $$;
 revoke all on function public.my_pools() from public;
 grant execute on function public.my_pools() to authenticated;
 
+drop function if exists public.get_pool_by_invite_token(text, uuid);
+drop function if exists public.get_pool_invite_by_token(text, uuid);
+
 create or replace function public.get_pool_invite_by_token(
   p_token text,
   p_invited_by uuid default null
