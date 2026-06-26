@@ -91,6 +91,7 @@ function PoolOgCard({ payload }: { payload: PoolOgPayload }) {
           style={{
             display: 'flex',
             alignItems: 'center',
+            alignSelf: 'flex-start',
             marginTop: 8,
             borderRadius: 999,
             background: '#111827',
@@ -98,7 +99,6 @@ function PoolOgCard({ payload }: { payload: PoolOgPayload }) {
             padding: '14px 28px',
             fontSize: 22,
             fontWeight: 700,
-            width: 'fit-content',
           }}
         >
           Join the pool

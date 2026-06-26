@@ -1,7 +1,7 @@
 import { buildPoolJoinPath } from '@/lib/pool-invite-path'
 
 /** Canonical public site when `NEXT_PUBLIC_SITE_URL` is unset (not the Vercel preview URL). */
-export const DEFAULT_PUBLIC_SITE_URL = 'https://thenextplay.co.za'
+export const DEFAULT_PUBLIC_SITE_URL = 'https://www.thenextplay.co.za'
 
 /**
  * Base URL for share links and emails (no trailing slash).
