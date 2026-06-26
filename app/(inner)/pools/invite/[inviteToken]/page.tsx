@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { buildPoolShareMetadata } from '@/lib/pool-og'
+import { buildPoolShareFallbackMetadata, buildPoolShareMetadata } from '@/lib/pool-og'
 import PoolInviteAliasClient from './PoolInviteAliasClient'
 
 export const dynamic = 'force-dynamic'
@@ -10,9 +10,14 @@ type Props = {
 }
 
 export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
-  const { inviteToken } = await params
-  const { from } = await searchParams
-  return buildPoolShareMetadata(inviteToken, { from })
+  try {
+    const { inviteToken } = await params
+    const { from } = await searchParams
+    return await buildPoolShareMetadata(inviteToken ?? '', { from })
+  } catch (err) {
+    console.error('[pool-invite-alias] generateMetadata failed', err)
+    return buildPoolShareFallbackMetadata()
+  }
 }
 
 export default function PoolInviteAliasPage() {

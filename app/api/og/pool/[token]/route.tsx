@@ -1,9 +1,6 @@
 import { ImageResponse } from 'next/og'
-import {
-  buildPoolShareDescription,
-  fetchPoolInviteForOg,
-  normalizePoolInviteToken,
-} from '@/lib/pool-og'
+import { buildPoolShareDescription, normalizePoolInviteToken } from '@/lib/pool-og'
+import { fetchPoolInviteForOg } from '@/lib/pool-invite-server'
 import { poolLogoInitials } from '@/lib/pool-logo'
 import { fetchImageAsDataUrl } from '@/lib/og-image-data-url'
 import { PLATFORM_LOGO_SRC, PLATFORM_NAME } from '@/lib/platform-branding'

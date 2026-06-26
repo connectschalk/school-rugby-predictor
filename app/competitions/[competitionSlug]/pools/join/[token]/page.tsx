@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { buildPoolShareMetadata } from '@/lib/pool-og'
+import { buildPoolShareFallbackMetadata, buildPoolShareMetadata } from '@/lib/pool-og'
 import CompetitionPoolJoinClient from './PoolJoinClient'
 
 export const dynamic = 'force-dynamic'
@@ -10,9 +10,14 @@ type Props = {
 }
 
 export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
-  const { competitionSlug, token } = await params
-  const { from } = await searchParams
-  return buildPoolShareMetadata(token, { competitionSlug, from })
+  try {
+    const { competitionSlug, token } = await params
+    const { from } = await searchParams
+    return await buildPoolShareMetadata(token ?? '', { competitionSlug, from })
+  } catch (err) {
+    console.error('[pool-join] generateMetadata failed', err)
+    return buildPoolShareFallbackMetadata()
+  }
 }
 
 export default function CompetitionPoolJoinPage() {
