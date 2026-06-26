@@ -347,7 +347,7 @@ export type PoolInviteViewerState = {
   has_pending_request: boolean
 }
 
-function parsePoolInviteRow(raw: Record<string, unknown>): PoolInvitePreview {
+export function parsePoolInviteRow(raw: Record<string, unknown>): PoolInvitePreview {
   const kindRaw = String(raw.inviter_kind ?? 'anonymous')
   const inviter_kind = kindRaw === 'sharer' || kindRaw === 'admin' ? kindRaw : 'anonymous'
   return {

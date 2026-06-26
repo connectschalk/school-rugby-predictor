@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
 import LetterAvatar from '@/components/LetterAvatar'
 import DeletePoolConfirmModal from '@/components/pools/DeletePoolConfirmModal'
+import PoolLogo from '@/components/pools/PoolLogo'
 import PoolCreateScopeModal from '@/components/pools/PoolCreateScopeModal'
 import PoolCreateSelectTeamsModal from '@/components/pools/PoolCreateSelectTeamsModal'
 import PoolTeamPicker from '@/components/pools/PoolTeamPicker'
@@ -1278,6 +1279,7 @@ export default function ManagePoolsPage() {
                 className={`w-full rounded-xl border px-3 py-2 text-left ${p.id === selectedPoolId ? 'border-gray-900 bg-gray-100' : 'border-gray-200'}`}
               >
                 <div className="flex items-center gap-2">
+                  <PoolLogo logoUrl={p.logo_url} name={p.name} size="sm" />
                   <span className="text-sm font-semibold text-gray-900">{p.name}</span>
                   {p.admin_user_id === user.id ? <span className="rounded-full border border-gray-300 px-2 py-0.5 text-[10px] font-semibold text-gray-700">Admin</span> : null}
                 </div>
