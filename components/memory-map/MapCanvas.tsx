@@ -1,0 +1,73 @@
+'use client'
+
+import type { MemoryArea, MemoryPin } from '@/lib/memory-map/types'
+import MemoryPinMarker from '@/components/memory-map/MemoryPinMarker'
+
+type Props = {
+  area: MemoryArea
+  pins: MemoryPin[]
+  mode: 'geo' | 'image'
+  onPinClick: (pin: MemoryPin) => void
+}
+
+function geoToPercent(lat: number, lng: number, area: MemoryArea): { left: string; top: string } {
+  const centreLat = area.centre_lat ?? -33.925
+  const centreLng = area.centre_lng ?? 18.425
+  const dx = (lng - centreLng) * 12000
+  const dy = (lat - centreLat) * -12000
+  const left = `${Math.min(95, Math.max(5, 50 + dx))}%`
+  const top = `${Math.min(95, Math.max(5, 50 + dy))}%`
+  return { left, top }
+}
+
+export default function MapCanvas({ area, pins, mode, onPinClick }: Props) {
+  const isImage = mode === 'image' || area.map_type === 'image'
+
+  return (
+    <div className="relative mx-4 mb-4 aspect-[4/3] overflow-hidden rounded-2xl border border-white/10 bg-[#0a1628]">
+      {isImage ? (
+        <div
+          className="absolute inset-0 bg-cover bg-center opacity-90"
+          style={{
+            backgroundImage: area.map_image_url
+              ? `url(${area.map_image_url})`
+              : 'linear-gradient(135deg, #1e293b 0%, #0f172a 50%, #14532d 100%)',
+          }}
+        />
+      ) : (
+        <div
+          className="absolute inset-0"
+          style={{
+            backgroundImage:
+              'linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px)',
+            backgroundSize: '24px 24px',
+            backgroundColor: '#0b1220',
+          }}
+        />
+      )}
+
+      {!isImage ? (
+        <div className="absolute left-3 top-3 rounded-full bg-black/50 px-2 py-1 text-[10px] font-semibold text-white/80">
+          Geo preview
+        </div>
+      ) : null}
+
+      {pins.map((pin) => {
+        const pos = isImage
+          ? { left: `${pin.x_position ?? 50}%`, top: `${pin.y_position ?? 50}%` }
+          : pin.lat != null && pin.lng != null
+            ? geoToPercent(pin.lat, pin.lng, area)
+            : { left: '50%', top: '50%' }
+
+        return (
+          <MemoryPinMarker
+            key={pin.id}
+            pin={pin}
+            onClick={() => onPinClick(pin)}
+            style={{ left: pos.left, top: pos.top }}
+          />
+        )
+      })}
+    </div>
+  )
+}

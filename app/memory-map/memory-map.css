@@ -1,0 +1,35 @@
+/* NextPlay Memory Map — scoped dark theme (does not affect main app) */
+
+.mm-root {
+  min-height: 100dvh;
+  background: var(--mm-bg, #05080d);
+  color: var(--mm-text, #fff);
+}
+
+.mm-surface {
+  background: var(--mm-surface, #0d1117);
+}
+
+.mm-card {
+  background: var(--mm-surface-card, #111827);
+  border: 1px solid var(--mm-border, rgba(255, 255, 255, 0.12));
+}
+
+.mm-muted {
+  color: var(--mm-muted, #9ca3af);
+}
+
+.mm-btn-primary {
+  background: var(--mm-primary, #ffd400);
+  color: var(--mm-primary-text, #050505);
+}
+
+.mm-btn-secondary {
+  background: var(--mm-secondary, transparent);
+  color: var(--mm-secondary-text, #fff);
+  border: 1px solid var(--mm-border, rgba(255, 255, 255, 0.12));
+}
+
+.mm-accent {
+  color: var(--mm-accent, #ffd400);
+}
