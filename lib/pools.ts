@@ -24,6 +24,9 @@ export type PoolRow = {
   join_code: string
   is_closed: boolean
   competition_id?: string | null
+  logo_url?: string | null
+  logo_path?: string | null
+  logo_updated_at?: string | null
   created_at: string
   updated_at: string
 }
@@ -130,6 +133,9 @@ function normalizePoolRow(data: Record<string, unknown>): PoolRow {
     join_code: String(data.join_code ?? '').trim().toLowerCase(),
     is_closed: Boolean(data.is_closed),
     competition_id: data.competition_id != null ? String(data.competition_id) : null,
+    logo_url: data.logo_url == null ? null : String(data.logo_url),
+    logo_path: data.logo_path == null ? null : String(data.logo_path),
+    logo_updated_at: data.logo_updated_at == null ? null : String(data.logo_updated_at),
     created_at: String(data.created_at ?? ''),
     updated_at: String(data.updated_at ?? ''),
   }
@@ -287,6 +293,9 @@ export async function fetchMyPools(
     join_code: String(row.join_code ?? '').trim().toLowerCase(),
     is_closed: row.is_closed,
     competition_id: row.competition_id != null ? String(row.competition_id) : null,
+    logo_url: row.logo_url == null ? null : String(row.logo_url),
+    logo_path: row.logo_path == null ? null : String(row.logo_path),
+    logo_updated_at: row.logo_updated_at == null ? null : String(row.logo_updated_at),
     created_at: row.created_at,
     updated_at: row.updated_at,
   }))
@@ -322,6 +331,7 @@ export type PoolInvitePreview = {
   competition_slug: string
   competition_name: string
   competition_logo_url: string | null
+  logo_url: string | null
   invite_token: string
   /** sharer = valid ?from= uuid; admin = pool admin profile; anonymous = no display names */
   inviter_kind: 'sharer' | 'admin' | 'anonymous'
@@ -350,6 +360,12 @@ function parsePoolInviteRow(raw: Record<string, unknown>): PoolInvitePreview {
     competition_name: String(raw.competition_name ?? 'NextPlay Schools'),
     competition_logo_url:
       raw.competition_logo_url == null ? null : String(raw.competition_logo_url),
+    logo_url:
+      raw.pool_logo_url != null
+        ? String(raw.pool_logo_url)
+        : raw.logo_url == null
+          ? null
+          : String(raw.logo_url),
     invite_token: String(raw.invite_token ?? ''),
     inviter_kind,
     inviter_display_name: raw.inviter_display_name == null ? null : String(raw.inviter_display_name),

@@ -13,6 +13,8 @@ import SoccerScoringBreakdownModal, {
 } from '@/components/competitions/SoccerScoringBreakdownModal'
 import SoccerLeaderboardPlayerButton from '@/components/competitions/SoccerLeaderboardPlayerButton'
 import DeletePoolConfirmModal from '@/components/pools/DeletePoolConfirmModal'
+import PoolLogo from '@/components/pools/PoolLogo'
+import PoolLogoUploadSection from '@/components/pools/PoolLogoUploadSection'
 import PoolPicksSection from '@/components/pools/PoolPicksSection'
 import PoolPredictTabSection from '@/components/pools/PoolPredictTabSection'
 import { buildLoginHref } from '@/lib/auth-return-path'
@@ -237,6 +239,10 @@ function PoolsPageContent({
     setMyMemberships(result.memberships)
     await loadPendingJoinState(activeUserId)
   }, [competitionId, loadPendingJoinState])
+
+  const handlePoolLogoUpdated = useCallback((updated: PoolRow) => {
+    setMyPools((prev) => prev.map((pool) => (pool.id === updated.id ? { ...pool, ...updated } : pool)))
+  }, [])
 
   loadPoolsRef.current = loadPools
 
@@ -817,6 +823,7 @@ function PoolsPageContent({
                   }`}
                 >
                   <div className="flex min-w-0 items-center gap-2">
+                    <PoolLogo logoUrl={pool.logo_url} name={pool.name} size="sm" />
                     <span className="min-w-0 truncate font-medium">{pool.name}</span>
                     {pool.admin_user_id === user.id ? (
                       <span className="rounded-full border border-gray-300 px-2 py-0.5 text-[10px] font-semibold text-gray-700">
@@ -844,6 +851,7 @@ function PoolsPageContent({
             <>
               <div className="flex min-w-0 max-w-full flex-wrap items-start justify-between gap-3">
                 <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                  <PoolLogo logoUrl={selectedPool.logo_url} name={selectedPool.name} size="md" />
                   <h2 className="min-w-0 break-words text-lg font-black text-gray-900">{selectedPool.name}</h2>
                   {selectedPool.admin_user_id === user.id ? (
                     <span className="shrink-0 rounded-full border border-gray-300 px-2 py-0.5 text-[10px] font-semibold text-gray-700">
@@ -1182,8 +1190,18 @@ function PoolsPageContent({
                     <div className="space-y-6 px-4 py-4 sm:px-5 sm:py-5">
                       <section>
                         <h3 className="text-xs font-black uppercase tracking-wide text-gray-500">Pool name</h3>
-                        <p className="mt-2 text-base font-semibold text-gray-900">{selectedPool.name}</p>
+                        <div className="mt-2 flex items-center gap-3">
+                          <PoolLogo logoUrl={selectedPool.logo_url} name={selectedPool.name} size="md" />
+                          <p className="text-base font-semibold text-gray-900">{selectedPool.name}</p>
+                        </div>
                       </section>
+
+                      <PoolLogoUploadSection
+                        client={supabase}
+                        pool={selectedPool}
+                        canManagePool={canManagePool}
+                        onPoolUpdated={handlePoolLogoUpdated}
+                      />
 
                       <section>
                         <h3 className="text-xs font-black uppercase tracking-wide text-gray-500">Pool code</h3>
