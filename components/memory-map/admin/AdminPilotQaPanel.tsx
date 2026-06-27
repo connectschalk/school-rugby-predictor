@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { MemoryMapBundle } from '@/lib/memory-map/types'
 import { absoluteMemoryMapUrl, getPublicSiteUrl } from '@/lib/site-url'
+import { logMemoryMapPublicLink, memoryMapPublicPath } from '@/lib/memory-map/public-links'
 
 type CheckItem = { label: string; ok: boolean }
 
@@ -20,15 +21,25 @@ export default function AdminPilotQaPanel({ bundle, mapId }: Props) {
   const site = getPublicSiteUrl()
 
   const urls = {
-    landing: `${site}/memory-map/${map.slug}`,
-    map: `${site}/memory-map/${map.slug}/map`,
-    add: `${site}/memory-map/${map.slug}/add`,
+    landing: absoluteMemoryMapUrl(map.slug),
+    map: `${site}${memoryMapPublicPath(map.slug, 'map')}`,
+    add: `${site}${memoryMapPublicPath(map.slug, 'add')}`,
     admin: `${site}/memory-map/admin/${mapId}`,
-    qr: `${site}/memory-map/${map.slug}?qr=1`,
+    qr: `${absoluteMemoryMapUrl(map.slug)}?qr=1`,
   }
 
+  useEffect(() => {
+    const mapHref = memoryMapPublicPath(map.slug, 'map')
+    logMemoryMapPublicLink({
+      mapId,
+      mapSlug: map.slug,
+      orgSlug: map.organisation?.slug,
+      href: mapHref,
+    })
+  }, [mapId, map.slug, map.organisation?.slug])
+
   const checks: CheckItem[] = [
-    { label: 'Public landing loads', ok: map.status === 'active' },
+    { label: 'Public landing loads', ok: map.status === 'active' || map.status === 'draft' },
     { label: 'Map loads', ok: activeAreas.length > 0 },
     { label: 'Area selector has at least one area', ok: activeAreas.length > 0 },
     { label: 'At least one approved pin', ok: approvedPins.length > 0 },

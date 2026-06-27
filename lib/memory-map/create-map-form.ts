@@ -6,9 +6,11 @@ export function suggestMemoryMapTitle(orgName: string): string {
   return `${name} Memory Map`
 }
 
-export function suggestCreateMapSlugs(orgName: string): { orgSlug: string; mapSlug: string } {
-  const slug = slugify(orgName)
-  return { orgSlug: slug, mapSlug: slug }
+export function suggestCreateMapSlugs(orgName: string, mapTitle?: string): { orgSlug: string; mapSlug: string } {
+  const orgSlug = slugify(orgName)
+  const title = mapTitle?.trim() || suggestMemoryMapTitle(orgName)
+  const mapSlug = slugify(title || orgName)
+  return { orgSlug, mapSlug }
 }
 
 export const ORG_TYPE_LABELS: Record<string, string> = {

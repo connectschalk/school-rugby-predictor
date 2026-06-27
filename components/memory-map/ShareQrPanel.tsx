@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import QRCode from 'qrcode'
 import { absoluteMemoryMapUrl } from '@/lib/site-url'
+import { logMemoryMapPublicLink } from '@/lib/memory-map/public-links'
 import type { MemoryMap } from '@/lib/memory-map/types'
 
 type Props = {
@@ -17,6 +18,15 @@ export default function ShareQrPanel({ map }: Props) {
   const [tab, setTab] = useState<AssetTab>('poster')
   const publicUrl = absoluteMemoryMapUrl(map.slug)
   const qrUrl = `${publicUrl}?qr=1`
+
+  useEffect(() => {
+    logMemoryMapPublicLink({
+      mapId: map.id,
+      mapSlug: map.slug,
+      orgSlug: map.organisation?.slug,
+      href: publicUrl,
+    })
+  }, [map.id, map.slug, map.organisation?.slug, publicUrl])
 
   useEffect(() => {
     void QRCode.toDataURL(qrUrl, { width: 512, margin: 2, color: { dark: '#050505', light: '#FFFFFF' } }).then(

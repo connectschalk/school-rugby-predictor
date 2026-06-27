@@ -108,6 +108,17 @@ describe('resolveMemoryMapBundleLoad', () => {
     expect(loaded?.bundle.areas.some((a) => a.id === 'area-campus')).toBe(false)
   })
 
+  it('resolves draft maps with empty content without demo fallback', () => {
+    const draftMap = { ...supabaseMap, status: 'draft' }
+    const loaded = resolveMemoryMapBundleLoad('boishaai', {
+      map: draftMap,
+      related: { areas: [], categories: [], pins: [], stories: [], tags: [] },
+    })
+    expect(loaded?.source).toBe('supabase')
+    expect(loaded?.bundle.map.status).toBe('draft')
+    expect(loaded?.bundle.areas).toHaveLength(0)
+  })
+
   it('falls back to demo only when no supabase map exists and demo is allowed', () => {
     const loaded = resolveMemoryMapBundleLoad('boishaai', null)
     expect(loaded?.source).toBe('demo')

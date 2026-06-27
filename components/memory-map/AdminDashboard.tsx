@@ -5,9 +5,8 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { fetchAuditLogs, fetchAdminMemoryMapBundleClient } from '@/lib/memory-map/client-queries'
-import { fetchAllMembers } from '@/lib/memory-map/membership'
+import { fetchAllMembers, fetchContributorAccess } from '@/lib/memory-map/membership'
 import { fetchMemoryMapAnalytics, type MemoryMapAnalyticsSummary } from '@/lib/memory-map/analytics'
-import { fetchUserIsAdmin } from '@/lib/admin-access'
 import {
   approveMemoryStory,
   moveMemoryPin,
@@ -50,7 +49,7 @@ import AdminPilotQaPanel from '@/components/memory-map/admin/AdminPilotQaPanel'
 import AdminAddContentWizard from '@/components/memory-map/admin/AdminAddContentWizard'
 import AdminStoryReviewPanel from '@/components/memory-map/admin/AdminStoryReviewPanel'
 import MemoryMapAdminNav from '@/components/memory-map/admin/MemoryMapAdminNav'
-import { isAdminTab } from '@/lib/memory-map/admin-nav'
+import { isAdminTab, tabAllowedForAccess } from '@/lib/memory-map/admin-nav'
 import { needsPublishConfirmation } from '@/components/memory-map/admin/StoryApprovalSummary'
 import { defaultGovernanceChecks } from '@/components/memory-map/admin/StoryGovernancePanel'
 import MapCanvas from '@/components/memory-map/MapCanvas'
@@ -77,6 +76,8 @@ export default function AdminDashboard({ mapId }: Props) {
   const [auditLogs, setAuditLogs] = useState<MemoryAuditLog[]>([])
   const [analytics, setAnalytics] = useState<MemoryMapAnalyticsSummary | null>(null)
   const [isAppAdmin, setIsAppAdmin] = useState(false)
+  const [isOrgAdmin, setIsOrgAdmin] = useState(false)
+  const [canManageSettings, setCanManageSettings] = useState(false)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [areaFormArea, setAreaFormArea] = useState<MemoryArea | null | undefined>(undefined)
   const [highRiskConfirm, setHighRiskConfirm] = useState<MemoryStory | null>(null)
@@ -111,17 +112,19 @@ export default function AdminDashboard({ mapId }: Props) {
         setBundle(fromDb)
         const session = await supabase.auth.getSession()
         const userId = session.data.session?.user?.id ?? ''
-        const [members, logs, stats, adminCheck] = await Promise.all([
+        const [members, logs, stats, access] = await Promise.all([
           fetchAllMembers(supabase, mapId),
           fetchAuditLogs(supabase, mapId),
           fetchMemoryMapAnalytics(supabase, mapId),
-          fetchUserIsAdmin(supabase, userId),
+          fetchContributorAccess(supabase, mapId),
         ])
         setAllMembers(members)
         setAuditLogs(logs)
         setAnalytics(stats)
-        setIsAppAdmin(adminCheck.isAdmin)
-        setCurrentUserId(userId || null)
+        setIsAppAdmin(access.isAppAdmin)
+        setIsOrgAdmin(access.isOrgAdmin)
+        setCanManageSettings(access.isMapSettingsAdmin)
+        setCurrentUserId(access.userId)
       } else if (mapId === DEMO_MEMORY_MAP_BUNDLE.map.id) {
         setBundle({ ...DEMO_MEMORY_MAP_BUNDLE, stories: [...DEMO_MEMORY_MAP_BUNDLE.stories] })
       } else {
@@ -137,6 +140,12 @@ export default function AdminDashboard({ mapId }: Props) {
   useEffect(() => {
     void reload()
   }, [reload])
+
+  useEffect(() => {
+    if (!tabAllowedForAccess(tab, canManageSettings)) {
+      setTab('overview')
+    }
+  }, [tab, canManageSettings])
 
   const map = bundle?.map
   const areas = bundle?.areas ?? []
@@ -406,6 +415,7 @@ export default function AdminDashboard({ mapId }: Props) {
         mapId={mapId}
         activeTab={tab}
         onTabChange={setTab}
+        canManageSettings={canManageSettings}
         badges={{
           pending: pending.length,
           contributors: pendingMembers.length,
@@ -586,17 +596,18 @@ export default function AdminDashboard({ mapId }: Props) {
           </div>
         ) : null}
 
-        {tab === 'contributors' ? (
+        {tab === 'contributors' && canManageSettings ? (
           <AdminContributorsPanel
             mapId={mapId}
             mapSlug={map.slug}
             members={allMembers}
             isAppAdmin={isAppAdmin}
+            isOrgAdmin={isOrgAdmin}
             onChanged={() => void reload()}
           />
         ) : null}
 
-        {tab === 'areas' ? (
+        {tab === 'areas' && canManageSettings ? (
           <div className="space-y-3">
             {areaFormArea !== undefined ? (
               <AdminAreaForm
@@ -635,19 +646,19 @@ export default function AdminDashboard({ mapId }: Props) {
           </div>
         ) : null}
 
-        {tab === 'map-defaults' ? (
+        {tab === 'map-defaults' && canManageSettings ? (
           <AdminMapStartPointForm map={map} onSaved={(m) => updateMap(m)} />
         ) : null}
 
-        {tab === 'categories' && bundle ? (
+        {tab === 'categories' && canManageSettings && bundle ? (
           <AdminCategoriesPanel mapId={mapId} categories={categories} onRefresh={() => void reload()} />
         ) : null}
 
-        {tab === 'branding' ? <AdminBrandingForm map={map} onSaved={(m) => updateMap(m)} /> : null}
-        {tab === 'sponsor' ? <AdminSponsorForm map={map} onSaved={(m) => updateMap(m)} /> : null}
-        {tab === 'share' ? <ShareQrPanel map={map} /> : null}
+        {tab === 'branding' && canManageSettings ? <AdminBrandingForm map={map} onSaved={(m) => updateMap(m)} /> : null}
+        {tab === 'sponsor' && canManageSettings ? <AdminSponsorForm map={map} onSaved={(m) => updateMap(m)} /> : null}
+        {tab === 'share' && canManageSettings ? <ShareQrPanel map={map} /> : null}
 
-        {tab === 'pilot' && bundle ? (
+        {tab === 'pilot' && canManageSettings && bundle ? (
           <AdminPilotChecklist
             bundle={bundle}
             members={allMembers}
@@ -656,7 +667,7 @@ export default function AdminDashboard({ mapId }: Props) {
           />
         ) : null}
 
-        {tab === 'qa' && bundle ? (
+        {tab === 'qa' && canManageSettings && bundle ? (
           <AdminPilotQaPanel bundle={bundle} mapId={mapId} />
         ) : null}
 

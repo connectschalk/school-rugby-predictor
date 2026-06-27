@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import { buildLoginHref } from '@/lib/auth-return-path'
+import { buildMemoryMapSignInHref, buildMemoryMapSignUpHref } from '@/lib/memory-map/auth-routes'
 import { redeemMemoryMapInvite } from '@/lib/memory-map/mutations'
 import { fetchContributorAccess } from '@/lib/memory-map/membership'
 import { CONTRIBUTOR_SUBMISSION_POLICY_TEXT } from '@/lib/memory-map/contributor-policy'
@@ -97,7 +97,7 @@ export default function MemoryMapJoinClient({ map, mapSlug, inviteToken }: Props
           <button type="button" disabled={busy} onClick={() => void onSubmit()} className="mm-btn-primary w-full rounded-xl py-3 text-sm font-black disabled:opacity-50">
             {busy ? 'Submitting…' : 'Submit contributor request'}
           </button>
-          <Link href={buildLoginHref(returnPath)} className="mm-btn-secondary block rounded-xl py-3 text-center text-sm font-bold">
+          <Link href={buildMemoryMapSignInHref(returnPath)} className="mm-btn-secondary block rounded-xl py-3 text-center text-sm font-bold">
             Sign in
           </Link>
         </div>

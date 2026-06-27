@@ -14,14 +14,21 @@ describe('suggestMemoryMapTitle', () => {
 })
 
 describe('suggestCreateMapSlugs', () => {
-  it('slugifies organisation name for both URLs', () => {
+  it('keeps organisation slug and memory map slug separate', () => {
+    expect(suggestCreateMapSlugs('Paarl van der Merwe')).toEqual({
+      orgSlug: 'paarl-van-der-merwe',
+      mapSlug: 'paarl-van-der-merwe-memory-map',
+    })
     expect(suggestCreateMapSlugs('Boishaai')).toEqual({
       orgSlug: 'boishaai',
-      mapSlug: 'boishaai',
+      mapSlug: 'boishaai-memory-map',
     })
-    expect(suggestCreateMapSlugs('Ons Huis')).toEqual({
+  })
+
+  it('uses provided map title for the memory map slug', () => {
+    expect(suggestCreateMapSlugs('Ons Huis', 'Interschools 2026 Memory Map')).toEqual({
       orgSlug: 'ons-huis',
-      mapSlug: 'ons-huis',
+      mapSlug: 'interschools-2026-memory-map',
     })
   })
 })

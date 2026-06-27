@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import { buildLoginHref } from '@/lib/auth-return-path'
+import { buildMemoryMapSignInHref, buildMemoryMapSignUpHref } from '@/lib/memory-map/auth-routes'
 import { fetchContributorAccess } from '@/lib/memory-map/membership'
 import type { MemoryMap, MemoryMapBundle } from '@/lib/memory-map/types'
 import { memoryMapThemeVars } from '@/lib/memory-map/theme'
@@ -32,12 +32,12 @@ export default function MemoryMapVisibilityGate({ bundle, children, returnPath }
     })()
   }, [map.id, map.visibility])
 
-  if (map.status !== 'active') {
+  if (map.status === 'archived') {
     return (
       <UnavailableState
         map={map}
         title="This Memory Map is not available"
-        description="It may be in draft or has been archived. Contact your school admin for access."
+        description="This map has been archived. Contact the admin for access."
       />
     )
   }
@@ -96,9 +96,14 @@ function UnavailableState({
             </Link>
           ) : null}
           {showAuth && returnPath ? (
-            <Link href={buildLoginHref(returnPath)} className="mm-btn-secondary rounded-xl px-4 py-3 text-sm font-bold">
-              Sign in
-            </Link>
+            <>
+              <Link href={buildMemoryMapSignInHref(returnPath)} className="mm-btn-primary rounded-xl px-4 py-3 text-sm font-black">
+                Sign in
+              </Link>
+              <Link href={buildMemoryMapSignUpHref(returnPath)} className="mm-btn-secondary rounded-xl px-4 py-3 text-sm font-bold">
+                Create account
+              </Link>
+            </>
           ) : null}
           <Link href="/memory-map" className="mm-btn-secondary rounded-xl px-4 py-3 text-sm font-bold">
             Back to Memory Maps

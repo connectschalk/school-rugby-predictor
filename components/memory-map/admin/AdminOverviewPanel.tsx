@@ -1,9 +1,11 @@
 'use client'
 
 import Link from 'next/link'
+import { useEffect } from 'react'
 import type { MemoryMapBundle } from '@/lib/memory-map/types'
 import type { MemoryMapAnalyticsSummary } from '@/lib/memory-map/analytics'
 import { bundleStats, mapHealthChecklist } from '@/lib/memory-map/utils'
+import { logMemoryMapPublicLink, memoryMapPublicPath } from '@/lib/memory-map/public-links'
 
 type Props = {
   bundle: MemoryMapBundle
@@ -18,6 +20,18 @@ export default function AdminOverviewPanel({ bundle, pendingContributors, analyt
   const healthOk = health.filter((h) => h.ok).length
   const activeAreas = bundle.areas.filter((a) => a.is_active)
   const activeCategories = bundle.categories.filter((c) => c.is_active)
+  const landingHref = memoryMapPublicPath(bundle.map.slug, 'landing')
+  const mapHref = memoryMapPublicPath(bundle.map.slug, 'map')
+  const addHref = memoryMapPublicPath(bundle.map.slug, 'add')
+
+  useEffect(() => {
+    logMemoryMapPublicLink({
+      mapId: bundle.map.id,
+      mapSlug: bundle.map.slug,
+      orgSlug: bundle.map.organisation?.slug,
+      href: mapHref,
+    })
+  }, [bundle.map.id, bundle.map.slug, bundle.map.organisation?.slug, mapHref])
 
   return (
     <div className="space-y-6">
@@ -119,13 +133,19 @@ export default function AdminOverviewPanel({ bundle, pendingContributors, analyt
       </div>
 
       <div className="mm-card rounded-2xl p-4 text-sm">
-        <p className="font-black">QR link</p>
-        <p className="mm-muted mt-1 break-all text-xs">
-          {typeof window !== 'undefined' ? `${window.location.origin}/memory-map/${bundle.map.slug}` : `/memory-map/${bundle.map.slug}`}
-        </p>
-        <Link href={`/memory-map/${bundle.map.slug}`} className="mt-2 inline-block text-xs font-bold mm-text-accent">
-          Preview public landing →
-        </Link>
+        <p className="font-black">Public links</p>
+        <p className="mm-muted mt-1 break-all text-xs">{landingHref}</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Link href={landingHref} className="mm-btn-secondary rounded-lg px-3 py-1.5 text-xs font-bold">
+            Open public landing
+          </Link>
+          <Link href={mapHref} className="mm-btn-primary rounded-lg px-3 py-1.5 text-xs font-bold">
+            Open map
+          </Link>
+          <Link href={addHref} className="mm-btn-secondary rounded-lg px-3 py-1.5 text-xs font-bold">
+            Add Memory
+          </Link>
+        </div>
       </div>
     </div>
   )

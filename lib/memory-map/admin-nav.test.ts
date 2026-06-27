@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ADMIN_NAV_GROUPS, groupForTab, isAdminTab, labelForTab } from './admin-nav'
+import { ADMIN_NAV_GROUPS, groupForTab, isAdminTab, labelForTab, navGroupsForAccess } from './admin-nav'
 
 describe('admin-nav', () => {
   it('includes all admin tabs exactly once', () => {
@@ -31,5 +31,13 @@ describe('admin-nav', () => {
     expect(isAdminTab('map-defaults')).toBe(true)
     expect(isAdminTab('pending')).toBe(true)
     expect(isAdminTab('setup')).toBe(false)
+  })
+
+  it('hides settings tabs for moderators', () => {
+    const groups = navGroupsForAccess(false)
+    const tabIds = groups.flatMap((g) => g.items.map((i) => i.id))
+    expect(tabIds).toContain('pending')
+    expect(tabIds).not.toContain('branding')
+    expect(tabIds).not.toContain('contributors')
   })
 })

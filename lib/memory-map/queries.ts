@@ -104,7 +104,7 @@ async function fetchSupabaseBundleBySlug(slug: string): Promise<{
       .from('memory_maps')
       .select('*, organisations(*)')
       .eq('slug', slug)
-      .eq('status', 'active')
+      .in('status', ['active', 'draft'])
       .maybeSingle()
 
     if (error || !map) return null

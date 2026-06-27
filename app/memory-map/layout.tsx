@@ -1,5 +1,6 @@
 import './memory-map.css'
 import type { Metadata } from 'next'
+import MemoryMapLayoutClient from '@/components/memory-map/MemoryMapLayoutClient'
 
 export const metadata: Metadata = {
   title: 'NextPlay Memory Map',
@@ -8,5 +9,9 @@ export const metadata: Metadata = {
 }
 
 export default function MemoryMapLayout({ children }: { children: React.ReactNode }) {
-  return <div className="mm-root">{children}</div>
+  return (
+    <div className="mm-root">
+      <MemoryMapLayoutClient>{children}</MemoryMapLayoutClient>
+    </div>
+  )
 }

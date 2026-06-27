@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import { buildLoginHref } from '@/lib/auth-return-path'
+import { buildMemoryMapSignInHref } from '@/lib/memory-map/auth-routes'
+import MemoryMapSignInGate from '@/components/memory-map/MemoryMapSignInGate'
 import type { ContributorAccess } from '@/lib/memory-map/membership'
 import { fetchContributorAccess } from '@/lib/memory-map/membership'
 import { requestContributorAccess, submitMemoryStory, type StoryMediaPayload } from '@/lib/memory-map/mutations'
@@ -660,15 +661,15 @@ export default function AddStoryWizard({ bundle, dataSource, initialPinId, initi
 
   if (!access?.isLoggedIn) {
     return (
-      <div className="mm-root min-h-dvh" style={memoryMapThemeVars(map)}>
+      <div className="min-h-dvh" style={memoryMapThemeVars(map)}>
         <MemoryMapHeader map={map} mapSlug={map.slug} backHref={`/memory-map/${map.slug}`} />
-        <section className="mx-auto max-w-lg space-y-4 px-4 py-8">
-          <h1 className="text-2xl font-black">Add a memory</h1>
-          <p className="mm-muted text-sm">Sign in to add a memory.</p>
-          <Link href={buildLoginHref(returnPath)} className="mm-btn-primary block rounded-2xl px-4 py-3 text-center text-sm font-black">
-            Sign in
-          </Link>
-        </section>
+        <MemoryMapSignInGate
+          title="Add a memory"
+          description="Sign in to add a memory to this map."
+          returnPath={returnPath}
+          backHref={`/memory-map/${map.slug}`}
+          backLabel="Back to map"
+        />
       </div>
     )
   }

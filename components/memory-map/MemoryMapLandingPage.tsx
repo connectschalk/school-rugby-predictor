@@ -7,6 +7,7 @@ import { trackMemoryMapEvent } from '@/lib/memory-map/analytics'
 import type { MemoryMap, MemoryMapBundle } from '@/lib/memory-map/types'
 import { memoryMapThemeVars } from '@/lib/memory-map/theme'
 import { bundleStats } from '@/lib/memory-map/utils'
+import { logMemoryMapPublicLink, memoryMapPublicPath } from '@/lib/memory-map/public-links'
 import MemoryMapSponsorStrip from '@/components/memory-map/MemoryMapSponsorStrip'
 
 type Props = {
@@ -20,13 +21,21 @@ export default function MemoryMapLandingPage({ map, mapSlug, bundle, fromQr }: P
   const theme = memoryMapThemeVars(map)
   const bg = map.landing_background_url
   const stats = bundle ? bundleStats(bundle) : { areaCount: 0, pinCount: 0, storyCount: 0 }
+  const mapHref = memoryMapPublicPath(mapSlug, 'map')
+  const addHref = memoryMapPublicPath(mapSlug, 'add')
 
   useEffect(() => {
     void trackMemoryMapEvent(supabase, { memoryMapId: map.id, eventType: 'map_landing_viewed' })
     if (fromQr) {
       void trackMemoryMapEvent(supabase, { memoryMapId: map.id, eventType: 'qr_link_opened' })
     }
-  }, [map.id, fromQr])
+    logMemoryMapPublicLink({
+      mapId: map.id,
+      mapSlug,
+      orgSlug: map.organisation?.slug,
+      href: mapHref,
+    })
+  }, [map.id, map.organisation?.slug, mapSlug, mapHref, fromQr])
 
   return (
     <main className="relative min-h-dvh" style={theme}>
@@ -83,13 +92,13 @@ export default function MemoryMapLandingPage({ map, mapSlug, bundle, fromQr }: P
 
         <div className="mt-auto flex flex-col gap-3 pt-8">
           <Link
-            href={`/memory-map/${mapSlug}/map`}
+            href={mapHref}
             className="mm-btn-primary rounded-2xl px-5 py-4 text-center text-base font-black shadow-lg"
           >
             Open Memory Map
           </Link>
           <Link
-            href={`/memory-map/${mapSlug}/add`}
+            href={addHref}
             className="mm-btn-secondary rounded-2xl px-5 py-4 text-center text-sm font-bold"
           >
             Add a Memory

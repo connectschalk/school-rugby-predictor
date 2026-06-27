@@ -3,9 +3,9 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
-  ADMIN_NAV_GROUPS,
   groupForTab,
   labelForTab,
+  navGroupsForAccess,
   type AdminNavGroup,
   type AdminNavItem,
 } from '@/lib/memory-map/admin-nav'
@@ -15,6 +15,7 @@ type Props = {
   mapId: string
   activeTab: AdminTab
   onTabChange: (tab: AdminTab) => void
+  canManageSettings?: boolean
   badges?: Partial<Record<AdminTab, number>>
 }
 
@@ -140,8 +141,9 @@ function GroupDropdown({
   )
 }
 
-export default function MemoryMapAdminNav({ mapId, activeTab, onTabChange, badges }: Props) {
+export default function MemoryMapAdminNav({ mapId, activeTab, onTabChange, canManageSettings = true, badges }: Props) {
   const activeGroup = groupForTab(activeTab)
+  const navGroups = navGroupsForAccess(canManageSettings)
   const [openGroupId, setOpenGroupId] = useState<string | null>(null)
   const [mobileOpen, setMobileOpen] = useState(false)
 
@@ -149,7 +151,7 @@ export default function MemoryMapAdminNav({ mapId, activeTab, onTabChange, badge
     <nav className="border-b border-white/10 px-4 py-3" aria-label="Admin sections">
       {/* Desktop: grouped dropdowns */}
       <div className="hidden flex-wrap items-center gap-2 md:flex">
-        {ADMIN_NAV_GROUPS.map((group) => (
+        {navGroups.map((group) => (
           <GroupDropdown
             key={group.id}
             group={group}
@@ -203,7 +205,7 @@ export default function MemoryMapAdminNav({ mapId, activeTab, onTabChange, badge
               </button>
             </div>
             <div className="space-y-4">
-              {ADMIN_NAV_GROUPS.map((group) => (
+              {navGroups.map((group) => (
                 <div key={group.id}>
                   <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-white/50">{group.label}</p>
                   <div className="space-y-0.5">

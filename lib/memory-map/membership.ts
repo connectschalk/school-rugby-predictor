@@ -1,16 +1,55 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { fetchUserIsAdmin } from '@/lib/admin-access'
+import { resolveMemoryMapPermissions, type MemoryMapPermissions } from '@/lib/memory-map/permissions'
 import type { MemberRole, MemberStatus, MemoryMapMember } from '@/lib/memory-map/types'
 
 export type ContributorAccess = {
   userId: string | null
   isLoggedIn: boolean
   isAppAdmin: boolean
+  isOrgAdmin: boolean
   isMapAdmin: boolean
+  isMapSettingsAdmin: boolean
+  isContentModerator: boolean
   isContributor: boolean
   canSubmit: boolean
   hasSubmissionPolicy: boolean
+  permissions: MemoryMapPermissions
   member: MemoryMapMember | null
+}
+
+async function fetchMapMeta(
+  client: SupabaseClient,
+  memoryMapId: string
+): Promise<{ organisationId: string | null; createdBy: string | null }> {
+  const { data } = await client
+    .from('memory_maps')
+    .select('organisation_id, created_by')
+    .eq('id', memoryMapId)
+    .maybeSingle()
+
+  return {
+    organisationId: data?.organisation_id == null ? null : String(data.organisation_id),
+    createdBy: data?.created_by == null ? null : String(data.created_by),
+  }
+}
+
+async function fetchIsOrgAdmin(
+  client: SupabaseClient,
+  organisationId: string | null,
+  userId: string,
+  isAppAdmin: boolean
+): Promise<boolean> {
+  if (isAppAdmin || !organisationId) return isAppAdmin
+
+  const { data } = await client
+    .from('organisation_members')
+    .select('role, status')
+    .eq('organisation_id', organisationId)
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  return data?.status === 'approved' && data?.role === 'admin'
 }
 
 export async function fetchContributorAccess(
@@ -21,26 +60,41 @@ export async function fetchContributorAccess(
   const userId = sessionData.session?.user?.id ?? null
 
   if (!userId) {
+    const permissions = resolveMemoryMapPermissions({
+      isAppAdmin: false,
+      isOrgAdmin: false,
+      mapMemberRole: null,
+      mapMemberStatus: null,
+      isMapCreator: false,
+    })
     return {
       userId: null,
       isLoggedIn: false,
       isAppAdmin: false,
+      isOrgAdmin: false,
       isMapAdmin: false,
+      isMapSettingsAdmin: false,
+      isContentModerator: false,
       isContributor: false,
       canSubmit: false,
       hasSubmissionPolicy: false,
+      permissions,
       member: null,
     }
   }
 
-  const { isAdmin: isAppAdmin } = await fetchUserIsAdmin(client, userId)
+  const [{ isAdmin: isAppAdmin }, mapMeta, { data: memberRow }] = await Promise.all([
+    fetchUserIsAdmin(client, userId),
+    fetchMapMeta(client, memoryMapId),
+    client
+      .from('memory_map_members')
+      .select('*')
+      .eq('memory_map_id', memoryMapId)
+      .eq('user_id', userId)
+      .maybeSingle(),
+  ])
 
-  const { data: memberRow } = await client
-    .from('memory_map_members')
-    .select('*')
-    .eq('memory_map_id', memoryMapId)
-    .eq('user_id', userId)
-    .maybeSingle()
+  const isOrgAdmin = await fetchIsOrgAdmin(client, mapMeta.organisationId, userId, isAppAdmin)
 
   const member = memberRow
     ? ({
@@ -61,25 +115,29 @@ export async function fetchContributorAccess(
       } satisfies MemoryMapMember)
     : null
 
-  const hasSubmissionPolicy =
-    isAppAdmin || Boolean(memberRow?.submission_policy_accepted_at)
+  const permissions = resolveMemoryMapPermissions({
+    isAppAdmin,
+    isOrgAdmin,
+    mapMemberRole: member?.role ?? null,
+    mapMemberStatus: member?.status ?? null,
+    isMapCreator: mapMeta.createdBy === userId,
+  })
 
-  const isMapAdmin =
-    isAppAdmin ||
-    member?.status === 'approved' && (member.role === 'admin' || member.role === 'moderator')
-
-  const isContributor =
-    isMapAdmin ||
-    (member?.status === 'approved' && member.role === 'contributor')
+  const hasSubmissionPolicy = isAppAdmin || Boolean(memberRow?.submission_policy_accepted_at)
+  const isContentModerator = member?.status === 'approved' && member.role === 'moderator'
 
   return {
     userId,
     isLoggedIn: true,
     isAppAdmin,
-    isMapAdmin: Boolean(isMapAdmin),
-    isContributor: Boolean(isContributor),
-    canSubmit: Boolean(isContributor),
+    isOrgAdmin,
+    isMapAdmin: permissions.canAccessAdminDashboard,
+    isMapSettingsAdmin: permissions.canManageMapSettings,
+    isContentModerator,
+    isContributor: permissions.canSubmitContent,
+    canSubmit: permissions.canSubmitContent && hasSubmissionPolicy,
     hasSubmissionPolicy,
+    permissions,
     member,
   }
 }

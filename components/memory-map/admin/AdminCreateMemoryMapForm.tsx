@@ -52,7 +52,7 @@ export default function AdminCreateMemoryMapForm() {
   const [tagline, setTagline] = useState('')
   const [description, setDescription] = useState('')
   const [visibility, setVisibility] = useState<MapVisibility>('link_only')
-  const [status, setStatus] = useState<MapStatus>('draft')
+  const [status, setStatus] = useState<MapStatus>('active')
   const [primaryColor, setPrimaryColor] = useState('#FFD400')
   const [accentColor, setAccentColor] = useState('#FFD400')
   const [profileFile, setProfileFile] = useState<File | null>(null)
@@ -72,7 +72,8 @@ export default function AdminCreateMemoryMapForm() {
       setMapTitle(suggestMemoryMapTitle(value))
     }
     if (!orgSlugTouched || !mapSlugTouched) {
-      const slugs = suggestCreateMapSlugs(value)
+      const title = mapTitleTouched ? mapTitle : suggestMemoryMapTitle(value)
+      const slugs = suggestCreateMapSlugs(value, title)
       if (!orgSlugTouched) setOrgSlug(slugs.orgSlug)
       if (!mapSlugTouched) setMapSlug(slugs.mapSlug)
     }

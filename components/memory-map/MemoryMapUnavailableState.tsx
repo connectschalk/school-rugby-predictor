@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { DEMO_MAP_SLUG } from '@/lib/memory-map/constants'
+import MemoryMapNotFoundState from '@/components/memory-map/MemoryMapNotFoundState'
 
 export type MemoryMapUnavailableReason = 'not_found' | 'private'
 
@@ -9,10 +10,14 @@ type Props = {
 }
 
 export default function MemoryMapUnavailableState({ slug, reason }: Props) {
+  if (reason === 'not_found') {
+    return <MemoryMapNotFoundState />
+  }
+
   const isPrivate = reason === 'private'
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-lg flex-col px-5 py-10">
+    <main className="mm-root mx-auto flex min-h-dvh max-w-lg flex-col px-5 py-10">
       <p className="mm-text-accent text-xs font-bold uppercase tracking-[0.25em]">
         NextPlay Memory Map
       </p>
@@ -22,7 +27,7 @@ export default function MemoryMapUnavailableState({ slug, reason }: Props) {
       <p className="mm-muted mt-4 text-sm leading-relaxed">
         {isPrivate
           ? 'Sign in or request access to add memories to this map.'
-          : 'We could not find this Memory Map. Check the link or ask the school admin.'}
+          : 'We could not find this Memory Map. Check the link or ask the admin.'}
       </p>
 
       <div className="mt-8 flex flex-col gap-3">
@@ -32,8 +37,8 @@ export default function MemoryMapUnavailableState({ slug, reason }: Props) {
         >
           Back to Memory Map
         </Link>
-        <Link href="/memory-map" className="mm-btn-secondary rounded-2xl px-5 py-4 text-center text-sm font-bold">
-          Memory Map home
+        <Link href="/memory-map/find" className="mm-btn-secondary rounded-2xl px-5 py-4 text-center text-sm font-bold">
+          Find a Memory Map
         </Link>
         {process.env.NODE_ENV === 'development' ? (
           <Link

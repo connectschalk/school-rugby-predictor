@@ -79,3 +79,30 @@ export function labelForTab(tab: AdminTab): string {
   }
   return tab
 }
+
+/** Tabs that require map settings admin (not available to moderators). */
+export const SETTINGS_ADMIN_TABS = new Set<AdminTab>([
+  'contributors',
+  'areas',
+  'map-defaults',
+  'categories',
+  'branding',
+  'sponsor',
+  'share',
+  'pilot',
+  'qa',
+])
+
+export function navGroupsForAccess(canManageSettings: boolean): AdminNavGroup[] {
+  if (canManageSettings) return ADMIN_NAV_GROUPS
+  return ADMIN_NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => item.id === 'setup' || !SETTINGS_ADMIN_TABS.has(item.id as AdminTab)),
+  })).filter((group) => group.items.length > 0)
+}
+
+export function tabAllowedForAccess(tab: AdminTab, canManageSettings: boolean): boolean {
+  if (canManageSettings) return true
+  return !SETTINGS_ADMIN_TABS.has(tab)
+}
+
