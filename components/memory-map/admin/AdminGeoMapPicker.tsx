@@ -11,6 +11,7 @@ type Props = {
   onChange: (lat: number, lng: number) => void
   onZoomChange?: (zoom: number) => void
   defaultCentre?: GeoView | null
+  locateTarget?: { lat: number; lng: number; zoom?: number } | null
   pickMode?: boolean
   className?: string
 }
@@ -22,6 +23,7 @@ export default function AdminGeoMapPicker({
   onChange,
   onZoomChange,
   defaultCentre,
+  locateTarget,
   pickMode = true,
   className = '',
 }: Props) {
@@ -97,6 +99,12 @@ export default function AdminGeoMapPicker({
       mapRef.current.setZoom(zoom)
     }
   }, [zoom, ready])
+
+  useEffect(() => {
+    if (!locateTarget || !mapRef.current || !ready) return
+    const targetZoom = locateTarget.zoom ?? zoom
+    mapRef.current.setView([locateTarget.lat, locateTarget.lng], targetZoom, { animate: true })
+  }, [locateTarget, ready, zoom])
 
   return (
     <div className={`relative ${className}`}>
