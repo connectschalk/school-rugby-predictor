@@ -1,4 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { MemoryMapDataSource } from '@/lib/memory-map/queries'
+import { validateMemoryMapSubmitIds } from '@/lib/memory-map/submit-ids'
 import type { RiskLevel, StoryStatus, StoryType, UploadMode } from '@/lib/memory-map/types'
 
 export async function createMemoryAuditLog(
@@ -39,10 +41,11 @@ export type StoryMediaPayload = {
 export type SubmitStoryInput = {
   memoryMapId: string
   areaId: string
+  dataSource?: MemoryMapDataSource
   existingPinId?: string | null
   pinTitle?: string
   pinDescription?: string
-  pinCategoryId: string
+  pinCategoryId: string | null
   pinLat?: number | null
   pinLng?: number | null
   pinX?: number | null
@@ -71,7 +74,7 @@ export type AdminCreateStoryInput = {
   createNewPin: boolean
   pinTitle?: string
   pinDescription?: string
-  pinCategoryId: string
+  pinCategoryId: string | null
   pinLat?: number | null
   pinLng?: number | null
   pinX?: number | null
@@ -103,7 +106,7 @@ export async function adminCreateMemoryStory(
     p_create_new_pin: input.createNewPin,
     p_pin_title: input.pinTitle ?? null,
     p_pin_description: input.pinDescription ?? null,
-    p_pin_category_id: input.pinCategoryId,
+    p_pin_category_id: input.pinCategoryId ?? null,
     p_pin_lat: input.pinLat ?? null,
     p_pin_lng: input.pinLng ?? null,
     p_pin_x_position: input.pinX ?? null,
@@ -112,7 +115,7 @@ export async function adminCreateMemoryStory(
     p_story_description: input.description,
     p_event_year: input.eventYear,
     p_event_date: input.eventDate ?? null,
-    p_category_id: input.pinCategoryId,
+    p_category_id: input.pinCategoryId ?? null,
     p_tags: input.tags,
     p_story_type: input.storyType,
     p_upload_mode: input.uploadMode,
@@ -133,13 +136,22 @@ export async function submitMemoryStory(
   client: SupabaseClient,
   input: SubmitStoryInput
 ): Promise<{ storyId: string | null; error: string | null }> {
+  const idError = validateMemoryMapSubmitIds({
+    source: input.dataSource ?? 'supabase',
+    memoryMapId: input.memoryMapId,
+    areaId: input.areaId,
+    existingPinId: input.existingPinId,
+    categoryId: input.pinCategoryId,
+  })
+  if (idError) return { storyId: null, error: idError }
+
   const { data, error } = await client.rpc('submit_memory_story', {
     p_memory_map_id: input.memoryMapId,
     p_area_id: input.areaId,
     p_existing_pin_id: input.existingPinId ?? null,
     p_pin_title: input.pinTitle ?? null,
     p_pin_description: input.pinDescription ?? null,
-    p_pin_category_id: input.pinCategoryId,
+    p_pin_category_id: input.pinCategoryId ?? null,
     p_pin_lat: input.pinLat ?? null,
     p_pin_lng: input.pinLng ?? null,
     p_pin_x: input.pinX ?? null,
@@ -169,12 +181,14 @@ export async function requestContributorAccess(
   client: SupabaseClient,
   memoryMapId: string,
   relationship: string,
-  message: string
+  message: string,
+  submissionPolicyAccepted: boolean
 ): Promise<{ error: string | null }> {
   const { error } = await client.rpc('request_memory_map_contributor_access', {
     p_memory_map_id: memoryMapId,
     p_relationship: relationship || null,
     p_request_message: message || null,
+    p_submission_policy_accepted: submissionPolicyAccepted,
   })
   return { error: error?.message ?? null }
 }
@@ -471,12 +485,14 @@ export async function redeemMemoryMapInvite(
   client: SupabaseClient,
   inviteToken: string,
   relationship: string,
-  message: string
+  message: string,
+  submissionPolicyAccepted: boolean
 ): Promise<{ error: string | null; autoApproved?: boolean }> {
   const { data, error } = await client.rpc('redeem_memory_map_invite', {
     p_invite_token: inviteToken,
     p_relationship: relationship || null,
     p_request_message: message || null,
+    p_submission_policy_accepted: submissionPolicyAccepted,
   })
   if (error) return { error: error.message }
   const row = data as { auto_approved?: boolean } | null

@@ -33,6 +33,7 @@ import { pinStats, storyTypeLabel, uploadModeLabel } from '@/lib/memory-map/util
 import { getImageMapInitialFocus, getPinMoveInitialView } from '@/lib/memory-map/map-starting-point'
 import { memoryMapThemeVars } from '@/lib/memory-map/theme'
 import AdminOverviewPanel from '@/components/memory-map/admin/AdminOverviewPanel'
+import AdminCategoriesPanel from '@/components/memory-map/admin/AdminCategoriesPanel'
 import AdminBrandingForm from '@/components/memory-map/admin/AdminBrandingForm'
 import AdminMapStartPointForm from '@/components/memory-map/admin/AdminMapStartPointForm'
 import AdminSponsorForm from '@/components/memory-map/admin/AdminSponsorForm'
@@ -595,18 +596,8 @@ export default function AdminDashboard({ mapId }: Props) {
           <AdminMapStartPointForm map={map} onSaved={(m) => updateMap(m)} />
         ) : null}
 
-        {tab === 'categories' ? (
-          <div className="grid gap-2 sm:grid-cols-2">
-            {categories.map((cat) => (
-              <div key={cat.id} className="mm-card flex items-center gap-3 rounded-2xl p-3">
-                <span className="h-8 w-8 rounded-lg" style={{ backgroundColor: cat.colour }} />
-                <div>
-                  <p className="font-bold">{cat.name}</p>
-                  <p className="mm-muted text-xs">{cat.icon}</p>
-                </div>
-              </div>
-            ))}
-          </div>
+        {tab === 'categories' && bundle ? (
+          <AdminCategoriesPanel mapId={mapId} categories={categories} onRefresh={() => void reload()} />
         ) : null}
 
         {tab === 'branding' ? <AdminBrandingForm map={map} onSaved={(m) => updateMap(m)} /> : null}

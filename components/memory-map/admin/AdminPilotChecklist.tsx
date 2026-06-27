@@ -39,8 +39,14 @@ export default function AdminPilotChecklist({ bundle, members, pendingCount, hig
     { label: 'Profile image uploaded', status: map.profile_image_url ? 'ok' : 'warn' },
     { label: 'Background image uploaded', status: map.landing_background_url ? 'ok' : 'warn' },
     { label: 'Sponsor added (optional)', status: map.sponsor_name ? 'ok' : 'warn' },
-    { label: 'At least one active area', status: areas.some((a) => a.is_active) ? 'ok' : 'fail' },
-    { label: 'At least one active category', status: categories.some((c) => c.is_active) ? 'ok' : 'fail' },
+    {
+      label: areas.some((a) => a.is_active) ? 'At least one active area' : 'Create your first area',
+      status: areas.some((a) => a.is_active) ? 'ok' : 'fail',
+    },
+    {
+      label: categories.some((c) => c.is_active) ? 'Default category available' : 'Default category (auto-created on submit)',
+      status: categories.some((c) => c.is_active) ? 'ok' : 'warn',
+    },
   ]
 
   const content: CheckItem[] = [

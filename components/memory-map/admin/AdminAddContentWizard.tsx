@@ -19,10 +19,10 @@ import type { AdminTab, MapPlacement, MemoryMapBundle, MemoryPin, RiskLevel } fr
 import { areaMapTypeLabel, storyTypeLabel, yearRangeForStories } from '@/lib/memory-map/utils'
 import {
   MM_MAX_PHOTOS_PER_STORY,
+  defaultCategoryId,
   validateImageFile,
   validateVideoFile,
 } from '@/lib/memory-map/validation'
-import { createDefaultMemoryCategories } from '@/lib/memory-map/default-categories'
 import MapCanvas from '@/components/memory-map/MapCanvas'
 import CategoryFilterPills from '@/components/memory-map/CategoryFilterPills'
 import MemoryMapShell from '@/components/memory-map/MemoryMapShell'
@@ -67,7 +67,6 @@ export default function AdminAddContentWizard({ bundle, mapId, onNavigate, onSav
   const [geoMessage, setGeoMessage] = useState<string | null>(null)
 
   const [submitting, setSubmitting] = useState(false)
-  const [creatingCategories, setCreatingCategories] = useState(false)
   const [error, setError] = useState('')
   const [savedStoryId, setSavedStoryId] = useState<string | null>(null)
   const [uploadProgress, setUploadProgress] = useState('')
@@ -86,7 +85,8 @@ export default function AdminAddContentWizard({ bundle, mapId, onNavigate, onSav
   const [isOfficial, setIsOfficial] = useState(true)
   const [displayName, setDisplayName] = useState('School Admin')
   const [publishOption, setPublishOption] = useState<AdminPublishOption>('approved')
-  const [permissionConfirmed, setPermissionConfirmed] = useState(true)
+  const [showExtraDetails, setShowExtraDetails] = useState(false)
+  const [showDateDetails, setShowDateDetails] = useState(false)
   const [containsMinors, setContainsMinors] = useState(false)
   const [mentionsFullNames, setMentionsFullNames] = useState(false)
   const [showsInjury, setShowsInjury] = useState(false)
@@ -151,7 +151,6 @@ export default function AdminAddContentWizard({ bundle, mapId, onNavigate, onSav
     setTagInput('')
     setIsOfficial(true)
     setPublishOption('approved')
-    setPermissionConfirmed(true)
     setContainsMinors(false)
     setMentionsFullNames(false)
     setShowsInjury(false)
@@ -181,13 +180,12 @@ export default function AdminAddContentWizard({ bundle, mapId, onNavigate, onSav
   function onMapClick(placement: MapPlacement) {
     if (!dropPinMode) return
     setTempPlacement(placement)
-    const defaultCat = activeCategories[0]?.id ?? ''
     setPinTarget({
       kind: 'new',
       placement,
       title: '',
       description: '',
-      categoryId: defaultCat,
+      categoryId: defaultCategoryId(activeCategories),
       pinIsOfficial: true,
     })
     setSheetStage('pin-new')
@@ -215,7 +213,7 @@ export default function AdminAddContentWizard({ bundle, mapId, onNavigate, onSav
           placement: { lat, lng },
           title: '',
           description: '',
-          categoryId: activeCategories[0]?.id ?? '',
+          categoryId: defaultCategoryId(activeCategories),
           pinIsOfficial: true,
         })
         setSheetStage('pin-new')
@@ -291,10 +289,6 @@ export default function AdminAddContentWizard({ bundle, mapId, onNavigate, onSav
 
   async function onSubmit(status: AdminPublishOption) {
     if (!pinTarget || !selectedArea) return
-    if (!hasCategories) {
-      setError('Create categories before publishing content.')
-      return
-    }
     setError('')
     const eventYear = parseInt(year, 10)
     const finalDescription = [description.trim(), textBody.trim()].filter(Boolean).join('\n\n')
@@ -308,7 +302,7 @@ export default function AdminAddContentWizard({ bundle, mapId, onNavigate, onSav
       title,
       description: finalDescription,
       year,
-      categoryId: creatingNewPin ? pinTarget.categoryId : (pinTarget.pin.category_id ?? categoryId),
+      categoryId: creatingNewPin ? defaultCategoryId(activeCategories) || null : (pinTarget.pin.category_id ?? categoryId),
       riskLevel,
       photoCount: photoFiles.length,
       hasVideo,
@@ -340,10 +334,10 @@ export default function AdminAddContentWizard({ bundle, mapId, onNavigate, onSav
         shows_injury: showsInjury,
         is_archive_content: archiveContent,
         sponsor_or_brand_visible: sponsorBrandVisible,
-        has_permission_confirmed: permissionConfirmed,
+        has_permission_confirmed: true,
       }
 
-      const pinCategoryId = creatingNewPin ? pinTarget.categoryId : (pinTarget.pin.category_id ?? categoryId)
+      const pinCategoryId = creatingNewPin ? null : (pinTarget.pin.category_id ?? categoryId)
 
       const { storyId, error: submitErr } = await adminCreateMemoryStory(supabase, {
         memoryMapId: mapId,
@@ -386,18 +380,6 @@ export default function AdminAddContentWizard({ bundle, mapId, onNavigate, onSav
     }
   }
 
-  async function onCreateDefaultCategories() {
-    setCreatingCategories(true)
-    setError('')
-    const { error: err } = await createDefaultMemoryCategories(supabase, map.id)
-    setCreatingCategories(false)
-    if (err) {
-      setError(err)
-      return
-    }
-    onSaved()
-  }
-
   function startAnother() {
     clearPinSelection()
     resetContentFields()
@@ -427,17 +409,9 @@ export default function AdminAddContentWizard({ bundle, mapId, onNavigate, onSav
         ) : null}
 
         {!hasCategories ? (
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
-            <span>Categories are needed before content can be published.</span>
-            <button
-              type="button"
-              disabled={creatingCategories}
-              onClick={() => void onCreateDefaultCategories()}
-              className="mm-btn-primary shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold disabled:opacity-50"
-            >
-              {creatingCategories ? 'Creating…' : 'Create default categories'}
-            </button>
-          </div>
+          <p className="mb-3 text-xs text-white/60">
+            Using General category automatically. You can organise categories later in Map Setup.
+          </p>
         ) : null}
 
         {hasAreas ? (
@@ -565,7 +539,7 @@ export default function AdminAddContentWizard({ bundle, mapId, onNavigate, onSav
           selectedAreaName={selectedArea?.name ?? ''}
           categories={activeCategories}
           pinStories={pinStoriesForTarget}
-          canPublish={hasCategories}
+          canPublish={true}
           error={error}
           uploadProgress={uploadProgress}
           submitting={submitting}
@@ -585,14 +559,15 @@ export default function AdminAddContentWizard({ bundle, mapId, onNavigate, onSav
           isOfficial={isOfficial}
           displayName={displayName}
           publishOption={publishOption}
-          permissionConfirmed={permissionConfirmed}
+          showExtraDetails={showExtraDetails}
+          showDateDetails={showDateDetails}
           governance={{
             containsMinors,
             mentionsFullNames,
             showsInjury,
             isArchiveContent: archiveContent,
             sponsorOrBrandVisible: sponsorBrandVisible,
-            hasPermissionConfirmed: permissionConfirmed,
+            hasPermissionConfirmed: true,
           }}
           onClose={clearPinSelection}
           onNavigate={onNavigate}
@@ -632,9 +607,6 @@ export default function AdminAddContentWizard({ bundle, mapId, onNavigate, onSav
               case 'sponsorOrBrandVisible':
                 setSponsorBrandVisible(value)
                 break
-              case 'hasPermissionConfirmed':
-                setPermissionConfirmed(value)
-                break
             }
           }}
           onMoveNewPin={() => {
@@ -673,7 +645,8 @@ type SheetProps = {
   isOfficial: boolean
   displayName: string
   publishOption: AdminPublishOption
-  permissionConfirmed: boolean
+  showExtraDetails: boolean
+  showDateDetails: boolean
   governance: StoryGovernanceFlags
   canPublish: boolean
   onClose: () => void
@@ -767,7 +740,6 @@ function AddContentSheet(props: SheetProps) {
           {stage === 'pin-new' && pinTarget?.kind === 'new' ? (
             <NewPinForm
               pin={pinTarget}
-              categories={categories}
               onUpdate={onUpdateNewPin}
               onAddContent={onOpenContent}
               onMovePin={onMoveNewPin}
@@ -802,9 +774,6 @@ function AddContentSheet(props: SheetProps) {
 
         {stage === 'content' ? (
           <div className="shrink-0 border-t border-white/10 px-4 py-3 mm-safe-bottom">
-            {!canPublish ? (
-              <p className="mb-2 text-xs text-amber-200">Create default categories before publishing content.</p>
-            ) : null}
             <div className="flex flex-col gap-2">
               <button
                 type="button"
@@ -812,7 +781,7 @@ function AddContentSheet(props: SheetProps) {
                 onClick={() => void onSubmit('approved')}
                 className="mm-btn-primary w-full rounded-2xl px-4 py-3 text-sm font-black disabled:opacity-50"
               >
-                {submitting ? 'Publishing…' : 'Publish content'}
+                {submitting ? 'Publishing…' : 'Publish'}
               </button>
               <div className="flex gap-2">
                 <button type="button" disabled={submitting || !canPublish} onClick={() => void onSubmit('draft')} className="mm-btn-secondary flex-1 rounded-xl py-2 text-xs font-bold disabled:opacity-50">
@@ -867,7 +836,7 @@ function ExistingPinSummary({
         </p>
       </div>
       <button type="button" onClick={onAddContent} className="mm-btn-primary w-full rounded-2xl px-4 py-3 text-sm font-black">
-        Add content to this pin
+        Add to this pin
       </button>
       <button type="button" onClick={onEditPin} className="mm-btn-secondary w-full rounded-xl px-4 py-2 text-sm font-bold">
         Edit pin
@@ -878,14 +847,12 @@ function ExistingPinSummary({
 
 function NewPinForm({
   pin,
-  categories,
   onUpdate,
   onAddContent,
   onMovePin,
   onClear,
 }: {
   pin: Extract<PinTarget, { kind: 'new' }>
-  categories: MemoryMapBundle['categories']
   onUpdate: (fields: Partial<Extract<PinTarget, { kind: 'new' }>>) => void
   onAddContent: () => void
   onMovePin: () => void
@@ -893,47 +860,22 @@ function NewPinForm({
 }) {
   return (
     <div className="space-y-3">
-      <p className="text-sm font-bold">New pin selected</p>
+      <p className="text-sm font-bold">New place on the map</p>
       <input
         value={pin.title}
         onChange={(e) => onUpdate({ title: e.target.value })}
-        placeholder="Pin title *"
+        placeholder="Name this place"
         className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-3 text-sm"
       />
-      <select
-        value={pin.categoryId}
-        onChange={(e) => onUpdate({ categoryId: e.target.value })}
-        className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-3 text-sm"
-        disabled={categories.length === 0}
-      >
-        {categories.length === 0 ? (
-          <option value="">Create categories first</option>
-        ) : (
-          categories.map((c) => (
-            <option key={c.id} value={c.id}>{c.name}</option>
-          ))
-        )}
-      </select>
-      <textarea
-        value={pin.description}
-        onChange={(e) => onUpdate({ description: e.target.value })}
-        placeholder="Pin description (optional)"
-        rows={2}
-        className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-3 text-sm"
-      />
-      <label className="flex items-start gap-2 text-sm">
-        <input type="checkbox" checked={pin.pinIsOfficial} onChange={(e) => onUpdate({ pinIsOfficial: e.target.checked })} className="mt-0.5" />
-        <span>Official pin</span>
-      </label>
       <button type="button" onClick={onAddContent} disabled={!pin.title.trim()} className="mm-btn-primary w-full rounded-2xl px-4 py-3 text-sm font-black disabled:opacity-50">
-        Add content here
+        Add memory here
       </button>
       <div className="flex gap-2">
         <button type="button" onClick={onMovePin} className="mm-btn-secondary flex-1 rounded-xl py-2 text-xs font-bold">
           Move pin
         </button>
         <button type="button" onClick={onClear} className="mm-btn-secondary flex-1 rounded-xl py-2 text-xs font-bold">
-          Clear pin
+          Cancel
         </button>
       </div>
     </div>

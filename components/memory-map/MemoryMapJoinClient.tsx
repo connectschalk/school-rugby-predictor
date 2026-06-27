@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { buildLoginHref } from '@/lib/auth-return-path'
 import { redeemMemoryMapInvite } from '@/lib/memory-map/mutations'
 import { fetchContributorAccess } from '@/lib/memory-map/membership'
+import { CONTRIBUTOR_SUBMISSION_POLICY_TEXT } from '@/lib/memory-map/contributor-policy'
 import type { MemoryMap } from '@/lib/memory-map/types'
 import { memoryMapThemeVars } from '@/lib/memory-map/theme'
 
@@ -18,6 +19,7 @@ type Props = {
 export default function MemoryMapJoinClient({ map, mapSlug, inviteToken }: Props) {
   const [relationship, setRelationship] = useState('')
   const [message, setMessage] = useState('I would like to contribute memories via invite link.')
+  const [policyAccepted, setPolicyAccepted] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState(false)
@@ -26,6 +28,10 @@ export default function MemoryMapJoinClient({ map, mapSlug, inviteToken }: Props
 
   async function onSubmit() {
     setError('')
+    if (!policyAccepted) {
+      setError('Please accept the contributor terms to continue.')
+      return
+    }
     setBusy(true)
     const access = await fetchContributorAccess(supabase, map.id)
     if (!access.isLoggedIn) {
@@ -37,7 +43,8 @@ export default function MemoryMapJoinClient({ map, mapSlug, inviteToken }: Props
       supabase,
       inviteToken,
       relationship,
-      message
+      message,
+      policyAccepted
     )
     setBusy(false)
     if (err) {
@@ -83,6 +90,10 @@ export default function MemoryMapJoinClient({ map, mapSlug, inviteToken }: Props
             rows={3}
             className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-3 text-sm"
           />
+          <label className="flex items-start gap-2 rounded-xl border border-white/10 p-3 text-sm">
+            <input type="checkbox" checked={policyAccepted} onChange={(e) => setPolicyAccepted(e.target.checked)} className="mt-0.5" />
+            <span>{CONTRIBUTOR_SUBMISSION_POLICY_TEXT}</span>
+          </label>
           <button type="button" disabled={busy} onClick={() => void onSubmit()} className="mm-btn-primary w-full rounded-xl py-3 text-sm font-black disabled:opacity-50">
             {busy ? 'Submitting…' : 'Submit contributor request'}
           </button>

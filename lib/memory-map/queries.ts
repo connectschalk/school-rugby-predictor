@@ -6,11 +6,18 @@ import type { MemoryMap, MemoryMapBundle, MemoryStory } from '@/lib/memory-map/t
 
 export type MemoryMapDataSource = 'supabase' | 'demo'
 
+export type LoadedMemoryMapBundle = {
+  source: MemoryMapDataSource
+  bundle: MemoryMapBundle
+}
+
+export function isSupabaseConfigured(): boolean {
+  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
+}
+
 export function createMemoryMapServerClient(): SupabaseClient | null {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  if (!url || !key) return null
-  return createClient(url, key)
+  if (!isSupabaseConfigured()) return null
+  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
 }
 
 function logBundleSource(slug: string, source: MemoryMapDataSource, detail?: string) {
@@ -81,14 +88,12 @@ export function resolvePublicMemoryMapBundle(
   }
 }
 
-export async function fetchMemoryMapBundleBySlug(slug: string): Promise<MemoryMapBundle | null> {
-  noStore()
-  const demo = getDemoBundle(slug)
+async function fetchSupabaseBundleBySlug(slug: string): Promise<{
+  map: Record<string, unknown>
+  related: Omit<MemoryMapBundle, 'map'>
+} | null> {
   const client = createMemoryMapServerClient()
-  if (!client) {
-    logBundleSource(slug, 'demo', 'no supabase client')
-    return demo ? enrichBundle(demo) : null
-  }
+  if (!client) return null
 
   try {
     const { data: map, error } = await client
@@ -98,15 +103,7 @@ export async function fetchMemoryMapBundleBySlug(slug: string): Promise<MemoryMa
       .eq('status', 'active')
       .maybeSingle()
 
-    if (error) {
-      logBundleSource(slug, 'demo', `query error: ${error.message}`)
-      return demo ? enrichBundle(demo) : null
-    }
-
-    if (!map) {
-      logBundleSource(slug, 'demo', 'no active map row')
-      return demo ? enrichBundle(demo) : null
-    }
+    if (error || !map) return null
 
     const mapId = map.id as string
     const { data: allAreaRows } = await client.from('memory_areas').select('id').eq('memory_map_id', mapId)
@@ -129,28 +126,76 @@ export async function fetchMemoryMapBundleBySlug(slug: string): Promise<MemoryMa
 
     const stories = await attachStoryMediaAndTags(client, (storiesRes.data ?? []) as MemoryStory[])
 
-    const resolved = resolvePublicMemoryMapBundle(slug, map as Record<string, unknown>, {
-      areas: (areasRes.data ?? []) as MemoryMapBundle['areas'],
-      categories: (categoriesRes.data ?? []) as MemoryMapBundle['categories'],
-      pins: (pinsRes.data ?? []) as MemoryMapBundle['pins'],
-      stories,
-      tags: (tagsRes.data ?? []) as MemoryMapBundle['tags'],
-    })
-
-    if (!resolved) {
-      logBundleSource(slug, 'demo', 'resolve failed')
-      return demo ? enrichBundle(demo) : null
+    return {
+      map: map as Record<string, unknown>,
+      related: {
+        areas: (areasRes.data ?? []) as MemoryMapBundle['areas'],
+        categories: (categoriesRes.data ?? []) as MemoryMapBundle['categories'],
+        pins: (pinsRes.data ?? []) as MemoryMapBundle['pins'],
+        stories,
+        tags: (tagsRes.data ?? []) as MemoryMapBundle['tags'],
+      },
     }
-
-    logBundleSource(slug, 'supabase')
-    return enrichBundle(resolved.bundle)
   } catch (e) {
     if (process.env.NODE_ENV === 'development') {
-      console.warn(`[memory-map] fetch failed for ${slug}:`, e)
+      console.warn(`[memory-map] supabase fetch failed for ${slug}:`, e)
     }
-    logBundleSource(slug, 'demo', 'exception')
-    return demo ? enrichBundle(demo) : null
+    return null
   }
+}
+
+export type ResolveMemoryMapBundleOptions = {
+  /** When true, never return in-memory demo if Supabase env is configured. */
+  preferSupabase?: boolean
+}
+
+/** Never mix demo areas/pins when a real Supabase map row exists. */
+export function resolveMemoryMapBundleLoad(
+  slug: string,
+  supabase: { map: Record<string, unknown>; related: Omit<MemoryMapBundle, 'map'> } | null,
+  options?: ResolveMemoryMapBundleOptions
+): LoadedMemoryMapBundle | null {
+  if (supabase) {
+    const resolved = resolvePublicMemoryMapBundle(slug, supabase.map, supabase.related)
+    if (resolved) {
+      return { source: 'supabase', bundle: enrichBundle(resolved.bundle) }
+    }
+  }
+
+  const supabaseConfigured = isSupabaseConfigured()
+  const allowDemo = !(options?.preferSupabase && supabaseConfigured)
+
+  if (!allowDemo) return null
+
+  const demo = getDemoBundle(slug)
+  if (demo) {
+    return { source: 'demo', bundle: enrichBundle(demo) }
+  }
+
+  return null
+}
+
+export async function loadMemoryMapBundleBySlug(
+  slug: string,
+  options?: ResolveMemoryMapBundleOptions
+): Promise<LoadedMemoryMapBundle | null> {
+  noStore()
+  const supabase = await fetchSupabaseBundleBySlug(slug)
+  const loaded = resolveMemoryMapBundleLoad(slug, supabase, options)
+  if (loaded) {
+    logBundleSource(slug, loaded.source, loaded.source === 'demo' ? 'no supabase map' : undefined)
+  }
+  return loaded
+}
+
+/** Add Memory route: prefer Supabase and avoid masking a real map with in-memory demo. */
+export async function loadContributorMemoryMapBundleBySlug(slug: string): Promise<LoadedMemoryMapBundle | null> {
+  return loadMemoryMapBundleBySlug(slug, { preferSupabase: true })
+}
+
+export async function fetchMemoryMapBundleBySlug(slug: string): Promise<MemoryMapBundle | null> {
+  const loaded = await loadMemoryMapBundleBySlug(slug)
+  return loaded?.bundle ?? null
 }
 
 export async function fetchAdminMemoryMapBundle(mapId: string): Promise<MemoryMapBundle | null> {

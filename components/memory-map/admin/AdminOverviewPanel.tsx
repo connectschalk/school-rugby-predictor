@@ -16,9 +16,33 @@ export default function AdminOverviewPanel({ bundle, pendingContributors, analyt
   const stats = bundleStats(bundle)
   const health = mapHealthChecklist(bundle)
   const healthOk = health.filter((h) => h.ok).length
+  const activeAreas = bundle.areas.filter((a) => a.is_active)
+  const activeCategories = bundle.categories.filter((c) => c.is_active)
 
   return (
     <div className="space-y-6">
+      {activeAreas.length === 0 ? (
+        <div className="mm-card rounded-2xl border border-amber-400/40 bg-amber-500/10 p-4">
+          <p className="text-sm font-black">Create your first area</p>
+          <p className="mm-muted mt-1 text-xs">Contributors cannot place memories until at least one area exists.</p>
+          <button type="button" onClick={() => onNavigate('areas')} className="mm-btn-secondary mt-3 rounded-lg px-3 py-1.5 text-xs font-bold">
+            Add area
+          </button>
+        </div>
+      ) : null}
+
+      {activeCategories.length === 0 ? (
+        <div className="mm-card rounded-2xl border border-white/10 p-4">
+          <p className="text-sm font-black">Organise with categories</p>
+          <p className="mm-muted mt-1 text-xs">
+            Categories are optional for contributors — General is created automatically. Add more to organise pins and stories.
+          </p>
+          <button type="button" onClick={() => onNavigate('categories')} className="mm-btn-secondary mt-3 rounded-lg px-3 py-1.5 text-xs font-bold">
+            Manage categories
+          </button>
+        </div>
+      ) : null}
+
       <div className="grid gap-3 sm:grid-cols-2">
         {[
           ['Pending stories', stats.pendingStories, 'pending'],

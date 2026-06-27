@@ -129,7 +129,11 @@ export function mapHealthChecklist(bundle: MemoryMapBundle): MapHealthItem[] {
       label: 'Default map opening point set',
       ok: map.default_lat != null && map.default_lng != null,
     },
-    { id: 'category', label: 'At least one active category', ok: categories.some((c) => c.is_active) },
+    {
+      id: 'category',
+      label: 'Default category available',
+      ok: categories.some((c) => c.is_active && c.name.toLowerCase() === 'general') || categories.some((c) => c.is_active),
+    },
     { id: 'qr', label: 'QR link ready', ok: Boolean(map.slug) },
     { id: 'stories', label: 'Public map has approved stories', ok: approvedStories.length > 0 },
   ]

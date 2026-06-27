@@ -54,6 +54,86 @@ export function deriveStoryTitle(description: string): string {
   return line.length <= 80 ? line : `${line.slice(0, 77)}…`
 }
 
+export function resolveMemoryTitle(
+  memoryTitle: string,
+  shortNote: string,
+  textMemory: string,
+  year: string
+): string {
+  if (memoryTitle.trim()) return memoryTitle.trim()
+  const fromText = shortNote.trim() || textMemory.trim()
+  if (fromText) return deriveStoryTitle(fromText)
+  const y = year.trim() || String(new Date().getFullYear())
+  return `Memory ${y}`
+}
+
+export type QuickContributorSubmitInput = {
+  memoryTitle: string
+  shortNote: string
+  textMemory: string
+  year: string
+  photoCount: number
+  hasVideo: boolean
+  hasSubmissionPolicy: boolean
+  displayName: string
+}
+
+export type QuickContributorFieldErrors = {
+  content?: string
+  year?: string
+  title?: string
+  note?: string
+  name?: string
+  policy?: string
+}
+
+export function getQuickContributorFieldErrors(input: QuickContributorSubmitInput): QuickContributorFieldErrors {
+  const errors: QuickContributorFieldErrors = {}
+  const hasMedia = input.photoCount > 0 || input.hasVideo
+  const hasText = Boolean(input.shortNote.trim() || input.textMemory.trim())
+
+  if (!hasMedia && !hasText) {
+    errors.content = 'Add a photo, video or text memory.'
+  }
+  if (!hasMedia && !input.shortNote.trim() && !input.textMemory.trim()) {
+    errors.note = 'Write the memory.'
+  }
+  if (!input.year || Number.isNaN(parseInt(input.year, 10))) {
+    errors.year = 'Add the year this happened.'
+  }
+  if (!resolveMemoryTitle(input.memoryTitle, input.shortNote, input.textMemory, input.year).trim()) {
+    errors.title = 'Give this memory a short name.'
+  }
+  if (!input.hasSubmissionPolicy) {
+    errors.policy = 'Please accept the contributor terms before submitting memories.'
+  }
+  if (!input.displayName.trim()) {
+    errors.name = 'Enter your name.'
+  }
+  return errors
+}
+
+export function validateQuickContributorSubmit(input: QuickContributorSubmitInput): string | null {
+  const errors = getQuickContributorFieldErrors(input)
+  const hasMedia = input.photoCount > 0 || input.hasVideo
+  const hasText = Boolean(input.shortNote.trim() || input.textMemory.trim())
+
+  if (!hasMedia && !hasText) {
+    return errors.content ?? 'Add a photo, video or text memory.'
+  }
+  if (!hasMedia && !input.shortNote.trim() && !input.textMemory.trim()) {
+    return errors.note ?? 'Write the memory.'
+  }
+  if (errors.year) return errors.year
+  if (errors.policy) return errors.policy
+  if (errors.name) return errors.name
+  if (input.photoCount > MM_MAX_PHOTOS_PER_STORY) {
+    return `Maximum ${MM_MAX_PHOTOS_PER_STORY} photos per story.`
+  }
+  return null
+}
+
+/** @deprecated Use validateQuickContributorSubmit */
 export type QuickMemoryInput = {
   description: string
   extraText: string
@@ -64,44 +144,43 @@ export type QuickMemoryInput = {
   displayName: string
 }
 
-export type QuickMemoryFieldErrors = {
-  content?: string
-  year?: string
+/** @deprecated Use getQuickContributorFieldErrors */
+export type QuickMemoryFieldErrors = QuickContributorFieldErrors & {
   description?: string
   permission?: string
-  name?: string
 }
 
-export function getQuickMemoryFieldErrors(input: QuickMemoryInput): QuickMemoryFieldErrors {
-  const errors: QuickMemoryFieldErrors = {}
-  const hasMedia = input.photoCount > 0 || input.hasVideo
-  const hasWritten = Boolean(input.description.trim() || input.extraText.trim())
-  if (!hasMedia && !hasWritten) {
-    errors.content = 'Add a photo, video or written memory.'
-  }
-  if (!input.description.trim()) {
-    errors.description = 'Tell us briefly what happened here.'
-  }
-  if (!input.year || Number.isNaN(parseInt(input.year, 10))) {
-    errors.year = 'Add the year this happened.'
-  }
-  if (!input.permissionConfirmed) {
-    errors.permission = 'Please confirm you have permission.'
-  }
-  if (!input.displayName.trim()) {
-    errors.name = 'Enter your name.'
-  }
-  return errors
-}
-
-/** Simplified contributor submit — title/category/risk are derived or defaulted elsewhere. */
+/** @deprecated Use validateQuickContributorSubmit */
 export function validateQuickMemorySubmit(input: QuickMemoryInput): string | null {
-  const errors = getQuickMemoryFieldErrors(input)
-  const first = errors.content ?? errors.description ?? errors.year ?? errors.permission ?? errors.name
-  if (input.photoCount > MM_MAX_PHOTOS_PER_STORY) {
-    return `Maximum ${MM_MAX_PHOTOS_PER_STORY} photos per story.`
+  return validateQuickContributorSubmit({
+    memoryTitle: '',
+    shortNote: input.description,
+    textMemory: input.extraText,
+    year: input.year,
+    photoCount: input.photoCount,
+    hasVideo: input.hasVideo,
+    hasSubmissionPolicy: input.permissionConfirmed,
+    displayName: input.displayName,
+  })
+}
+
+/** @deprecated Use getQuickContributorFieldErrors */
+export function getQuickMemoryFieldErrors(input: QuickMemoryInput): QuickMemoryFieldErrors {
+  const errors = getQuickContributorFieldErrors({
+    memoryTitle: '',
+    shortNote: input.description,
+    textMemory: input.extraText,
+    year: input.year,
+    photoCount: input.photoCount,
+    hasVideo: input.hasVideo,
+    hasSubmissionPolicy: input.permissionConfirmed,
+    displayName: input.displayName,
+  })
+  return {
+    ...errors,
+    description: errors.note,
+    permission: errors.policy,
   }
-  return first ?? null
 }
 
 export function validateStoryContent(input: StoryContentInput): string | null {
@@ -117,6 +196,11 @@ export function validateStoryContent(input: StoryContentInput): string | null {
     return `Maximum ${MM_MAX_PHOTOS_PER_STORY} photos per story.`
   }
   return null
+}
+
+export function defaultCategoryId(categories: { id: string; name: string; is_active?: boolean }[]): string {
+  const active = categories.filter((c) => c.is_active !== false)
+  return active.find((c) => c.name.toLowerCase() === 'general')?.id ?? active[0]?.id ?? ''
 }
 
 export function slugify(input: string): string {

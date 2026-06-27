@@ -183,6 +183,8 @@ export type MemoryMapMember = {
   relationship: string | null
   request_message: string | null
   approved_at: string | null
+  submission_policy_accepted_at?: string | null
+  submission_policy_version?: string | null
   created_at?: string | null
   approved_by?: string | null
 }

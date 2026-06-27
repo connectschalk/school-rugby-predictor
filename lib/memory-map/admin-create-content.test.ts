@@ -42,6 +42,6 @@ describe('validateAdminStoryDraft', () => {
       newPinTitle: 'New pin',
       hasPinPlacement: false,
     })
-    expect(err).toMatch(/place the pin/i)
+    expect(err).toMatch(/tap the map/i)
   })
 })

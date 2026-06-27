@@ -7,20 +7,25 @@ import { buildLoginHref } from '@/lib/auth-return-path'
 import type { ContributorAccess } from '@/lib/memory-map/membership'
 import { fetchContributorAccess } from '@/lib/memory-map/membership'
 import { requestContributorAccess, submitMemoryStory, type StoryMediaPayload } from '@/lib/memory-map/mutations'
+import type { MemoryMapDataSource } from '@/lib/memory-map/queries'
+import { fetchPublicMemoryMapBundleClient } from '@/lib/memory-map/client-queries'
+import { isUuid, validateMemoryMapSubmitIds } from '@/lib/memory-map/submit-ids'
 import { uploadPendingStoryMedia } from '@/lib/memory-map/storage'
 import { trackMemoryMapEvent } from '@/lib/memory-map/analytics'
 import { activeAreas } from '@/lib/memory-map/add-story-placement'
 import { inferStoryType } from '@/lib/memory-map/infer-story-type'
 import { getImageMapInitialFocus, getMapInitialView } from '@/lib/memory-map/map-starting-point'
 import {
-  deriveStoryTitle,
-  getQuickMemoryFieldErrors,
-  validateQuickMemorySubmit,
+  defaultCategoryId,
+  getQuickContributorFieldErrors,
+  resolveMemoryTitle,
+  validateQuickContributorSubmit,
   validateImageFile,
   validateVideoFile,
   MM_MAX_PHOTOS_PER_STORY,
-  type QuickMemoryFieldErrors,
+  type QuickContributorFieldErrors,
 } from '@/lib/memory-map/validation'
+import { CONTRIBUTOR_SUBMISSION_POLICY_TEXT } from '@/lib/memory-map/contributor-policy'
 import {
   OPTIONAL_GOVERNANCE_CHECKBOXES,
   CONTRIBUTOR_REVIEW_NOTE_OPTIONS,
@@ -38,6 +43,7 @@ import MmEmptyState from '@/components/memory-map/MmEmptyState'
 
 type Props = {
   bundle: MemoryMapBundle
+  dataSource: MemoryMapDataSource
   initialPinId?: string | null
   initialAreaId?: string | null
 }
@@ -62,12 +68,16 @@ const MONTHS = [
   })),
 ]
 
-function defaultCategoryId(categories: MemoryMapBundle['categories']): string {
-  return categories.find((c) => c.name.toLowerCase() === 'general')?.id ?? categories[0]?.id ?? ''
+function defaultPinCategoryId(categories: MemoryMapBundle['categories']): string {
+  return defaultCategoryId(categories)
 }
 
-export default function AddStoryWizard({ bundle, initialPinId, initialAreaId }: Props) {
-  const { map, areas, categories, pins, stories } = bundle
+export default function AddStoryWizard({ bundle, dataSource, initialPinId, initialAreaId }: Props) {
+  const [resolvedBundle, setResolvedBundle] = useState(bundle)
+  const [resolvedSource, setResolvedSource] = useState<MemoryMapDataSource>(dataSource)
+  const [sourceHydrating, setSourceHydrating] = useState(dataSource === 'demo')
+
+  const { map, areas, categories, pins, stories } = resolvedBundle
   const mapAreas = useMemo(() => activeAreas(areas), [areas])
   const activeCategories = useMemo(() => categories.filter((c) => c.is_active), [categories])
 
@@ -76,6 +86,7 @@ export default function AddStoryWizard({ bundle, initialPinId, initialAreaId }: 
   const [relationship, setRelationship] = useState('')
   const [requestMessage, setRequestMessage] = useState('')
   const [requestSent, setRequestSent] = useState(false)
+  const [policyAccepted, setPolicyAccepted] = useState(false)
 
   const [selectedAreaId, setSelectedAreaId] = useState(
     initialAreaId && mapAreas.some((a) => a.id === initialAreaId) ? initialAreaId : mapAreas[0]?.id ?? ''
@@ -100,15 +111,17 @@ export default function AddStoryWizard({ bundle, initialPinId, initialAreaId }: 
   const [year, setYear] = useState(String(new Date().getFullYear()))
   const [month, setMonth] = useState('')
   const [eventDate, setEventDate] = useState('')
-  const [description, setDescription] = useState('')
-  const [categoryId, setCategoryId] = useState(defaultCategoryId(activeCategories))
+  const [memoryTitle, setMemoryTitle] = useState('')
+  const [shortNote, setShortNote] = useState('')
+  const [categoryId, setCategoryId] = useState(defaultPinCategoryId(activeCategories))
   const [riskLevel, setRiskLevel] = useState<RiskLevel>('low')
   const [tagInput, setTagInput] = useState('')
   const [tags, setTags] = useState<string[]>([])
   const [textBody, setTextBody] = useState('')
   const [peopleInvolved, setPeopleInvolved] = useState('')
   const [groupClassYear, setGroupClassYear] = useState('')
-  const [showMoreDetails, setShowMoreDetails] = useState(false)
+  const [showExtraDetails, setShowExtraDetails] = useState(false)
+  const [showDateDetails, setShowDateDetails] = useState(false)
   const [showTextEditor, setShowTextEditor] = useState(false)
   const [hasAutoDisplayName, setHasAutoDisplayName] = useState(false)
   const photoInputRef = useRef<HTMLInputElement>(null)
@@ -116,7 +129,6 @@ export default function AddStoryWizard({ bundle, initialPinId, initialAreaId }: 
   const [photoFiles, setPhotoFiles] = useState<File[]>([])
   const [videoFile, setVideoFile] = useState<File | null>(null)
   const [displayName, setDisplayName] = useState('')
-  const [permissionConfirmed, setPermissionConfirmed] = useState(false)
   const [containsMinors, setContainsMinors] = useState(false)
   const [mentionsFullNames, setMentionsFullNames] = useState(false)
   const [showsInjury, setShowsInjury] = useState(false)
@@ -124,6 +136,37 @@ export default function AddStoryWizard({ bundle, initialPinId, initialAreaId }: 
   const [sponsorBrandVisible, setSponsorBrandVisible] = useState(false)
 
   const returnPath = `/memory-map/${map.slug}/add${initialAreaId ? `?area=${initialAreaId}` : ''}${initialPinId ? `${initialAreaId ? '&' : '?'}pin=${initialPinId}` : ''}`
+
+  useEffect(() => {
+    setResolvedBundle(bundle)
+    setResolvedSource(dataSource)
+    setSourceHydrating(dataSource === 'demo')
+  }, [bundle, dataSource])
+
+  useEffect(() => {
+    if (dataSource === 'supabase') return
+    let cancelled = false
+    void fetchPublicMemoryMapBundleClient(supabase, bundle.map.slug)
+      .then((live) => {
+        if (cancelled || !live) return
+        setResolvedBundle(live)
+        setResolvedSource('supabase')
+      })
+      .finally(() => {
+        if (!cancelled) setSourceHydrating(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [bundle.map.slug, dataSource])
+
+  useEffect(() => {
+    const nextAreas = activeAreas(resolvedBundle.areas)
+    if (!nextAreas.length) return
+    if (!nextAreas.some((a) => a.id === selectedAreaId)) {
+      setSelectedAreaId(nextAreas[0].id)
+    }
+  }, [resolvedBundle.areas, selectedAreaId])
 
   const loadAccess = useCallback(async () => {
     setAccessLoading(true)
@@ -150,7 +193,14 @@ export default function AddStoryWizard({ bundle, initialPinId, initialAreaId }: 
   }, [])
 
   const canContribute = access?.canSubmit || access?.isMapAdmin
-  const hasCategories = activeCategories.length > 0
+  const hasSubmissionPolicy = Boolean(access?.hasSubmissionPolicy)
+  const canSubmitToDatabase = resolvedSource === 'supabase' && isUuid(selectedAreaId) && hasSubmissionPolicy
+  const submissionNotice =
+    resolvedSource === 'demo'
+      ? 'Preview mode: this map is using sample data. Memories can be submitted once the map is connected to the live database.'
+      : !isUuid(selectedAreaId)
+        ? 'This area is not linked to the live database yet. Ask the school admin to set up map areas.'
+        : null
 
   useEffect(() => {
     if (!canContribute || accessLoading) return
@@ -190,7 +240,7 @@ export default function AddStoryWizard({ bundle, initialPinId, initialAreaId }: 
     showsInjury,
     isArchiveContent: archiveContent,
     sponsorOrBrandVisible: sponsorBrandVisible,
-    hasPermissionConfirmed: permissionConfirmed,
+    hasPermissionConfirmed: hasSubmissionPolicy,
   }
 
   function setGovernanceFlag(key: keyof StoryGovernanceFlags, value: boolean) {
@@ -211,7 +261,6 @@ export default function AddStoryWizard({ bundle, initialPinId, initialAreaId }: 
         setSponsorBrandVisible(value)
         break
       case 'hasPermissionConfirmed':
-        setPermissionConfirmed(value)
         break
     }
   }
@@ -233,7 +282,8 @@ export default function AddStoryWizard({ bundle, initialPinId, initialAreaId }: 
     setYear(String(new Date().getFullYear()))
     setMonth('')
     setEventDate('')
-    setDescription('')
+    setMemoryTitle('')
+    setShortNote('')
     setTextBody('')
     setPhotoFiles([])
     setVideoFile(null)
@@ -242,14 +292,14 @@ export default function AddStoryWizard({ bundle, initialPinId, initialAreaId }: 
     setPeopleInvolved('')
     setGroupClassYear('')
     setRiskLevel('low')
-    setPermissionConfirmed(false)
     setContainsMinors(false)
     setMentionsFullNames(false)
     setShowsInjury(false)
     setArchiveContent(false)
     setSponsorBrandVisible(false)
     setIsArchiveMemory(false)
-    setShowMoreDetails(false)
+    setShowExtraDetails(false)
+    setShowDateDetails(false)
     setShowTextEditor(false)
     setSubmitAttempted(false)
     setError('')
@@ -284,7 +334,7 @@ export default function AddStoryWizard({ bundle, initialPinId, initialAreaId }: 
       placement,
       title: '',
       description: '',
-      categoryId: defaultCategoryId(activeCategories),
+      categoryId: defaultPinCategoryId(activeCategories),
     })
     setSheetStage('pin-new')
   }
@@ -311,7 +361,7 @@ export default function AddStoryWizard({ bundle, initialPinId, initialAreaId }: 
           placement: { lat, lng },
           title: '',
           description: '',
-          categoryId: defaultCategoryId(activeCategories),
+          categoryId: defaultPinCategoryId(activeCategories),
         })
         setSheetStage('pin-new')
         setGeoMessage('Location found. Add your memory here or move the pin.')
@@ -341,7 +391,7 @@ export default function AddStoryWizard({ bundle, initialPinId, initialAreaId }: 
   }
 
   function buildFinalDescription(): string {
-    const parts = [description.trim()]
+    const parts = [shortNote.trim()]
     if (peopleInvolved.trim()) parts.push(`People involved: ${peopleInvolved.trim()}`)
     if (groupClassYear.trim()) parts.push(`Team/group/class/year: ${groupClassYear.trim()}`)
     if (month && !eventDate) {
@@ -349,7 +399,8 @@ export default function AddStoryWizard({ bundle, initialPinId, initialAreaId }: 
       if (monthLabel) parts.push(`Month: ${monthLabel}`)
     }
     const main = parts.filter(Boolean).join('\n\n')
-    return [main, textBody.trim()].filter(Boolean).join('\n\n')
+  const textContent = showTextEditor || textBody.trim() ? textBody.trim() : ''
+    return [main, textContent].filter(Boolean).join('\n\n')
   }
 
   function resolveEventDate(): string | null {
@@ -381,7 +432,17 @@ export default function AddStoryWizard({ bundle, initialPinId, initialAreaId }: 
 
   async function onRequestAccess() {
     setError('')
-    const { error: err } = await requestContributorAccess(supabase, map.id, relationship, requestMessage)
+    if (!policyAccepted) {
+      setError('Please accept the contributor terms to continue.')
+      return
+    }
+    const { error: err } = await requestContributorAccess(
+      supabase,
+      map.id,
+      relationship,
+      requestMessage,
+      policyAccepted
+    )
     if (err) {
       setError(err)
       return
@@ -442,27 +503,41 @@ export default function AddStoryWizard({ bundle, initialPinId, initialAreaId }: 
 
   async function onSubmit() {
     if (!pinTarget || !selectedArea) return
-    if (!hasCategories) {
-      setError('The school admin needs to create a category before memories can be submitted.')
+
+    const idError = validateMemoryMapSubmitIds({
+      source: resolvedSource,
+      memoryMapId: map.id,
+      areaId: selectedArea.id,
+      existingPinId: pinTarget.kind === 'existing' ? pinTarget.pin.id : null,
+      categoryId:
+        pinTarget.kind === 'new'
+          ? defaultPinCategoryId(activeCategories) || null
+          : (pinTarget.pin.category_id ?? categoryId),
+    })
+    if (idError) {
+      setError(idError)
       return
     }
+
     setSubmitAttempted(true)
     setError('')
     setFailedFileName(null)
-    const finalDescription = buildFinalDescription()
     const hasPhoto = photoFiles.length > 0
     const hasVideo = Boolean(videoFile)
     const creatingNewPin = pinTarget.kind === 'new'
     const placement = creatingNewPin ? pinTarget.placement : null
-    const pinCategoryId = creatingNewPin ? pinTarget.categoryId : (pinTarget.pin.category_id ?? categoryId)
+    const pinCategoryId = creatingNewPin
+      ? defaultPinCategoryId(activeCategories) || null
+      : (pinTarget.pin.category_id ?? categoryId)
 
-    const contentErr = validateQuickMemorySubmit({
-      description,
-      extraText: textBody,
+    const contentErr = validateQuickContributorSubmit({
+      memoryTitle,
+      shortNote,
+      textMemory: textBody,
       year,
       photoCount: photoFiles.length,
       hasVideo,
-      permissionConfirmed,
+      hasSubmissionPolicy,
       displayName,
     })
     if (contentErr) {
@@ -480,8 +555,9 @@ export default function AddStoryWizard({ bundle, initialPinId, initialAreaId }: 
       }
     }
 
-    const storyTitle = deriveStoryTitle(finalDescription)
+    const storyTitle = resolveMemoryTitle(memoryTitle, shortNote, textBody, year)
     const eventYear = eventDate ? parseInt(eventDate.slice(0, 4), 10) : parseInt(year, 10)
+    const finalDescription = buildFinalDescription() || storyTitle
     const hasText = Boolean(finalDescription.trim())
 
     setSubmitting(true)
@@ -492,6 +568,7 @@ export default function AddStoryWizard({ bundle, initialPinId, initialAreaId }: 
       const { error: submitErr } = await submitMemoryStory(supabase, {
         memoryMapId: map.id,
         areaId: selectedArea.id,
+        dataSource: resolvedSource,
         existingPinId: creatingNewPin ? null : pinTarget.pin.id,
         pinTitle: creatingNewPin ? pinTarget.title.trim() : undefined,
         pinDescription: creatingNewPin ? pinTarget.description.trim() : undefined,
@@ -507,7 +584,7 @@ export default function AddStoryWizard({ bundle, initialPinId, initialAreaId }: 
         uploadMode: resolveUploadMode(),
         riskLevel,
         loggedByDisplayName: displayName.trim(),
-        hasPermissionConfirmed: permissionConfirmed,
+        hasPermissionConfirmed: hasSubmissionPolicy,
         containsMinors,
         mentionsFullNames,
         showsInjury,
@@ -547,16 +624,17 @@ export default function AddStoryWizard({ bundle, initialPinId, initialAreaId }: 
 
   const fieldErrors = useMemo(
     () =>
-      getQuickMemoryFieldErrors({
-        description,
-        extraText: textBody,
+      getQuickContributorFieldErrors({
+        memoryTitle,
+        shortNote,
+        textMemory: textBody,
         year,
         photoCount: photoFiles.length,
         hasVideo: Boolean(videoFile),
-        permissionConfirmed,
+        hasSubmissionPolicy,
         displayName,
       }),
-    [description, textBody, year, photoFiles.length, videoFile, permissionConfirmed, displayName]
+    [memoryTitle, shortNote, textBody, year, photoFiles.length, videoFile, hasSubmissionPolicy, displayName]
   )
 
   if (accessLoading) {
@@ -607,6 +685,10 @@ export default function AddStoryWizard({ bundle, initialPinId, initialAreaId }: 
               <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Your name" className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-3 text-sm" />
               <input value={relationship} onChange={(e) => setRelationship(e.target.value)} placeholder="Relationship (e.g. old boy, parent)" className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-3 text-sm" />
               <textarea value={requestMessage} onChange={(e) => setRequestMessage(e.target.value)} placeholder="Why would you like to contribute?" rows={3} className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-3 text-sm" />
+              <label className="flex items-start gap-2 rounded-xl border border-white/10 p-3 text-sm">
+                <input type="checkbox" checked={policyAccepted} onChange={(e) => setPolicyAccepted(e.target.checked)} className="mt-0.5" />
+                <span>{CONTRIBUTOR_SUBMISSION_POLICY_TEXT}</span>
+              </label>
               {error ? <p className="text-sm text-red-300">{error}</p> : null}
               <button type="button" onClick={() => void onRequestAccess()} className="mm-btn-primary w-full rounded-2xl px-4 py-3 text-sm font-black">
                 Request access
@@ -625,9 +707,15 @@ export default function AddStoryWizard({ bundle, initialPinId, initialAreaId }: 
         <div className="px-4 py-3">
           <h1 className="text-xl font-black">Add a memory</h1>
           <p className="mm-muted mt-1 text-sm">Tap a pin or tap the map where this memory happened.</p>
+          {sourceHydrating ? <p className="mm-muted mt-2 text-xs">Loading live map data…</p> : null}
+          {submissionNotice ? (
+            <p className="mt-3 rounded-xl border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+              {submissionNotice}
+            </p>
+          ) : null}
         </div>
         <div className="px-2 pb-4">
-          <MemoryMapShell map={map} message="The school admin needs to create an area before memories can be placed on the map." />
+          <MemoryMapShell map={map} message="This Memory Map does not have areas yet. Ask the school admin to add an area first." />
         </div>
       </div>
     )
@@ -642,12 +730,13 @@ export default function AddStoryWizard({ bundle, initialPinId, initialAreaId }: 
           <div className="mb-3">
             <h1 className="text-xl font-black">Add a memory</h1>
             <p className="mm-muted mt-1 text-sm">Tap a pin or tap the map where this memory happened.</p>
+            {sourceHydrating ? <p className="mm-muted mt-2 text-xs">Loading live map data…</p> : null}
           </div>
 
-          {!hasCategories ? (
-            <div className="mb-3 rounded-xl border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
-              The school admin needs to create a category before new places can be added.
-            </div>
+          {submissionNotice ? (
+            <p className="mb-3 rounded-xl border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+              {submissionNotice}
+            </p>
           ) : null}
 
           <p className="mm-muted mb-2 text-[11px] font-semibold uppercase tracking-wide">Choose area</p>
@@ -745,7 +834,8 @@ export default function AddStoryWizard({ bundle, initialPinId, initialAreaId }: 
             year={year}
             month={month}
             eventDate={eventDate}
-            description={description}
+            memoryTitle={memoryTitle}
+            shortNote={shortNote}
             categoryId={categoryId}
             riskLevel={riskLevel}
             tagInput={tagInput}
@@ -756,7 +846,8 @@ export default function AddStoryWizard({ bundle, initialPinId, initialAreaId }: 
             photoFiles={photoFiles}
             videoFile={videoFile}
             displayName={displayName}
-            showMoreDetails={showMoreDetails}
+            showExtraDetails={showExtraDetails}
+            showDateDetails={showDateDetails}
             showTextEditor={showTextEditor}
             hasAutoDisplayName={hasAutoDisplayName}
             photoInputRef={photoInputRef}
@@ -778,14 +869,16 @@ export default function AddStoryWizard({ bundle, initialPinId, initialAreaId }: 
             setYear={setYear}
             setMonth={setMonth}
             setEventDate={setEventDate}
-            setDescription={setDescription}
+            setMemoryTitle={setMemoryTitle}
+            setShortNote={setShortNote}
             setRiskLevel={setRiskLevel}
             setTagInput={setTagInput}
             setTags={setTags}
             setTextBody={setTextBody}
             setPeopleInvolved={setPeopleInvolved}
             setGroupClassYear={setGroupClassYear}
-            setShowMoreDetails={setShowMoreDetails}
+            setShowExtraDetails={setShowExtraDetails}
+            setShowDateDetails={setShowDateDetails}
             setShowTextEditor={setShowTextEditor}
             setGovernanceFlag={setGovernanceFlag}
             onArchiveToggle={(checked) => {
@@ -794,7 +887,8 @@ export default function AddStoryWizard({ bundle, initialPinId, initialAreaId }: 
             }}
             submitAttempted={submitAttempted}
             fieldErrors={fieldErrors}
-            canSubmit={hasCategories}
+            canSubmit={canSubmitToDatabase}
+            submissionNotice={submissionNotice}
           />
         ) : null}
       </div>
@@ -817,7 +911,8 @@ type SheetProps = {
   year: string
   month: string
   eventDate: string
-  description: string
+  memoryTitle: string
+  shortNote: string
   categoryId: string
   riskLevel: RiskLevel
   tagInput: string
@@ -828,7 +923,8 @@ type SheetProps = {
   photoFiles: File[]
   videoFile: File | null
   displayName: string
-  showMoreDetails: boolean
+  showExtraDetails: boolean
+  showDateDetails: boolean
   showTextEditor: boolean
   hasAutoDisplayName: boolean
   photoInputRef: React.RefObject<HTMLInputElement | null>
@@ -847,20 +943,23 @@ type SheetProps = {
   setYear: (v: string) => void
   setMonth: (v: string) => void
   setEventDate: (v: string) => void
-  setDescription: (v: string) => void
+  setMemoryTitle: (v: string) => void
+  setShortNote: (v: string) => void
   setRiskLevel: (v: RiskLevel) => void
   setTagInput: (v: string) => void
   setTags: (v: string[]) => void
   setTextBody: (v: string) => void
   setPeopleInvolved: (v: string) => void
   setGroupClassYear: (v: string) => void
-  setShowMoreDetails: (v: boolean) => void
+  setShowExtraDetails: (v: boolean) => void
+  setShowDateDetails: (v: boolean) => void
   setShowTextEditor: (v: boolean) => void
   setGovernanceFlag: (key: keyof StoryGovernanceFlags, value: boolean) => void
   onArchiveToggle: (checked: boolean) => void
   submitAttempted: boolean
-  fieldErrors: QuickMemoryFieldErrors
+  fieldErrors: QuickContributorFieldErrors
   canSubmit: boolean
+  submissionNotice: string | null
 }
 
 function ContributorAddSheet(props: SheetProps) {
@@ -883,6 +982,7 @@ function ContributorAddSheet(props: SheetProps) {
     onSubmit,
     onStartAnother,
     canSubmit,
+    submissionNotice,
   } = props
 
   const pinTitle =
@@ -901,7 +1001,7 @@ function ContributorAddSheet(props: SheetProps) {
           <div className="flex items-start justify-between gap-2">
             <div>
               <p className="text-sm font-black">
-                {stage === 'content' ? 'Add memory here' : stage === 'success' ? 'Submitted' : 'Add memory here'}
+                {stage === 'content' ? 'Add memory' : stage === 'success' ? 'Submitted' : 'Add memory'}
               </p>
               {pinTarget && stage !== 'success' ? (
                 <p className="mm-muted mt-0.5 text-xs">
@@ -966,8 +1066,8 @@ function ContributorAddSheet(props: SheetProps) {
 
         {stage === 'content' ? (
           <div className="shrink-0 border-t border-white/10 bg-[var(--mm-bg,#05080d)] px-4 py-3 mm-safe-bottom">
-            {!canSubmit ? (
-              <p className="mb-2 text-xs text-amber-200">The school admin needs to create a category before you can submit.</p>
+            {!canSubmit && submissionNotice ? (
+              <p className="mb-2 text-xs text-amber-100">{submissionNotice}</p>
             ) : null}
             <button
               type="button"
@@ -975,7 +1075,7 @@ function ContributorAddSheet(props: SheetProps) {
               onClick={onSubmit}
               className="mm-btn-primary w-full rounded-2xl px-4 py-3 text-sm font-black disabled:opacity-50"
             >
-              {submitting ? 'Submitting…' : 'Submit for approval'}
+              {submitting ? 'Submitting…' : 'Submit'}
             </button>
             <button type="button" onClick={onClose} className="mt-2 w-full text-xs font-bold text-white/50">
               Cancel
@@ -1030,7 +1130,7 @@ function ExistingPinPanel({
         </div>
       ) : null}
       <button type="button" onClick={onAddMemory} className="mm-btn-primary w-full rounded-2xl px-4 py-3.5 text-sm font-black">
-        Add memory to this pin
+        Add to this pin
       </button>
       {stories.length > 0 ? (
         <Link
@@ -1131,14 +1231,13 @@ function PhotoPreviewList({ files, onRemove }: { files: File[]; onRemove: (index
 
 function QuickMemoryForm(props: SheetProps & { pinTitle: string }) {
   const {
-    pinTarget,
     pinTitle,
     selectedAreaName,
     year,
     month,
     eventDate,
-    description,
-    categoryId,
+    memoryTitle,
+    shortNote,
     riskLevel,
     tagInput,
     tags,
@@ -1146,13 +1245,13 @@ function QuickMemoryForm(props: SheetProps & { pinTitle: string }) {
     photoFiles,
     videoFile,
     displayName,
-    showMoreDetails,
+    showExtraDetails,
+    showDateDetails,
     showTextEditor,
     hasAutoDisplayName,
     photoInputRef,
     videoInputRef,
     governance,
-    categories,
     peopleInvolved,
     groupClassYear,
     submitAttempted,
@@ -1164,40 +1263,37 @@ function QuickMemoryForm(props: SheetProps & { pinTitle: string }) {
     setYear,
     setMonth,
     setEventDate,
-    setDescription,
+    setMemoryTitle,
+    setShortNote,
     setRiskLevel,
     setTagInput,
     setTags,
     setTextBody,
     setPeopleInvolved,
     setGroupClassYear,
-    setShowMoreDetails,
+    setShowExtraDetails,
+    setShowDateDetails,
     setShowTextEditor,
     setGovernanceFlag,
     onArchiveToggle,
   } = props
 
-  const inheritedCategory =
-    pinTarget?.kind === 'existing' ? pinTarget.pin.category_id : pinTarget?.kind === 'new' ? pinTarget.categoryId : null
-  const categoryName = categories.find((c) => c.id === (inheritedCategory ?? categoryId))?.name
   const showHints = submitAttempted
+  const hasMedia = photoFiles.length > 0 || Boolean(videoFile)
+  const noteRequired = !hasMedia && !textBody.trim()
 
   function removePhoto(index: number) {
     setPhotoFiles(photoFiles.filter((_, i) => i !== index))
   }
-
-  const hasContent = photoFiles.length > 0 || Boolean(videoFile) || Boolean(textBody.trim())
 
   return (
     <div className="space-y-3 pb-1">
       <div className="mm-card rounded-xl p-3 text-xs">
         <p className="truncate"><span className="mm-muted">Area:</span> {selectedAreaName}</p>
         <p className="truncate"><span className="mm-muted">Pin:</span> {pinTitle}</p>
-        {categoryName ? <p><span className="mm-muted">Category:</span> {categoryName}</p> : null}
       </div>
 
       <div>
-        <p className="mb-2 text-sm font-semibold">Add your memory</p>
         <div className="grid grid-cols-3 gap-2">
           <button
             type="button"
@@ -1240,12 +1336,19 @@ function QuickMemoryForm(props: SheetProps & { pinTitle: string }) {
         </div>
       ) : null}
       {showTextEditor ? (
-        <textarea value={textBody} onChange={(e) => setTextBody(e.target.value)} placeholder="Written memory (optional)" rows={3} className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2.5 text-sm" />
+        <textarea
+          value={textBody}
+          onChange={(e) => setTextBody(e.target.value)}
+          placeholder="Write the memory"
+          rows={4}
+          className={`w-full rounded-xl border bg-white/5 px-3 py-2.5 text-sm ${showHints && fieldErrors.note ? 'border-amber-400/60' : 'border-white/15'}`}
+        />
       ) : null}
+      <FieldHint message={showHints && showTextEditor ? fieldErrors.note : undefined} />
 
       <div>
         <label className="mb-1 block text-sm font-semibold" htmlFor="memory-year">
-          Year this happened
+          Year
         </label>
         <input
           id="memory-year"
@@ -1258,19 +1361,49 @@ function QuickMemoryForm(props: SheetProps & { pinTitle: string }) {
         />
         <FieldHint message={showHints ? fieldErrors.year : undefined} />
       </div>
+
+      {!showDateDetails ? (
+        <button type="button" onClick={() => setShowDateDetails(true)} className="text-xs font-bold text-[var(--mm-accent)]">
+          Add month or exact date
+        </button>
+      ) : (
+        <div className="space-y-2 rounded-xl border border-white/10 bg-white/[0.02] p-3">
+          <select value={month} onChange={(e) => setMonth(e.target.value)} className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm">
+            {MONTHS.map((m) => (
+              <option key={m.value || 'empty'} value={m.value}>{m.label}</option>
+            ))}
+          </select>
+          <input value={eventDate} onChange={(e) => setEventDate(e.target.value)} type="date" className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm" />
+        </div>
+      )}
+
       <div>
-        <label className="mb-1 block text-sm font-semibold" htmlFor="memory-description">
-          What happened here?
+        <label className="mb-1 block text-sm font-semibold" htmlFor="memory-title">
+          Memory title
+        </label>
+        <input
+          id="memory-title"
+          value={memoryTitle}
+          onChange={(e) => setMemoryTitle(e.target.value)}
+          placeholder="Give this memory a short name"
+          className={`w-full rounded-xl border bg-white/5 px-3 py-2.5 text-sm ${showHints && fieldErrors.title ? 'border-amber-400/60' : 'border-white/15'}`}
+        />
+        <FieldHint message={showHints ? fieldErrors.title : undefined} />
+      </div>
+
+      <div>
+        <label className="mb-1 block text-sm font-semibold" htmlFor="memory-note">
+          Short note{noteRequired ? '' : ' (optional)'}
         </label>
         <textarea
-          id="memory-description"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="Tell us briefly what happened here."
-          rows={3}
-          className={`w-full rounded-xl border bg-white/5 px-3 py-2.5 text-sm ${showHints && fieldErrors.description ? 'border-amber-400/60' : 'border-white/15'}`}
+          id="memory-note"
+          value={shortNote}
+          onChange={(e) => setShortNote(e.target.value)}
+          placeholder="Add a short note, if needed"
+          rows={2}
+          className={`w-full rounded-xl border bg-white/5 px-3 py-2.5 text-sm ${showHints && fieldErrors.note ? 'border-amber-400/60' : 'border-white/15'}`}
         />
-        <FieldHint message={showHints ? fieldErrors.description : undefined} />
+        <FieldHint message={showHints ? fieldErrors.note : undefined} />
       </div>
 
       {!hasAutoDisplayName ? (
@@ -1289,39 +1422,19 @@ function QuickMemoryForm(props: SheetProps & { pinTitle: string }) {
         </div>
       ) : null}
 
-      <label className={`flex items-start gap-2 rounded-xl border p-3 text-sm ${showHints && fieldErrors.permission ? 'border-amber-400/60 bg-amber-500/5' : 'border-transparent'}`}>
-        <input
-          type="checkbox"
-          checked={governance.hasPermissionConfirmed}
-          onChange={(e) => setGovernanceFlag('hasPermissionConfirmed', e.target.checked)}
-          className="mt-0.5"
-        />
-        <span>I confirm I have permission to submit this memory.</span>
-      </label>
-      <FieldHint message={showHints ? fieldErrors.permission : undefined} />
-
       <button
         type="button"
-        onClick={() => setShowMoreDetails(!showMoreDetails)}
+        onClick={() => setShowExtraDetails(!showExtraDetails)}
         className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2.5 text-left text-sm font-bold"
       >
-        <span>Add more details</span>
-        <span className="text-xs text-white/50">{showMoreDetails ? '−' : '+'}</span>
+        <span>Add extra details</span>
+        <span className="text-xs text-white/50">{showExtraDetails ? '−' : '+'}</span>
       </button>
-      {!showMoreDetails ? (
-        <p className="mm-muted -mt-2 text-[10px]">Optional — tags, people, exact date or extra context.</p>
-      ) : null}
 
-      {showMoreDetails ? (
+      {showExtraDetails ? (
         <div className="space-y-3 rounded-xl border border-white/10 bg-white/[0.02] p-3">
-          <select value={month} onChange={(e) => setMonth(e.target.value)} className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm">
-            {MONTHS.map((m) => (
-              <option key={m.value || 'empty'} value={m.value}>{m.label}</option>
-            ))}
-          </select>
-          <input value={eventDate} onChange={(e) => setEventDate(e.target.value)} type="date" className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm" />
           <div className="flex gap-2">
-            <input value={tagInput} onChange={(e) => setTagInput(e.target.value)} placeholder="Tags — Rugby, hostel, interschools…" className="min-w-0 flex-1 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm" />
+            <input value={tagInput} onChange={(e) => setTagInput(e.target.value)} placeholder="Tags" className="min-w-0 flex-1 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm" />
             <button
               type="button"
               onClick={() => {
@@ -1336,8 +1449,10 @@ function QuickMemoryForm(props: SheetProps & { pinTitle: string }) {
           </div>
           {tags.length > 0 ? <p className="break-words text-xs text-white/60">{tags.map((t) => `#${t}`).join(' ')}</p> : null}
           <input value={peopleInvolved} onChange={(e) => setPeopleInvolved(e.target.value)} placeholder="People involved" className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm" />
-          <p className="mm-muted -mt-2 text-[10px]">Optional. Add names only if appropriate.</p>
           <input value={groupClassYear} onChange={(e) => setGroupClassYear(e.target.value)} placeholder="Team / group / class / year" className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm" />
+          {!showTextEditor ? (
+            <textarea value={textBody} onChange={(e) => setTextBody(e.target.value)} placeholder="Longer written story" rows={3} className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm" />
+          ) : null}
           <div>
             <label className="mb-1 block text-xs font-semibold">Admin review note</label>
             <select value={riskLevel} onChange={(e) => setRiskLevel(e.target.value as RiskLevel)} className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm">
@@ -1363,16 +1478,7 @@ function QuickMemoryForm(props: SheetProps & { pinTitle: string }) {
               </label>
             ))}
           </div>
-          {!showTextEditor ? (
-            <textarea value={textBody} onChange={(e) => setTextBody(e.target.value)} placeholder="Longer written story (optional)" rows={3} className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm" />
-          ) : null}
         </div>
-      ) : null}
-
-      {hasContent ? (
-        <p className="mm-muted text-center text-[10px]">
-          {photoFiles.length + (videoFile ? 1 : 0)} file{photoFiles.length + (videoFile ? 1 : 0) === 1 ? '' : 's'} selected
-        </p>
       ) : null}
     </div>
   )

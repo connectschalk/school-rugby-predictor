@@ -9,6 +9,7 @@ export type ContributorAccess = {
   isMapAdmin: boolean
   isContributor: boolean
   canSubmit: boolean
+  hasSubmissionPolicy: boolean
   member: MemoryMapMember | null
 }
 
@@ -27,6 +28,7 @@ export async function fetchContributorAccess(
       isMapAdmin: false,
       isContributor: false,
       canSubmit: false,
+      hasSubmissionPolicy: false,
       member: null,
     }
   }
@@ -50,8 +52,17 @@ export async function fetchContributorAccess(
         relationship: memberRow.relationship == null ? null : String(memberRow.relationship),
         request_message: memberRow.request_message == null ? null : String(memberRow.request_message),
         approved_at: memberRow.approved_at == null ? null : String(memberRow.approved_at),
+        submission_policy_accepted_at:
+          memberRow.submission_policy_accepted_at == null
+            ? null
+            : String(memberRow.submission_policy_accepted_at),
+        submission_policy_version:
+          memberRow.submission_policy_version == null ? null : String(memberRow.submission_policy_version),
       } satisfies MemoryMapMember)
     : null
+
+  const hasSubmissionPolicy =
+    isAppAdmin || Boolean(memberRow?.submission_policy_accepted_at)
 
   const isMapAdmin =
     isAppAdmin ||
@@ -68,6 +79,7 @@ export async function fetchContributorAccess(
     isMapAdmin: Boolean(isMapAdmin),
     isContributor: Boolean(isContributor),
     canSubmit: Boolean(isContributor),
+    hasSubmissionPolicy,
     member,
   }
 }

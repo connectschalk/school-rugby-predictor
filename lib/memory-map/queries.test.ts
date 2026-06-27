@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolvePublicMemoryMapBundle } from './queries'
+import { resolveMemoryMapBundleLoad, resolvePublicMemoryMapBundle } from './queries'
 
 describe('resolvePublicMemoryMapBundle', () => {
   const supabaseMap = {
@@ -63,5 +63,62 @@ describe('resolvePublicMemoryMapBundle', () => {
         tags: [],
       })
     ).toBeNull()
+  })
+})
+
+describe('resolveMemoryMapBundleLoad', () => {
+  const supabaseMap = {
+    id: 'real-map-id',
+    organisation_id: 'org-1',
+    title: 'Saved Boishaai',
+    slug: 'boishaai',
+    tagline: null,
+    description: null,
+    visibility: 'link_only',
+    status: 'active',
+    profile_image_url: null,
+    landing_background_url: null,
+    primary_color: '#0066CC',
+    primary_text_color: '#FFFFFF',
+    secondary_color: 'transparent',
+    secondary_text_color: '#FFFFFF',
+    accent_color: '#0066CC',
+    default_lat: null,
+    default_lng: null,
+    default_zoom: null,
+    sponsor_name: null,
+    sponsor_logo_url: null,
+    sponsor_website_url: null,
+    sponsor_message: null,
+    organisations: { id: 'org-1', name: 'Boishaai', slug: 'boishaai', type: 'school', logo_url: null, description: null },
+  }
+
+  it('uses supabase bundle with zero areas and does not fall back to demo', () => {
+    const loaded = resolveMemoryMapBundleLoad('boishaai', {
+      map: supabaseMap,
+      related: { areas: [], categories: [], pins: [], stories: [], tags: [] },
+    })
+    expect(loaded?.source).toBe('supabase')
+    expect(loaded?.bundle.areas).toHaveLength(0)
+    expect(loaded?.bundle.areas.some((a) => a.id === 'area-campus')).toBe(false)
+  })
+
+  it('falls back to demo only when no supabase map exists and demo is allowed', () => {
+    const loaded = resolveMemoryMapBundleLoad('boishaai', null)
+    expect(loaded?.source).toBe('demo')
+    expect(loaded?.bundle.areas.some((a) => a.id === 'area-campus')).toBe(true)
+  })
+
+  it('does not fall back to demo when preferSupabase and supabase is configured', () => {
+    const prevUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const prevKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://example.supabase.co'
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'test-anon-key'
+
+    const loaded = resolveMemoryMapBundleLoad('boishaai', null, { preferSupabase: true })
+    expect(loaded).toBeNull()
+
+    process.env.NEXT_PUBLIC_SUPABASE_URL = prevUrl
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = prevKey
   })
 })

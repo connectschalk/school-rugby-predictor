@@ -8,6 +8,7 @@ import {
   validateQuickMemorySubmit,
   validateStoryContent,
   validateVideoFile,
+  validateQuickContributorSubmit,
 } from './validation'
 
 function file(name: string, type: string, size: number): File {
@@ -77,7 +78,7 @@ describe('deriveStoryTitle', () => {
   })
 })
 
-describe('validateQuickMemorySubmit', () => {
+describe('validateQuickMemorySubmit (legacy shim)', () => {
   const base = {
     description: 'Scored the winning try',
     extraText: '',
@@ -88,19 +89,26 @@ describe('validateQuickMemorySubmit', () => {
     displayName: 'Alex',
   }
 
-  it('requires content, description, year, permission, and name', () => {
-    expect(validateQuickMemorySubmit({ ...base, description: '', extraText: '' })).toContain('photo')
-    expect(validateQuickMemorySubmit({ ...base, description: '', photoCount: 1 })).toContain('happened')
-    expect(validateQuickMemorySubmit({ ...base, year: '' })).toContain('year')
-    expect(validateQuickMemorySubmit({ ...base, permissionConfirmed: false })).toContain('permission')
-    expect(validateQuickMemorySubmit({ ...base, displayName: '' })).toContain('name')
-  })
-
-  it('accepts photo, video, or description as content', () => {
+  it('maps permissionConfirmed to submission policy', () => {
+    expect(validateQuickMemorySubmit({ ...base, permissionConfirmed: false })).toContain('contributor terms')
     expect(validateQuickMemorySubmit({ ...base, photoCount: 1 })).toBeNull()
-    expect(validateQuickMemorySubmit({ ...base, hasVideo: true })).toBeNull()
-    expect(validateQuickMemorySubmit({ ...base, description: 'A moment on the field' })).toBeNull()
-    expect(validateQuickMemorySubmit({ ...base, description: '', extraText: 'Only extra text' })).toContain('happened')
+  })
+})
+
+describe('validateQuickContributorSubmit', () => {
+  it('defaults review level path via low risk in submit flow', () => {
+    expect(
+      validateQuickContributorSubmit({
+        memoryTitle: 'Match day',
+        shortNote: '',
+        textMemory: '',
+        year: '2024',
+        photoCount: 2,
+        hasVideo: false,
+        hasSubmissionPolicy: true,
+        displayName: 'Sam',
+      })
+    ).toBeNull()
   })
 })
 
@@ -117,6 +125,6 @@ describe('getQuickMemoryFieldErrors', () => {
     })
     expect(errors.content).toContain('photo')
     expect(errors.year).toContain('year')
-    expect(errors.permission).toContain('permission')
+    expect(errors.permission).toContain('contributor terms')
   })
 })

@@ -5,7 +5,7 @@ export type AdminStoryDraftInput = {
   title: string
   description: string
   year: string
-  categoryId: string
+  categoryId: string | null
   riskLevel: string
   photoCount: number
   hasVideo: boolean
@@ -19,19 +19,17 @@ export type AdminStoryDraftInput = {
 
 export function validateAdminStoryDraft(input: AdminStoryDraftInput): string | null {
   if (!input.selectedAreaId) return 'Choose an area before continuing.'
-  if (!input.categoryId) return 'Category is required.'
-  if (!input.title.trim()) return 'Story title is required.'
-  if (!input.description.trim() && !input.hasText && input.photoCount === 0 && !input.hasVideo) {
-    return 'Add a description, photo, or video.'
-  }
-  if (!input.year || Number.isNaN(parseInt(input.year, 10))) return 'Year happened is required.'
-  if (!input.riskLevel) return 'Review level is required.'
+  if (!input.title.trim()) return 'Give this memory a short name.'
+  const hasMedia = input.photoCount > 0 || input.hasVideo
+  const hasText = Boolean(input.description.trim() || input.hasText)
+  if (!hasMedia && !hasText) return 'Add a photo, video or text memory.'
+  if (!input.year || Number.isNaN(parseInt(input.year, 10))) return 'Add the year this happened.'
   if (input.photoCount > MM_MAX_PHOTOS_PER_STORY) {
     return `Maximum ${MM_MAX_PHOTOS_PER_STORY} photos per story.`
   }
   if (input.creatingNewPin) {
-    if (!input.newPinTitle.trim()) return 'Enter a pin title or select an existing pin.'
-    if (!input.hasPinPlacement) return 'Place the pin on the map.'
+    if (!input.newPinTitle.trim()) return 'Name this place before adding your memory.'
+    if (!input.hasPinPlacement) return 'Tap the map where this memory happened.'
   } else if (!input.selectedPinId) {
     return 'Select an existing pin or create a new one.'
   }
