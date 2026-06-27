@@ -134,6 +134,8 @@ export type MemoryStory = {
   upload_mode: UploadMode
   risk_level: RiskLevel
   status: StoryStatus
+  is_official?: boolean
+  governance_flags?: Record<string, unknown> | null
   rejection_reason: string | null
   approval_note?: string | null
   contains_minors?: boolean
@@ -157,10 +159,12 @@ export type MemoryMapBundle = {
 
 export type AdminTab =
   | 'overview'
+  | 'add-content'
   | 'pending'
   | 'published'
   | 'pins'
   | 'areas'
+  | 'map-defaults'
   | 'contributors'
   | 'categories'
   | 'branding'

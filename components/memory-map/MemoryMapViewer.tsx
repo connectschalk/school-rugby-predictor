@@ -1,36 +1,37 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { trackMemoryMapEvent } from '@/lib/memory-map/analytics'
 import type { MemoryMapBundle, MemoryPin } from '@/lib/memory-map/types'
 import { memoryMapThemeVars } from '@/lib/memory-map/theme'
-import { matchesYearFilter, type YearFilterKey } from '@/lib/memory-map/utils'
+import { areaMapTypeLabel, matchesYearFilter, type YearFilterKey } from '@/lib/memory-map/utils'
 import { getImageMapInitialFocus, getMapInitialView } from '@/lib/memory-map/map-starting-point'
 import MemoryMapHeader from '@/components/memory-map/MemoryMapHeader'
-import AreaSelector from '@/components/memory-map/AreaSelector'
 import CategoryFilterPills from '@/components/memory-map/CategoryFilterPills'
 import YearFilterPills from '@/components/memory-map/YearFilterPills'
 import MapTypeToggle from '@/components/memory-map/MapTypeToggle'
 import MapCanvas from '@/components/memory-map/MapCanvas'
 import PinPreviewSheet from '@/components/memory-map/PinPreviewSheet'
-import MmEmptyState from '@/components/memory-map/MmEmptyState'
+import MemoryMapShell from '@/components/memory-map/MemoryMapShell'
 import MapOnboardingOverlay from '@/components/memory-map/MapOnboardingOverlay'
 import MemoryMapSponsorStrip from '@/components/memory-map/MemoryMapSponsorStrip'
 
 type Props = {
   bundle: MemoryMapBundle
   initialAreaId?: string | null
+  initialPinId?: string | null
 }
 
-type Screen = 'areas' | 'map'
-
-export default function MemoryMapViewer({ bundle, initialAreaId }: Props) {
+export default function MemoryMapViewer({ bundle, initialAreaId, initialPinId }: Props) {
   const { map, areas, categories, pins, stories } = bundle
   const activeAreas = areas.filter((a) => a.is_active)
-  const defaultAreaId = initialAreaId ?? activeAreas[0]?.id ?? null
+  const defaultAreaId =
+    initialAreaId && activeAreas.some((a) => a.id === initialAreaId)
+      ? initialAreaId
+      : activeAreas[0]?.id ?? null
 
-  const [screen, setScreen] = useState<Screen>(activeAreas.length === 1 ? 'map' : 'areas')
   const [selectedAreaId, setSelectedAreaId] = useState<string | null>(defaultAreaId)
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null)
   const [yearFilter, setYearFilter] = useState<YearFilterKey>('all')
@@ -48,7 +49,17 @@ export default function MemoryMapViewer({ bundle, initialAreaId }: Props) {
     void trackMemoryMapEvent(supabase, { memoryMapId: map.id, eventType: 'map_opened' })
   }, [map.id])
 
+  useEffect(() => {
+    if (!initialPinId) return
+    const pin = pins.find((p) => p.id === initialPinId && p.status === 'approved')
+    if (pin) {
+      setSelectedAreaId(pin.area_id)
+      setActivePin(pin)
+    }
+  }, [initialPinId, pins])
+
   const selectedArea = activeAreas.find((a) => a.id === selectedAreaId) ?? activeAreas[0]
+  const hasAreas = activeAreas.length > 0
 
   const visiblePins = useMemo(() => {
     const customY = customYear ? parseInt(customYear, 10) : undefined
@@ -83,11 +94,12 @@ export default function MemoryMapViewer({ bundle, initialAreaId }: Props) {
     return getImageMapInitialFocus(selectedArea)
   }, [selectedArea])
 
-  function openArea(areaId: string) {
+  const filteredEmpty = Boolean(searchQuery || categoryFilter || yearFilter !== 'all')
+
+  function selectArea(areaId: string) {
     const area = activeAreas.find((a) => a.id === areaId)
     setSelectedAreaId(areaId)
     if (area) setMapMode(area.map_type === 'image' ? 'image' : 'geo')
-    setScreen('map')
     setActivePin(null)
     void trackMemoryMapEvent(supabase, {
       memoryMapId: map.id,
@@ -112,140 +124,137 @@ export default function MemoryMapViewer({ bundle, initialAreaId }: Props) {
     )
   }
 
-  if (activeAreas.length === 0) {
-    return (
-      <div style={memoryMapThemeVars(map)}>
-        <MemoryMapHeader map={map} mapSlug={map.slug} />
-        <MmEmptyState
-          title="No areas have been published yet"
-          description="Check back soon — school admins are setting up the Memory Map."
-          icon="🗺️"
-        />
-      </div>
-    )
-  }
-
-  if (screen === 'areas') {
-    return (
-      <div style={memoryMapThemeVars(map)}>
-        <MemoryMapHeader map={map} mapSlug={map.slug} />
-        <div className="px-4 py-4">
-          <h2 className="text-lg font-black">Choose an area</h2>
-          <p className="mm-muted mt-1 text-sm">Each area can use a geo map or school floor plan.</p>
-        </div>
-        <AreaSelector
-          areas={activeAreas}
-          pins={pins}
-          stories={stories}
-          map={map}
-          selectedAreaId={selectedAreaId}
-          onSelect={openArea}
-        />
-      </div>
-    )
-  }
-
-  if (!selectedArea) {
-    return (
-      <div style={memoryMapThemeVars(map)}>
-        <MemoryMapHeader map={map} mapSlug={map.slug} />
-        <MmEmptyState title="Could not load map" description="Try choosing another area." icon="⚠️" />
-      </div>
-    )
-  }
-
   return (
     <div style={memoryMapThemeVars(map)}>
       <MemoryMapHeader
         map={map}
         mapSlug={map.slug}
-        areaName={selectedArea.name}
+        areaName={selectedArea?.name}
         rightSlot={
-          <button
-            type="button"
-            onClick={() => setScreen('areas')}
-            className="mm-btn-secondary shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold"
+          <Link
+            href={`/memory-map/${map.slug}/add${selectedAreaId ? `?area=${selectedAreaId}` : ''}`}
+            className="mm-btn-primary rounded-full px-2.5 py-1 text-[10px] font-black"
           >
-            Areas
-          </button>
+            Add a Memory
+          </Link>
         }
       />
 
       {map.sponsor_name ? <MemoryMapSponsorStrip map={map} variant="banner" /> : null}
 
-      <div className="flex flex-wrap items-center gap-2 px-4 py-2">
-        <MapTypeToggle
-          mode={mapMode}
-          onChange={setMapMode}
-          showGeo={selectedArea.map_type === 'geo'}
-          showImage={selectedArea.map_type === 'image'}
-        />
-        <div className="ml-auto flex gap-1.5">
-          <button type="button" onClick={onLocateMe} className="mm-btn-secondary rounded-full px-2.5 py-1 text-[10px] font-bold" title="Locate me">
-            📍
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowFilters((f) => !f)}
-            className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${showFilters ? 'mm-btn-primary' : 'mm-btn-secondary'}`}
-          >
-            Filter
-          </button>
+      <div className="px-4 py-3">
+        <h2 className="text-lg font-black">Discover memories</h2>
+        <p className="mm-muted mt-1 text-sm">Choose an area, then tap a pin to view stories.</p>
+      </div>
+
+      {!hasAreas ? (
+        <div className="px-2 pb-4">
+          <MemoryMapShell map={map} message="No areas have been published yet." />
         </div>
-      </div>
-
-      <div className="px-4 pb-2">
-        <input
-          type="search"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search pins…"
-          className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm"
-        />
-      </div>
-
-      {locateMessage ? <p className="mm-muted px-4 pb-2 text-xs">{locateMessage}</p> : null}
-
-      {showFilters ? (
-        <>
-          <CategoryFilterPills categories={categories.filter((c) => c.is_active)} selectedId={categoryFilter} onSelect={setCategoryFilter} />
-          <YearFilterPills
-            value={yearFilter}
-            customYear={customYear}
-            onChange={setYearFilter}
-            onCustomYear={setCustomYear}
-          />
-        </>
-      ) : null}
-
-      {visiblePins.length === 0 ? (
-        <MmEmptyState
-          title={searchQuery || categoryFilter || yearFilter !== 'all' ? 'No stories match your filters' : 'No pins in this area yet'}
-          description={
-            searchQuery || categoryFilter || yearFilter !== 'all'
-              ? 'Try clearing filters or search.'
-              : 'Approved memories will appear here once published.'
-          }
-          icon="📍"
-        />
       ) : (
-        <MapCanvas
-          area={selectedArea}
-          pins={visiblePins}
-          mode={mapMode}
-          locateTarget={locateTarget}
-          initialView={geoInitialView}
-          imageFocus={imageFocus}
-          onPinClick={(pin) => {
-            setActivePin(pin)
-            void trackMemoryMapEvent(supabase, {
-              memoryMapId: map.id,
-              eventType: 'pin_opened',
-              areaId: selectedArea?.id,
-              pinId: pin.id,
-            })
-          }}
-        />
+        <>
+          <div className="mb-3 flex gap-2 overflow-x-auto px-4 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {activeAreas.map((area) => {
+              const count = pins.filter((p) => p.area_id === area.id && p.status === 'approved').length
+              const selected = selectedAreaId === area.id
+              return (
+                <button
+                  key={area.id}
+                  type="button"
+                  onClick={() => selectArea(area.id)}
+                  className={`min-h-[44px] shrink-0 rounded-2xl border px-4 py-2.5 text-left text-sm ${
+                    selected ? 'border-[var(--mm-accent)] bg-[var(--mm-accent)]/10' : 'border-white/10 bg-white/5'
+                  }`}
+                >
+                  <p className="font-bold leading-tight">{area.name}</p>
+                  <p className="mm-muted mt-0.5 text-[11px]">{areaMapTypeLabel(area)} · {count} pins</p>
+                </button>
+              )
+            })}
+          </div>
+
+          {selectedArea ? (
+            <>
+              <div className="flex flex-wrap items-center gap-2 px-4 py-2">
+                <MapTypeToggle
+                  mode={mapMode}
+                  onChange={setMapMode}
+                  showGeo={selectedArea.map_type === 'geo'}
+                  showImage={selectedArea.map_type === 'image'}
+                />
+                <div className="ml-auto flex gap-1.5">
+                  <button type="button" onClick={onLocateMe} className="mm-btn-secondary rounded-full px-2.5 py-1 text-[10px] font-bold" title="Locate me">
+                    Use my location
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowFilters((f) => !f)}
+                    className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${showFilters ? 'mm-btn-primary' : 'mm-btn-secondary'}`}
+                  >
+                    Filter
+                  </button>
+                </div>
+              </div>
+
+              <div className="px-4 pb-2">
+                <input
+                  type="search"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search pins…"
+                  className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm"
+                />
+              </div>
+
+              {locateMessage ? <p className="mm-muted px-4 pb-2 text-xs">{locateMessage}</p> : null}
+
+              {showFilters ? (
+                <div className="space-y-2 px-4 pb-2">
+                  <CategoryFilterPills categories={categories.filter((c) => c.is_active)} selectedId={categoryFilter} onSelect={setCategoryFilter} />
+                  <YearFilterPills
+                    value={yearFilter}
+                    customYear={customYear}
+                    onChange={setYearFilter}
+                    onCustomYear={setCustomYear}
+                  />
+                </div>
+              ) : null}
+
+              {visiblePins.length === 0 && !filteredEmpty ? (
+                <p className="mx-4 mb-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-white/80">
+                  No memories have been added here yet.{' '}
+                  <Link href={`/memory-map/${map.slug}/add?area=${selectedArea.id}`} className="font-bold text-[var(--mm-accent)]">
+                    Add a Memory
+                  </Link>
+                </p>
+              ) : null}
+
+              {visiblePins.length === 0 && filteredEmpty ? (
+                <p className="mx-4 mb-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-white/80">
+                  No stories match your filters. Try clearing search or filters.
+                </p>
+              ) : null}
+
+              <MapCanvas
+                area={selectedArea}
+                pins={visiblePins}
+                mode={mapMode}
+                locateTarget={locateTarget}
+                initialView={geoInitialView}
+                imageFocus={imageFocus}
+                onPinClick={(pin) => {
+                  setActivePin(pin)
+                  void trackMemoryMapEvent(supabase, {
+                    memoryMapId: map.id,
+                    eventType: 'pin_opened',
+                    areaId: selectedArea.id,
+                    pinId: pin.id,
+                  })
+                }}
+              />
+            </>
+          ) : null}
+        </>
       )}
 
       <PinPreviewSheet
@@ -254,7 +263,7 @@ export default function MemoryMapViewer({ bundle, initialAreaId }: Props) {
         stories={pinStories}
         mapSlug={map.slug}
         map={map}
-        areaName={selectedArea.name}
+        areaName={selectedArea?.name ?? ''}
         onClose={() => setActivePin(null)}
       />
 

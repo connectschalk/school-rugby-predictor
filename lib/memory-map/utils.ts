@@ -41,11 +41,11 @@ export function uploadModeLabel(mode: MemoryStory['upload_mode']): string {
     case 'current_location':
       return 'Current location'
     case 'manual_geo':
-      return 'Manual geo'
+      return 'Tap the map'
     case 'manual_image_map':
       return 'School / indoor map'
     case 'archive_submission':
-      return 'Archive submission'
+      return 'Add an old memory'
     default:
       return mode
   }
@@ -124,6 +124,11 @@ export function mapHealthChecklist(bundle: MemoryMapBundle): MapHealthItem[] {
     { id: 'background', label: 'Background image uploaded', ok: Boolean(map.landing_background_url) },
     { id: 'sponsor', label: 'Sponsor added', ok: Boolean(map.sponsor_name) },
     { id: 'area', label: 'At least one active area', ok: areas.some((a) => a.is_active) },
+    {
+      id: 'map-default',
+      label: 'Default map opening point set',
+      ok: map.default_lat != null && map.default_lng != null,
+    },
     { id: 'category', label: 'At least one active category', ok: categories.some((c) => c.is_active) },
     { id: 'qr', label: 'QR link ready', ok: Boolean(map.slug) },
     { id: 'stories', label: 'Public map has approved stories', ok: approvedStories.length > 0 },

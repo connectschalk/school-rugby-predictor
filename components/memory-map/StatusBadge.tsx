@@ -43,3 +43,19 @@ export function RiskBadge({ level }: { level: RiskLevel }) {
     </span>
   )
 }
+
+export function OfficialBadge() {
+  return (
+    <span className="inline-flex rounded-full bg-[var(--mm-accent)]/20 px-2 py-0.5 text-[10px] font-bold uppercase text-[var(--mm-accent)]">
+      Official
+    </span>
+  )
+}
+
+export function AdminCreatedBadge() {
+  return (
+    <span className="inline-flex rounded-full bg-sky-500/20 px-2 py-0.5 text-[10px] font-bold uppercase text-sky-200">
+      Admin-created
+    </span>
+  )
+}

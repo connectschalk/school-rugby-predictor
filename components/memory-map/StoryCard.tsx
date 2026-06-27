@@ -2,16 +2,20 @@
 
 import Link from 'next/link'
 import type { MemoryStory } from '@/lib/memory-map/types'
+import { isAdminCreatedStory, isOfficialStory } from '@/lib/memory-map/official-content'
 import { storyTypeLabel } from '@/lib/memory-map/utils'
+import { OfficialBadge, AdminCreatedBadge } from '@/components/memory-map/StatusBadge'
 
 type Props = {
   story: MemoryStory
   mapSlug: string
   compact?: boolean
   showMeta?: boolean
+  showAdminBadges?: boolean
+  showOfficialBadge?: boolean
 }
 
-export default function StoryCard({ story, mapSlug, compact, showMeta }: Props) {
+export default function StoryCard({ story, mapSlug, compact, showMeta, showAdminBadges, showOfficialBadge = true }: Props) {
   const thumb = story.media?.find((m) => m.media_type === 'image')?.file_url
     ?? story.media?.[0]?.thumbnail_url
     ?? story.media?.[0]?.file_url
@@ -37,6 +41,12 @@ export default function StoryCard({ story, mapSlug, compact, showMeta }: Props) 
         <p className="truncate font-bold">{story.title}</p>
         <p className="mm-muted text-xs">{story.event_year} · {storyTypeLabel(story.story_type)}</p>
         <p className="mm-muted mt-0.5 truncate text-xs">{story.logged_by_display_name ?? 'Contributor'}</p>
+        {(showOfficialBadge && isOfficialStory(story)) || showAdminBadges ? (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {showOfficialBadge && isOfficialStory(story) ? <OfficialBadge /> : null}
+            {showAdminBadges && isAdminCreatedStory(story) ? <AdminCreatedBadge /> : null}
+          </div>
+        ) : null}
         {showMeta ? (
           <div className="mt-1 flex flex-wrap gap-1">
             {story.tags?.slice(0, 3).map((tag) => (

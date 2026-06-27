@@ -10,6 +10,7 @@ type Props = {
   zoom: number
   onChange: (lat: number, lng: number) => void
   onZoomChange?: (zoom: number) => void
+  defaultCentre?: GeoView | null
   pickMode?: boolean
   className?: string
 }
@@ -20,6 +21,7 @@ export default function AdminGeoMapPicker({
   zoom,
   onChange,
   onZoomChange,
+  defaultCentre,
   pickMode = true,
   className = '',
 }: Props) {
@@ -31,8 +33,9 @@ export default function AdminGeoMapPicker({
 
   onChangeRef.current = onChange
 
-  const centreLat = lat ?? -33.9249
-  const centreLng = lng ?? 18.4241
+  const centreLat = lat ?? defaultCentre?.lat ?? -33.9249
+  const centreLng = lng ?? defaultCentre?.lng ?? 18.4241
+  const initialZoom = lat != null && lng != null ? zoom : (defaultCentre?.zoom ?? zoom)
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -40,7 +43,7 @@ export default function AdminGeoMapPicker({
 
     void import('leaflet').then((L) => {
       if (cancelled || !containerRef.current) return
-      const map = L.map(containerRef.current, { zoomControl: true }).setView([centreLat, centreLng], zoom)
+      const map = L.map(containerRef.current, { zoomControl: true }).setView([centreLat, centreLng], initialZoom)
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; OpenStreetMap',
         maxZoom: 19,

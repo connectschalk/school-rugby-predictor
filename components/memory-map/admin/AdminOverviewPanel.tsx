@@ -44,8 +44,10 @@ export default function AdminOverviewPanel({ bundle, pendingContributors, analyt
         <p className="text-sm font-black">Quick actions</p>
         <div className="mt-3 flex flex-wrap gap-2">
           {[
+            ['Add official content', 'add-content'],
             ['Review pending', 'pending'],
             ['Approve contributors', 'contributors'],
+            ['Set default map opening point', 'map-defaults'],
             ['Edit branding', 'branding'],
             ['Download QR', 'share'],
           ].map(([label, tab]) => (

@@ -48,6 +48,62 @@ export type StoryContentInput = {
   permissionConfirmed: boolean
 }
 
+export function deriveStoryTitle(description: string): string {
+  const line = description.trim().split('\n')[0]?.trim() ?? ''
+  if (!line) return 'Memory'
+  return line.length <= 80 ? line : `${line.slice(0, 77)}…`
+}
+
+export type QuickMemoryInput = {
+  description: string
+  extraText: string
+  year: string
+  photoCount: number
+  hasVideo: boolean
+  permissionConfirmed: boolean
+  displayName: string
+}
+
+export type QuickMemoryFieldErrors = {
+  content?: string
+  year?: string
+  description?: string
+  permission?: string
+  name?: string
+}
+
+export function getQuickMemoryFieldErrors(input: QuickMemoryInput): QuickMemoryFieldErrors {
+  const errors: QuickMemoryFieldErrors = {}
+  const hasMedia = input.photoCount > 0 || input.hasVideo
+  const hasWritten = Boolean(input.description.trim() || input.extraText.trim())
+  if (!hasMedia && !hasWritten) {
+    errors.content = 'Add a photo, video or written memory.'
+  }
+  if (!input.description.trim()) {
+    errors.description = 'Tell us briefly what happened here.'
+  }
+  if (!input.year || Number.isNaN(parseInt(input.year, 10))) {
+    errors.year = 'Add the year this happened.'
+  }
+  if (!input.permissionConfirmed) {
+    errors.permission = 'Please confirm you have permission.'
+  }
+  if (!input.displayName.trim()) {
+    errors.name = 'Enter your name.'
+  }
+  return errors
+}
+
+/** Simplified contributor submit — title/category/risk are derived or defaulted elsewhere. */
+export function validateQuickMemorySubmit(input: QuickMemoryInput): string | null {
+  const errors = getQuickMemoryFieldErrors(input)
+  const first = errors.content ?? errors.description ?? errors.year ?? errors.permission ?? errors.name
+  if (input.photoCount > MM_MAX_PHOTOS_PER_STORY) {
+    return `Maximum ${MM_MAX_PHOTOS_PER_STORY} photos per story.`
+  }
+  return first ?? null
+}
+
 export function validateStoryContent(input: StoryContentInput): string | null {
   if (!input.title.trim()) return 'Story title is required.'
   if (!input.description.trim() && !input.hasText && input.photoCount === 0 && !input.hasVideo) {

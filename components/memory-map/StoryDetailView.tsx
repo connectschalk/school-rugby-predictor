@@ -10,6 +10,8 @@ import StoryCard from '@/components/memory-map/StoryCard'
 import MemoryMapSponsorStrip from '@/components/memory-map/MemoryMapSponsorStrip'
 import StatusBadge from '@/components/memory-map/StatusBadge'
 import { reviewLevelAdminLabel } from '@/lib/memory-map/review-level'
+import { isOfficialStory } from '@/lib/memory-map/official-content'
+import { OfficialBadge } from '@/components/memory-map/StatusBadge'
 
 type Props = {
   bundle: MemoryMapBundle
@@ -38,6 +40,7 @@ export default function StoryDetailView({ bundle, story, isAdminView }: Props) {
         <div className="flex flex-wrap items-center gap-2">
           <p className="text-xs font-bold uppercase tracking-wide text-[var(--mm-accent)]">{story.event_year}</p>
           <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold">{storyTypeLabel(story.story_type)}</span>
+          {!isAdminView && isOfficialStory(story) ? <OfficialBadge /> : null}
           {isAdminView ? <StatusBadge status={story.status} /> : null}
         </div>
 

@@ -1,5 +1,30 @@
 import type { RiskLevel } from '@/lib/memory-map/types'
 
+export const CONTRIBUTOR_REVIEW_NOTE_OPTIONS: { value: RiskLevel; label: string }[] = [
+  { value: 'low', label: 'Normal memory' },
+  { value: 'medium', label: 'Needs admin check' },
+  { value: 'high', label: 'Sensitive / injury / private' },
+  { value: 'admin_review', label: 'I am unsure' },
+]
+
+export const OPTIONAL_GOVERNANCE_CHECKBOXES: {
+  key: Exclude<keyof StoryGovernanceFlags, 'hasPermissionConfirmed'>
+  label: string
+}[] = [
+  { key: 'containsMinors', label: 'Contains minors' },
+  { key: 'mentionsFullNames', label: 'Mentions full names' },
+  { key: 'showsInjury', label: 'Shows injury' },
+  { key: 'isArchiveContent', label: 'Add an old memory' },
+  { key: 'sponsorOrBrandVisible', label: 'Sponsor or brand visible' },
+]
+
+export const ADMIN_REVIEW_LEVEL_OPTIONS: { value: RiskLevel; label: string }[] = [
+  { value: 'low', label: 'Low review' },
+  { value: 'medium', label: 'Medium review' },
+  { value: 'high', label: 'High review' },
+  { value: 'admin_review', label: 'Admin review' },
+]
+
 export const REVIEW_LEVEL_OPTIONS: { value: RiskLevel; label: string }[] = [
   { value: 'low', label: 'Low review — normal public school/event moment' },
   { value: 'medium', label: 'Medium review — students visible, names mentioned, or context needs checking' },

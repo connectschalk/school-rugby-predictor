@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { RiskLevel, StoryType, UploadMode } from '@/lib/memory-map/types'
+import type { RiskLevel, StoryStatus, StoryType, UploadMode } from '@/lib/memory-map/types'
 
 export async function createMemoryAuditLog(
   client: SupabaseClient,
@@ -62,6 +62,71 @@ export type SubmitStoryInput = {
   sponsorOrBrandVisible?: boolean
   tags: string[]
   media: StoryMediaPayload[]
+}
+
+export type AdminCreateStoryInput = {
+  memoryMapId: string
+  areaId: string
+  existingPinId?: string | null
+  createNewPin: boolean
+  pinTitle?: string
+  pinDescription?: string
+  pinCategoryId: string
+  pinLat?: number | null
+  pinLng?: number | null
+  pinX?: number | null
+  pinY?: number | null
+  title: string
+  description: string
+  storyType: StoryType
+  eventYear: number
+  eventDate?: string | null
+  uploadMode: UploadMode
+  riskLevel: RiskLevel
+  loggedByDisplayName?: string
+  isOfficial: boolean
+  pinIsOfficial: boolean
+  status: StoryStatus
+  governanceFlags: Record<string, unknown>
+  tags: string[]
+  media: StoryMediaPayload[]
+}
+
+export async function adminCreateMemoryStory(
+  client: SupabaseClient,
+  input: AdminCreateStoryInput
+): Promise<{ storyId: string | null; error: string | null }> {
+  const { data, error } = await client.rpc('admin_create_memory_story', {
+    p_memory_map_id: input.memoryMapId,
+    p_area_id: input.areaId,
+    p_existing_pin_id: input.existingPinId ?? null,
+    p_create_new_pin: input.createNewPin,
+    p_pin_title: input.pinTitle ?? null,
+    p_pin_description: input.pinDescription ?? null,
+    p_pin_category_id: input.pinCategoryId,
+    p_pin_lat: input.pinLat ?? null,
+    p_pin_lng: input.pinLng ?? null,
+    p_pin_x_position: input.pinX ?? null,
+    p_pin_y_position: input.pinY ?? null,
+    p_story_title: input.title,
+    p_story_description: input.description,
+    p_event_year: input.eventYear,
+    p_event_date: input.eventDate ?? null,
+    p_category_id: input.pinCategoryId,
+    p_tags: input.tags,
+    p_story_type: input.storyType,
+    p_upload_mode: input.uploadMode,
+    p_risk_level: input.riskLevel,
+    p_logged_by_display_name: input.loggedByDisplayName ?? null,
+    p_is_official: input.isOfficial,
+    p_pin_is_official: input.pinIsOfficial,
+    p_status: input.status,
+    p_governance_flags: input.governanceFlags,
+    p_media: input.media,
+  })
+
+  if (error) return { storyId: null, error: error.message }
+  return { storyId: String(data), error: null }
 }
 
 export async function submitMemoryStory(

@@ -169,6 +169,7 @@ export default function AdminAreaForm({ mapId, map, area, onSaved, onCancel }: P
             lat={latNum}
             lng={lngNum}
             zoom={zoomNum}
+            defaultCentre={getMemoryMapDefaultCenter(map)}
             onChange={(lat, lng) => {
               setCentreLat(String(lat))
               setCentreLng(String(lng))

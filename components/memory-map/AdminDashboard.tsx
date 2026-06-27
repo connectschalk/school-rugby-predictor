@@ -28,45 +28,34 @@ import type {
   MemoryPin,
   MemoryStory,
 } from '@/lib/memory-map/types'
+import { isAdminCreatedStory, isOfficialStory } from '@/lib/memory-map/official-content'
 import { pinStats, storyTypeLabel, uploadModeLabel } from '@/lib/memory-map/utils'
 import { getImageMapInitialFocus, getPinMoveInitialView } from '@/lib/memory-map/map-starting-point'
 import { memoryMapThemeVars } from '@/lib/memory-map/theme'
 import AdminOverviewPanel from '@/components/memory-map/admin/AdminOverviewPanel'
 import AdminBrandingForm from '@/components/memory-map/admin/AdminBrandingForm'
+import AdminMapStartPointForm from '@/components/memory-map/admin/AdminMapStartPointForm'
 import AdminSponsorForm from '@/components/memory-map/admin/AdminSponsorForm'
 import AdminAreaForm from '@/components/memory-map/admin/AdminAreaForm'
 import AdminContributorsPanel from '@/components/memory-map/admin/AdminContributorsPanel'
 import AdminPilotChecklist from '@/components/memory-map/admin/AdminPilotChecklist'
 import AdminPilotQaPanel from '@/components/memory-map/admin/AdminPilotQaPanel'
+import AdminAddContentWizard from '@/components/memory-map/admin/AdminAddContentWizard'
+import MemoryMapAdminNav from '@/components/memory-map/admin/MemoryMapAdminNav'
+import { isAdminTab } from '@/lib/memory-map/admin-nav'
 import StoryApprovalSummary, { needsPublishConfirmation } from '@/components/memory-map/admin/StoryApprovalSummary'
 import StoryGovernancePanel, {
   defaultGovernanceChecks,
   type GovernanceChecks,
 } from '@/components/memory-map/admin/StoryGovernancePanel'
 import MapCanvas from '@/components/memory-map/MapCanvas'
-import StatusBadge, { RiskBadge } from '@/components/memory-map/StatusBadge'
+import StatusBadge, { AdminCreatedBadge, OfficialBadge, RiskBadge } from '@/components/memory-map/StatusBadge'
 import ShareQrPanel from '@/components/memory-map/ShareQrPanel'
 import StoryCard from '@/components/memory-map/StoryCard'
 
 type Props = {
   mapId: string
 }
-
-const TABS: { id: AdminTab; label: string }[] = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'pending', label: 'Pending' },
-  { id: 'published', label: 'Published' },
-  { id: 'pins', label: 'Pins' },
-  { id: 'contributors', label: 'Contributors' },
-  { id: 'areas', label: 'Areas' },
-  { id: 'categories', label: 'Categories' },
-  { id: 'branding', label: 'Branding' },
-  { id: 'sponsor', label: 'Sponsor' },
-  { id: 'share', label: 'Share / QR' },
-  { id: 'audit', label: 'Audit' },
-  { id: 'pilot', label: 'Pilot Checklist' },
-  { id: 'qa', label: 'Pilot QA' },
-]
 
 type PinDeleteAction = 'cancel' | 'move' | 'archive_stories' | 'delete_stories'
 
@@ -77,7 +66,7 @@ export default function AdminDashboard({ mapId }: Props) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [tab, setTab] = useState<AdminTab>(
-    initialTab && TABS.some((t) => t.id === initialTab) ? initialTab : 'overview'
+    initialTab && isAdminTab(initialTab) ? initialTab : 'overview'
   )
   const [allMembers, setAllMembers] = useState<MemoryMapMember[]>([])
   const [auditLogs, setAuditLogs] = useState<MemoryAuditLog[]>([])
@@ -152,7 +141,10 @@ export default function AdminDashboard({ mapId }: Props) {
   const stories = bundle?.stories ?? []
 
   const pendingMembers = useMemo(() => allMembers.filter((m) => m.status === 'pending'), [allMembers])
-  const pending = useMemo(() => stories.filter((s) => s.status === 'pending_review'), [stories])
+  const pending = useMemo(
+    () => stories.filter((s) => s.status === 'pending_review' || s.status === 'draft'),
+    [stories]
+  )
   const highRiskPending = useMemo(
     () => pending.filter((s) => s.risk_level === 'high' || s.risk_level === 'admin_review').length,
     [pending]
@@ -376,33 +368,36 @@ export default function AdminDashboard({ mapId }: Props) {
         <Link href="/memory-map" className="text-xs font-bold text-[var(--mm-accent)]">
           ← Memory Map
         </Link>
-        <Link href={`/memory-map/admin/${mapId}/setup`} className="text-xs font-bold text-[var(--mm-accent)]">
-          Setup wizard →
-        </Link>
         <h1 className="mt-2 text-xl font-black">{map.title} — Admin</h1>
         <p className="mm-muted text-sm">Moderation, branding and map management</p>
       </header>
 
       {error ? <p className="mx-4 mt-3 rounded-xl border border-red-400/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">{error}</p> : null}
 
-      <div className="flex gap-2 overflow-x-auto px-4 py-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setTab(t.id)}
-            className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-bold ${
-              tab === t.id ? 'mm-btn-primary' : 'mm-btn-secondary'
-            }`}
-          >
-            {t.label}
-            {t.id === 'pending' && pending.length > 0 ? ` (${pending.length})` : ''}
-            {t.id === 'contributors' && pendingMembers.length > 0 ? ` (${pendingMembers.length})` : ''}
-          </button>
-        ))}
-      </div>
+      <MemoryMapAdminNav
+        mapId={mapId}
+        activeTab={tab}
+        onTabChange={setTab}
+        badges={{
+          pending: pending.length,
+          contributors: pendingMembers.length,
+        }}
+      />
 
-      <div className="mx-auto max-w-3xl px-4 py-4">
+      {tab === 'add-content' && bundle ? (
+        <div className="mx-auto max-w-6xl px-2 py-2 lg:px-4">
+          <AdminAddContentWizard
+            bundle={bundle}
+            mapId={mapId}
+            onNavigate={setTab}
+            onSaved={() => void reload()}
+          />
+        </div>
+      ) : null}
+
+      {tab !== 'add-content' ? (
+      <div className={`mx-auto px-4 py-4 ${tab === 'map-defaults' ? 'max-w-4xl' : 'max-w-3xl'}`}>
+
         {tab === 'overview' && bundle ? (
           <AdminOverviewPanel
             bundle={bundle}
@@ -458,9 +453,11 @@ export default function AdminDashboard({ mapId }: Props) {
                             {story.tags && story.tags.length > 0 ? <p className="mm-muted text-xs">{story.tags.map((t) => `#${t}`).join(' ')}</p> : null}
                             {story.media && story.media.length > 0 ? <p className="mm-muted text-xs">{story.media.length} media</p> : null}
                           </div>
-                          <div className="flex gap-2">
+                          <div className="flex flex-wrap gap-2">
                             <StatusBadge status={story.status} />
                             <RiskBadge level={story.risk_level} />
+                            {isOfficialStory(story) ? <OfficialBadge /> : null}
+                            {isAdminCreatedStory(story) ? <AdminCreatedBadge /> : null}
                           </div>
                         </div>
                       </div>
@@ -484,7 +481,7 @@ export default function AdminDashboard({ mapId }: Props) {
             ) : (
               published.map((story) => (
                 <div key={story.id} className="space-y-2">
-                  <StoryCard story={story} mapSlug={map.slug} />
+                  <StoryCard story={story} mapSlug={map.slug} showAdminBadges />
                   <div className="flex flex-wrap gap-2 px-1">
                     <button
                       type="button"
@@ -531,7 +528,10 @@ export default function AdminDashboard({ mapId }: Props) {
                     <p className="font-bold">{pin.title}</p>
                     <p className="mm-muted text-xs">{areas.find((a) => a.id === pin.area_id)?.name} · {pin.category?.name ?? '—'}</p>
                     <p className="mm-muted mt-1 text-xs">{stats.approved} approved · {stats.pending} pending · {stats.yearRange}</p>
-                    <StatusBadge status={pin.status} />
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <StatusBadge status={pin.status} />
+                      {pin.is_official ? <OfficialBadge /> : null}
+                    </div>
                   </button>
                   <button type="button" onClick={() => { setMergePin(pin); setMergeTargetPinId(null) }} className="mm-btn-secondary mt-2 rounded-lg px-3 py-1 text-xs font-bold">
                     Merge into another pin
@@ -591,6 +591,10 @@ export default function AdminDashboard({ mapId }: Props) {
           </div>
         ) : null}
 
+        {tab === 'map-defaults' ? (
+          <AdminMapStartPointForm map={map} onSaved={(m) => updateMap(m)} />
+        ) : null}
+
         {tab === 'categories' ? (
           <div className="grid gap-2 sm:grid-cols-2">
             {categories.map((cat) => (
@@ -644,6 +648,7 @@ export default function AdminDashboard({ mapId }: Props) {
           </div>
         ) : null}
       </div>
+      ) : null}
 
       {selectedStory ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 sm:items-center">

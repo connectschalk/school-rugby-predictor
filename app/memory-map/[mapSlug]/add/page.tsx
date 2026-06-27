@@ -4,16 +4,16 @@ import { fetchMemoryMapBundleBySlug } from '@/lib/memory-map/queries'
 
 type Props = {
   params: Promise<{ mapSlug: string }>
-  searchParams: Promise<{ pin?: string }>
+  searchParams: Promise<{ pin?: string; area?: string }>
 }
 
 export const dynamic = 'force-dynamic'
 
 export default async function MemoryMapAddPage({ params, searchParams }: Props) {
   const { mapSlug } = await params
-  const { pin } = await searchParams
+  const { pin, area } = await searchParams
   const bundle = await fetchMemoryMapBundleBySlug(mapSlug)
   if (!bundle) notFound()
 
-  return <AddStoryWizard bundle={bundle} initialPinId={pin ?? null} />
+  return <AddStoryWizard bundle={bundle} initialPinId={pin ?? null} initialAreaId={area ?? null} />
 }
