@@ -164,6 +164,32 @@
   border: none !important;
 }
 
+.mm-root .mm-leaflet-user-location {
+  background: transparent !important;
+  border: none !important;
+}
+
+.mm-root .mm-user-location-dot {
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: #3b82f6;
+  border: 3px solid #ffffff;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.35);
+}
+
+.mm-root .mm-user-location-label {
+  margin-top: 2px;
+  font-size: 9px;
+  font-weight: 700;
+  color: #93c5fd;
+  background: rgba(5, 8, 13, 0.85);
+  padding: 1px 4px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
 .mm-root .leaflet-control-attribution {
   font-size: 9px;
   background: rgba(0, 0, 0, 0.55) !important;

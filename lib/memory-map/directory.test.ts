@@ -1,10 +1,19 @@
 import { describe, expect, it } from 'vitest'
+import { shouldIncludeInPublicDirectory } from './directory'
 import {
   filterDirectoryEntries,
   getDemoDirectoryEntry,
   organisationTypeLabel,
   buildFallbackDirectory,
 } from './directory-types'
+
+describe('shouldIncludeInPublicDirectory', () => {
+  it('includes public maps only, not link_only', () => {
+    expect(shouldIncludeInPublicDirectory('public')).toBe(true)
+    expect(shouldIncludeInPublicDirectory('link_only')).toBe(false)
+    expect(shouldIncludeInPublicDirectory('private')).toBe(false)
+  })
+})
 
 describe('getDemoDirectoryEntry', () => {
   it('returns Boishaai demo with preview flag', () => {

@@ -13,6 +13,11 @@ export type {
   PublicMemoryMapDirectory,
 } from '@/lib/memory-map/directory-types'
 
+/** Only `public` maps appear in /memory-map/find; link_only maps use direct URLs. */
+export function shouldIncludeInPublicDirectory(visibility: string): boolean {
+  return visibility === 'public'
+}
+
 export {
   MEMORY_MAP_PRODUCT_HEADLINE,
   MEMORY_MAP_PRODUCT_SUBHEADLINE,

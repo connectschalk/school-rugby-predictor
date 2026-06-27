@@ -13,6 +13,7 @@ import { fetchPublicMemoryMapBundleClient } from '@/lib/memory-map/client-querie
 import { isUuid, validateMemoryMapSubmitIds } from '@/lib/memory-map/submit-ids'
 import { uploadPendingStoryMedia } from '@/lib/memory-map/storage'
 import { trackMemoryMapEvent } from '@/lib/memory-map/analytics'
+import { useMemoryMapGeolocation } from '@/lib/memory-map/use-memory-map-geolocation'
 import { activeAreas } from '@/lib/memory-map/add-story-placement'
 import { inferStoryType } from '@/lib/memory-map/infer-story-type'
 import { getImageMapInitialFocus, getMapInitialView } from '@/lib/memory-map/map-starting-point'
@@ -99,8 +100,8 @@ export default function AddStoryWizard({ bundle, dataSource, initialPinId, initi
   const [pinTarget, setPinTarget] = useState<PinTarget | null>(null)
   const [tempPlacement, setTempPlacement] = useState<MapPlacement | null>(null)
   const [sheetStage, setSheetStage] = useState<SheetStage | null>(null)
-  const [locateTarget, setLocateTarget] = useState<{ lat: number; lng: number } | null>(null)
-  const [geoMessage, setGeoMessage] = useState<string | null>(null)
+  const [locateTarget, setLocateTarget] = useState<{ lat: number; lng: number; zoom?: number } | null>(null)
+  const geo = useMemoryMapGeolocation()
   const [usedGps, setUsedGps] = useState(false)
   const [isArchiveMemory, setIsArchiveMemory] = useState(false)
 
@@ -312,8 +313,8 @@ export default function AddStoryWizard({ bundle, dataSource, initialPinId, initi
   function selectArea(areaId: string) {
     setSelectedAreaId(areaId)
     clearPinSelection()
+    geo.clear()
     setLocateTarget(null)
-    setGeoMessage(null)
     setUsedGps(false)
   }
 
@@ -345,33 +346,27 @@ export default function AddStoryWizard({ bundle, dataSource, initialPinId, initi
     openExistingPin(pin)
   }
 
-  function onUseMyLocation() {
-    if (!navigator.geolocation) {
-      setGeoMessage('We could not access your location. Tap the map to place the pin manually.')
-      return
-    }
-    setGeoMessage('Finding your location…')
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const lat = pos.coords.latitude
-        const lng = pos.coords.longitude
-        setLocateTarget({ lat, lng })
-        setUsedGps(true)
-        setTempPlacement({ lat, lng })
-        setPinTarget({
-          kind: 'new',
-          placement: { lat, lng },
-          title: '',
-          description: '',
-          categoryId: defaultPinCategoryId(activeCategories),
-        })
-        setSheetStage('pin-new')
-        setGeoMessage('Location found. Add your memory here or move the pin.')
-      },
-      () => setGeoMessage('We could not access your location. Tap the map to place the pin manually.'),
-      { enableHighAccuracy: true, timeout: 12000 }
-    )
+  function onUseLocationForMemory() {
+    if (!geo.location) return
+    const { lat, lng } = geo.location
+    setLocateTarget({ lat, lng })
+    setUsedGps(true)
+    setTempPlacement({ lat, lng })
+    setPinTarget({
+      kind: 'new',
+      placement: { lat, lng },
+      title: '',
+      description: '',
+      categoryId: defaultPinCategoryId(activeCategories),
+    })
+    setSheetStage('pin-new')
   }
+
+  useEffect(() => {
+    if (geo.status === 'success' && geo.location) {
+      setLocateTarget({ lat: geo.location.lat, lng: geo.location.lng })
+    }
+  }, [geo.status, geo.location])
 
   function updateNewPin(fields: Partial<Extract<PinTarget, { kind: 'new' }>>) {
     if (pinTarget?.kind !== 'new') return
@@ -774,9 +769,27 @@ export default function AddStoryWizard({ bundle, dataSource, initialPinId, initi
           </div>
 
           <div className="mb-2 flex flex-wrap items-center gap-2">
-            <button type="button" onClick={onUseMyLocation} className="mm-btn-secondary rounded-full px-3 py-2 text-xs font-bold">
-              Use my location
-            </button>
+            {mapMode === 'geo' ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => geo.locate()}
+                  disabled={geo.status === 'loading'}
+                  className="mm-btn-secondary rounded-full px-3 py-2 text-xs font-bold"
+                >
+                  {geo.status === 'loading' ? 'Finding location…' : 'Show my location'}
+                </button>
+                {geo.status === 'success' && geo.location ? (
+                  <button
+                    type="button"
+                    onClick={onUseLocationForMemory}
+                    className="mm-btn-primary rounded-full px-3 py-2 text-xs font-bold"
+                  >
+                    Use this location for my memory
+                  </button>
+                ) : null}
+              </>
+            ) : null}
             <button
               type="button"
               onClick={() => setShowFilters((v) => !v)}
@@ -791,8 +804,8 @@ export default function AddStoryWizard({ bundle, dataSource, initialPinId, initi
             ) : null}
           </div>
 
-          {geoMessage ? (
-            <p className="mb-2 rounded-xl border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">{geoMessage}</p>
+          {geo.message ? (
+            <p className="mb-2 rounded-xl border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">{geo.message}</p>
           ) : null}
           {areaPins.length === 0 && !sheetOpen ? (
             <p className="mm-muted mb-2 text-xs">No pins here yet — tap the map to add the first one.</p>
@@ -824,6 +837,7 @@ export default function AddStoryWizard({ bundle, dataSource, initialPinId, initi
                 placementPreview={placementPreview}
                 onMapClick={onMapClick}
                 locateTarget={locateTarget}
+                userLocation={geo.status === 'success' ? geo.location : null}
                 initialView={areaInitialView}
                 imageFocus={areaImageFocus}
               />
@@ -871,7 +885,6 @@ export default function AddStoryWizard({ bundle, dataSource, initialPinId, initi
             onUpdateNewPin={updateNewPin}
             onMoveNewPin={() => {
               setSheetStage(null)
-              setGeoMessage('Tap the map to move the pin.')
             }}
             onSubmit={() => void onSubmit()}
             onStartAnother={startAnother}

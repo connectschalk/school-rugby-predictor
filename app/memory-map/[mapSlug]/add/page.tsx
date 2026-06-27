@@ -1,6 +1,6 @@
 import AddStoryWizard from '@/components/memory-map/AddStoryWizard'
 import MemoryMapUnavailableState from '@/components/memory-map/MemoryMapUnavailableState'
-import { loadContributorMemoryMapBundleBySlug } from '@/lib/memory-map/queries'
+import { loadContributorMemoryMapBundleBySlug, loadPublicMemoryMapBySlug } from '@/lib/memory-map/queries'
 
 type Props = {
   params: Promise<{ mapSlug: string }>
@@ -12,6 +12,12 @@ export const dynamic = 'force-dynamic'
 export default async function MemoryMapAddPage({ params, searchParams }: Props) {
   const { mapSlug } = await params
   const { pin, area } = await searchParams
+
+  const publicLoad = await loadPublicMemoryMapBySlug(mapSlug)
+  if (publicLoad.kind === 'private') {
+    return <MemoryMapUnavailableState slug={mapSlug} reason="private" />
+  }
+
   const loaded = await loadContributorMemoryMapBundleBySlug(mapSlug)
 
   if (loaded.kind === 'missing') {

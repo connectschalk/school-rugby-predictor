@@ -1,10 +1,32 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   resolveMemoryMapBundleLoad,
   resolvePublicMemoryMapBundle,
+  memoryMapAllowsDirectPublicAccess,
+  memoryMapAllowsDirectPublicShell,
   loadContributorMemoryMapBundleBySlug,
+  logSlugResolve,
   isSupabaseConfigured,
 } from './queries'
+
+describe('memoryMapAllowsDirectPublicAccess', () => {
+  it('allows active public and link_only maps', () => {
+    expect(memoryMapAllowsDirectPublicAccess({ status: 'active', visibility: 'public' })).toBe(true)
+    expect(memoryMapAllowsDirectPublicAccess({ status: 'active', visibility: 'link_only' })).toBe(true)
+  })
+
+  it('blocks draft, archived, and private maps', () => {
+    expect(memoryMapAllowsDirectPublicAccess({ status: 'draft', visibility: 'link_only' })).toBe(false)
+    expect(memoryMapAllowsDirectPublicAccess({ status: 'archived', visibility: 'public' })).toBe(false)
+    expect(memoryMapAllowsDirectPublicAccess({ status: 'active', visibility: 'private' })).toBe(false)
+  })
+})
+
+describe('memoryMapAllowsDirectPublicShell', () => {
+  it('allows draft link_only/public shells', () => {
+    expect(memoryMapAllowsDirectPublicShell({ status: 'draft', visibility: 'link_only' })).toBe(true)
+  })
+})
 
 describe('resolvePublicMemoryMapBundle', () => {
   const supabaseMap = {
@@ -68,6 +90,27 @@ describe('resolvePublicMemoryMapBundle', () => {
         tags: [],
       })
     ).toBeNull()
+  })
+
+  it('returns null for private maps on public direct-link routes', () => {
+    const result = resolvePublicMemoryMapBundle(
+      'secret',
+      { ...supabaseMap, visibility: 'private' },
+      { areas: [], categories: [], pins: [], stories: [], tags: [] }
+    )
+    expect(result).toBeNull()
+  })
+
+  it('resolves active link_only maps with zero content', () => {
+    const result = resolvePublicMemoryMapBundle('van-der-merwe', supabaseMap, {
+      areas: [],
+      categories: [],
+      pins: [],
+      stories: [],
+      tags: [],
+    })
+    expect(result?.bundle.map.slug).toBe('boishaai')
+    expect(result?.bundle.areas).toHaveLength(0)
   })
 })
 
@@ -136,6 +179,61 @@ describe('resolveMemoryMapBundleLoad', () => {
 
     process.env.NEXT_PUBLIC_SUPABASE_URL = prevUrl
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = prevKey
+  })
+})
+
+describe('loadPublicMemoryMapBySlug', () => {
+  it('logs slug resolution in development', () => {
+    const prev = process.env.NODE_ENV
+    process.env.NODE_ENV = 'development'
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    logSlugResolve('van-der-merwe', {
+      kind: 'ready',
+      source: 'supabase',
+      bundle: {
+        map: {
+          id: '6976fcac-be56-4d52-bcdd-9c2651f4c3ff',
+          organisation_id: 'org-1',
+          title: 'Paarl van der Merwes',
+          slug: 'van-der-merwe',
+          tagline: null,
+          description: null,
+          visibility: 'link_only',
+          status: 'active',
+          profile_image_url: null,
+          landing_background_url: null,
+          primary_color: '#FFD400',
+          primary_text_color: '#050505',
+          secondary_color: 'transparent',
+          secondary_text_color: '#FFFFFF',
+          accent_color: '#FFD400',
+          default_lat: null,
+          default_lng: null,
+          default_zoom: null,
+          sponsor_name: null,
+          sponsor_logo_url: null,
+          sponsor_website_url: null,
+          sponsor_message: null,
+        },
+        areas: [],
+        categories: [],
+        pins: [],
+        stories: [],
+        tags: [],
+      },
+    })
+
+    expect(log).toHaveBeenCalledWith('[memory-map:slug-resolve]', {
+      slug: 'van-der-merwe',
+      found: true,
+      status: 'active',
+      visibility: 'link_only',
+      source: 'supabase',
+    })
+
+    log.mockRestore()
+    process.env.NODE_ENV = prev
   })
 })
 

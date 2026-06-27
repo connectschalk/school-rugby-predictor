@@ -19,7 +19,8 @@ type Props = {
   placementPreview?: MapPlacement | null
   onMapClick?: (placement: MapPlacement) => void
   showPlacementDebug?: boolean
-  locateTarget?: { lat: number; lng: number } | null
+  locateTarget?: { lat: number; lng: number; zoom?: number } | null
+  userLocation?: { lat: number; lng: number } | null
   initialView?: GeoView | null
   imageFocus?: ImageFocus | null
   embedded?: boolean
@@ -36,6 +37,7 @@ export default function MapCanvas({
   onMapClick,
   showPlacementDebug = false,
   locateTarget,
+  userLocation,
   initialView,
   imageFocus,
   embedded = false,
@@ -64,6 +66,7 @@ export default function MapCanvas({
           onMapClick={onMapClick}
           showPlacementDebug={showPlacementDebug}
           locateTarget={locateTarget}
+          userLocation={userLocation}
           initialView={initialView}
           highlightedPinId={highlightedPinId}
         />
@@ -76,6 +79,7 @@ export default function MapCanvas({
 
   return (
     <div className={wrapperClass}>
+      <p className="mm-muted mb-2 px-1 text-xs">Indoor maps use manual pin placement.</p>
       <div
         className={`relative aspect-[4/3] overflow-hidden rounded-2xl border border-white/10 bg-[#0a1628] ${
           placementMode ? 'cursor-crosshair mm-ring-accent-2' : ''

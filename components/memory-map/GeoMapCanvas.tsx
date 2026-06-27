@@ -13,7 +13,8 @@ type Props = {
   placementPreview?: MapPlacement | null
   onMapClick?: (placement: MapPlacement) => void
   showPlacementDebug?: boolean
-  locateTarget?: { lat: number; lng: number } | null
+  locateTarget?: { lat: number; lng: number; zoom?: number } | null
+  userLocation?: { lat: number; lng: number } | null
   initialView?: GeoView | null
   highlightedPinId?: string | null
 }
@@ -25,6 +26,10 @@ function pinIconHtml(colour: string, label: string, highlighted = false): string
   return `<span style="display:flex;align-items:center;justify-content:center;min-width:36px;min-height:36px;padding:0 6px;border-radius:9999px;border:2px solid rgba(255,255,255,0.85);background:${colour};color:#050505;font-size:11px;font-weight:800;${ring}">${label}</span>`
 }
 
+function userLocationIconHtml(): string {
+  return `<span style="display:flex;flex-direction:column;align-items:center;"><span class="mm-user-location-dot"></span><span class="mm-user-location-label">You are here</span></span>`
+}
+
 export default function GeoMapCanvas({
   area,
   pins,
@@ -34,6 +39,7 @@ export default function GeoMapCanvas({
   onMapClick,
   showPlacementDebug = false,
   locateTarget,
+  userLocation,
   initialView,
   highlightedPinId,
 }: Props) {
@@ -41,6 +47,7 @@ export default function GeoMapCanvas({
   const mapRef = useRef<import('leaflet').Map | null>(null)
   const markersLayerRef = useRef<import('leaflet').LayerGroup | null>(null)
   const previewMarkerRef = useRef<import('leaflet').Marker | null>(null)
+  const userLocationMarkerRef = useRef<import('leaflet').Marker | null>(null)
   const onMapClickRef = useRef(onMapClick)
   const [useFallback, setUseFallback] = useState(false)
   const [ready, setReady] = useState(false)
@@ -92,6 +99,7 @@ export default function GeoMapCanvas({
     return () => {
       cancelled = true
       previewMarkerRef.current = null
+      userLocationMarkerRef.current = null
       markersLayerRef.current = null
       map?.remove()
       mapRef.current = null
@@ -164,9 +172,34 @@ export default function GeoMapCanvas({
 
   useEffect(() => {
     if (!locateTarget || !mapRef.current) return
-    const zoom = initialView?.zoom ?? 17
+    const zoom = locateTarget.zoom ?? 18
     mapRef.current.setView([locateTarget.lat, locateTarget.lng], zoom, { animate: true })
-  }, [locateTarget, initialView?.zoom])
+  }, [locateTarget])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready) return
+
+    void import('leaflet').then((L) => {
+      if (userLocationMarkerRef.current) {
+        userLocationMarkerRef.current.remove()
+        userLocationMarkerRef.current = null
+      }
+      if (userLocation?.lat != null && userLocation?.lng != null) {
+        const icon = L.divIcon({
+          className: 'mm-leaflet-user-location',
+          html: userLocationIconHtml(),
+          iconSize: [72, 36],
+          iconAnchor: [36, 10],
+        })
+        userLocationMarkerRef.current = L.marker([userLocation.lat, userLocation.lng], {
+          icon,
+          interactive: false,
+          zIndexOffset: 1000,
+        }).addTo(map)
+      }
+    })
+  }, [userLocation, ready])
 
   if (useFallback) {
     return (

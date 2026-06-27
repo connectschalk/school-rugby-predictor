@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { trackMemoryMapEvent } from '@/lib/memory-map/analytics'
+import { useMemoryMapGeolocation } from '@/lib/memory-map/use-memory-map-geolocation'
 import type { MemoryMapBundle, MemoryPin } from '@/lib/memory-map/types'
 import { memoryMapThemeVars } from '@/lib/memory-map/theme'
 import { areaMapTypeLabel, matchesYearFilter, type YearFilterKey } from '@/lib/memory-map/utils'
@@ -42,8 +43,8 @@ export default function MemoryMapViewer({ bundle, initialAreaId, initialPinId }:
     activeAreas.find((a) => a.id === defaultAreaId)?.map_type === 'image' ? 'image' : 'geo'
   )
   const [activePin, setActivePin] = useState<MemoryPin | null>(null)
-  const [locateMessage, setLocateMessage] = useState<string | null>(null)
-  const [locateTarget, setLocateTarget] = useState<{ lat: number; lng: number } | null>(null)
+  const geo = useMemoryMapGeolocation()
+  const [locateTarget, setLocateTarget] = useState<{ lat: number; lng: number; zoom?: number } | null>(null)
 
   useEffect(() => {
     void trackMemoryMapEvent(supabase, { memoryMapId: map.id, eventType: 'map_opened' })
@@ -101,6 +102,8 @@ export default function MemoryMapViewer({ bundle, initialAreaId, initialPinId }:
     setSelectedAreaId(areaId)
     if (area) setMapMode(area.map_type === 'image' ? 'image' : 'geo')
     setActivePin(null)
+    geo.clear()
+    setLocateTarget(null)
     void trackMemoryMapEvent(supabase, {
       memoryMapId: map.id,
       eventType: 'area_selected',
@@ -108,21 +111,11 @@ export default function MemoryMapViewer({ bundle, initialAreaId, initialPinId }:
     })
   }
 
-  function onLocateMe() {
-    if (!navigator.geolocation) {
-      setLocateMessage('Location is not supported in this browser.')
-      return
+  useEffect(() => {
+    if (geo.status === 'success' && geo.location) {
+      setLocateTarget({ lat: geo.location.lat, lng: geo.location.lng, zoom: 18 })
     }
-    setLocateMessage('Finding your location…')
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLocateTarget({ lat: pos.coords.latitude, lng: pos.coords.longitude })
-        setLocateMessage('Location found. Map centred on your position.')
-      },
-      () => setLocateMessage('Location permission denied. You can still browse the map manually.'),
-      { timeout: 8000 }
-    )
-  }
+  }, [geo.status, geo.location])
 
   return (
     <div style={memoryMapThemeVars(map)}>
@@ -183,9 +176,16 @@ export default function MemoryMapViewer({ bundle, initialAreaId, initialPinId }:
                   showImage={selectedArea.map_type === 'image'}
                 />
                 <div className="ml-auto flex gap-1.5">
-                  <button type="button" onClick={onLocateMe} className="mm-btn-secondary rounded-full px-2.5 py-1 text-[10px] font-bold" title="Locate me">
-                    Use my location
-                  </button>
+                  {mapMode === 'geo' ? (
+                    <button
+                      type="button"
+                      onClick={() => geo.locate()}
+                      disabled={geo.status === 'loading'}
+                      className="mm-btn-secondary rounded-full px-2.5 py-1 text-[10px] font-bold"
+                    >
+                      {geo.status === 'loading' ? 'Finding location…' : 'Show my location'}
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     onClick={() => setShowFilters((f) => !f)}
@@ -206,7 +206,7 @@ export default function MemoryMapViewer({ bundle, initialAreaId, initialPinId }:
                 />
               </div>
 
-              {locateMessage ? <p className="mm-muted px-4 pb-2 text-xs">{locateMessage}</p> : null}
+              {geo.message ? <p className="mm-muted px-4 pb-2 text-xs">{geo.message}</p> : null}
 
               {showFilters ? (
                 <div className="space-y-2 px-4 pb-2">
@@ -240,6 +240,7 @@ export default function MemoryMapViewer({ bundle, initialAreaId, initialPinId }:
                 pins={visiblePins}
                 mode={mapMode}
                 locateTarget={locateTarget}
+                userLocation={geo.status === 'success' ? geo.location : null}
                 initialView={geoInitialView}
                 imageFocus={imageFocus}
                 onPinClick={(pin) => {

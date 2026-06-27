@@ -158,7 +158,8 @@ export async function fetchPublicMemoryMapBundleClient(
     .from('memory_maps')
     .select('*, organisations(*)')
     .eq('slug', slug)
-    .in('status', ['active', 'draft'])
+    .eq('status', 'active')
+    .in('visibility', ['public', 'link_only'])
     .maybeSingle()
 
   if (!map) return null

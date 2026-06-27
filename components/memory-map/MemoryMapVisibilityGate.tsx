@@ -42,6 +42,16 @@ export default function MemoryMapVisibilityGate({ bundle, children, returnPath }
     )
   }
 
+  if (map.status === 'draft') {
+    return (
+      <UnavailableState
+        map={map}
+        title="This Memory Map is not live yet"
+        description="This map is still being set up. Check back soon or contact the admin."
+      />
+    )
+  }
+
   if (checking) {
     return (
       <div className="mm-root flex min-h-dvh items-center justify-center text-sm text-white/70" style={memoryMapThemeVars(map)}>

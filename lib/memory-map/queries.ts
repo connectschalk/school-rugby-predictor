@@ -15,6 +15,21 @@ export type ContributorMemoryMapLoad =
   | { kind: 'ready'; source: MemoryMapDataSource; bundle: MemoryMapBundle }
   | { kind: 'missing'; slug: string; reason: 'not_found' | 'private' }
 
+/** Active maps reachable by direct URL (public directory + link-only). */
+export function memoryMapAllowsDirectPublicAccess(
+  map: Pick<MemoryMap, 'status' | 'visibility'>
+): boolean {
+  return map.status === 'active' && (map.visibility === 'public' || map.visibility === 'link_only')
+}
+
+/** Draft link-only/public maps resolve for unavailable shell (not full content). */
+export function memoryMapAllowsDirectPublicShell(
+  map: Pick<MemoryMap, 'status' | 'visibility'>
+): boolean {
+  if (map.visibility !== 'public' && map.visibility !== 'link_only') return false
+  return map.status === 'draft' || memoryMapAllowsDirectPublicAccess(map)
+}
+
 export function isSupabaseConfigured(): boolean {
   return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
 }
@@ -22,6 +37,36 @@ export function isSupabaseConfigured(): boolean {
 export function createMemoryMapServerClient(): SupabaseClient | null {
   if (!isSupabaseConfigured()) return null
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
+}
+
+/** Server-only fallback when anon RLS blocks a valid public/link_only slug lookup. */
+export function createMemoryMapServiceRoleClient(): SupabaseClient | null {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) return null
+  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } })
+}
+
+export type PublicMemoryMapLoad =
+  | { kind: 'ready'; source: MemoryMapDataSource; bundle: MemoryMapBundle }
+  | { kind: 'private'; slug: string; map: MemoryMap }
+  | { kind: 'not_found'; slug: string }
+
+type FetchSlugResult =
+  | { outcome: 'found'; map: Record<string, unknown>; related: Omit<MemoryMapBundle, 'map'> }
+  | { outcome: 'private'; map: MemoryMap }
+  | { outcome: 'missing' }
+
+export function logSlugResolve(slug: string, load: PublicMemoryMapLoad): void {
+  if (process.env.NODE_ENV !== 'development') return
+  const memoryMap = load.kind === 'ready' ? load.bundle.map : load.kind === 'private' ? load.map : undefined
+  console.log('[memory-map:slug-resolve]', {
+    slug,
+    found: Boolean(memoryMap),
+    status: memoryMap?.status,
+    visibility: memoryMap?.visibility,
+    source: load.kind === 'ready' ? load.source : load.kind,
+  })
 }
 
 function logBundleSource(slug: string, source: MemoryMapDataSource, detail?: string) {
@@ -79,10 +124,12 @@ export function resolvePublicMemoryMapBundle(
   related: Omit<MemoryMapBundle, 'map'>
 ): { source: MemoryMapDataSource; bundle: MemoryMapBundle } | null {
   if (!supabaseMap) return null
+  const map = mapRecordToMemoryMap(supabaseMap)
+  if (!memoryMapAllowsDirectPublicShell(map)) return null
   return {
     source: 'supabase',
     bundle: {
-      map: mapRecordToMemoryMap(supabaseMap),
+      map,
       areas: related.areas,
       categories: related.categories,
       pins: related.pins,
@@ -92,59 +139,129 @@ export function resolvePublicMemoryMapBundle(
   }
 }
 
-async function fetchSupabaseBundleBySlug(slug: string): Promise<{
-  map: Record<string, unknown>
-  related: Omit<MemoryMapBundle, 'map'>
-} | null> {
-  const client = createMemoryMapServerClient()
-  if (!client) return null
+async function attachOrganisationToMapRow(
+  client: SupabaseClient,
+  mapRow: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  const orgId = mapRow.organisation_id
+  if (!orgId) return { ...mapRow, organisations: null }
+  const { data: org } = await client.from('organisations').select('*').eq('id', orgId).maybeSingle()
+  return { ...mapRow, organisations: org ?? null }
+}
+
+async function fetchMapRelatedData(
+  client: SupabaseClient,
+  mapId: string
+): Promise<Omit<MemoryMapBundle, 'map'>> {
+  const { data: allAreaRows } = await client.from('memory_areas').select('id').eq('memory_map_id', mapId)
+  const areaIds = (allAreaRows ?? []).map((a: { id: string }) => a.id)
+
+  const [areasRes, categoriesRes, tagsRes] = await Promise.all([
+    client.from('memory_areas').select('*').eq('memory_map_id', mapId).eq('is_active', true).order('sort_order'),
+    client.from('memory_categories').select('*').eq('memory_map_id', mapId).eq('is_active', true).order('sort_order'),
+    client.from('memory_tags').select('id, name').eq('memory_map_id', mapId),
+  ])
+
+  const pinsRes = areaIds.length
+    ? await client.from('memory_pins').select('*').in('area_id', areaIds).eq('status', 'approved')
+    : { data: [] as MemoryMapBundle['pins'] }
+
+  const pinIds = (pinsRes.data ?? []).map((p: { id: string }) => p.id)
+  const storiesRes = pinIds.length
+    ? await client.from('memory_stories').select('*').in('pin_id', pinIds).eq('status', 'approved')
+    : { data: [] as MemoryStory[] }
+
+  const stories = await attachStoryMediaAndTags(client, (storiesRes.data ?? []) as MemoryStory[])
+
+  return {
+    areas: (areasRes.data ?? []) as MemoryMapBundle['areas'],
+    categories: (categoriesRes.data ?? []) as MemoryMapBundle['categories'],
+    pins: (pinsRes.data ?? []) as MemoryMapBundle['pins'],
+    stories,
+    tags: (tagsRes.data ?? []) as MemoryMapBundle['tags'],
+  }
+}
+
+async function fetchMemoryMapRowBySlug(
+  client: SupabaseClient,
+  slug: string,
+  options?: { includePrivate?: boolean; bypassVisibilityFilter?: boolean }
+): Promise<Record<string, unknown> | null> {
+  let query = client.from('memory_maps').select('*').eq('slug', slug)
+
+  if (!options?.bypassVisibilityFilter) {
+    if (options?.includePrivate) {
+      query = query.in('status', ['active', 'draft'])
+    } else {
+      query = query.eq('status', 'active').in('visibility', ['public', 'link_only'])
+    }
+  }
+
+  const { data, error } = await query.maybeSingle()
+  if (error) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn(`[memory-map] slug row lookup failed for ${slug}:`, error.message)
+    }
+    return null
+  }
+  return (data as Record<string, unknown> | null) ?? null
+}
+
+function classifyFetchedMapForPublicRoute(
+  map: MemoryMap,
+  options?: { includePrivate?: boolean }
+): 'found' | 'private' | 'missing' {
+  if (map.status === 'archived') return 'missing'
+  if (map.visibility === 'private') {
+    if (options?.includePrivate && (map.status === 'active' || map.status === 'draft')) return 'found'
+    if (map.status === 'active' || map.status === 'draft') return 'private'
+    return 'missing'
+  }
+  if (memoryMapAllowsDirectPublicShell(map)) return 'found'
+  return 'missing'
+}
+
+async function fetchSupabaseBundleBySlug(
+  slug: string,
+  options?: { includePrivate?: boolean }
+): Promise<FetchSlugResult> {
+  const anon = createMemoryMapServerClient()
+  const service = createMemoryMapServiceRoleClient()
+  const clients = [anon, service].filter(Boolean) as SupabaseClient[]
+
+  if (clients.length === 0) return { outcome: 'missing' }
 
   try {
-    const { data: map, error } = await client
-      .from('memory_maps')
-      .select('*, organisations(*)')
-      .eq('slug', slug)
-      .in('status', ['active', 'draft'])
-      .maybeSingle()
+    for (let i = 0; i < clients.length; i++) {
+      const client = clients[i]!
+      const bypassVisibilityFilter = i > 0 && client === service
+      const mapRow = await fetchMemoryMapRowBySlug(client, slug, {
+        ...options,
+        bypassVisibilityFilter,
+      })
+      if (!mapRow) continue
 
-    if (error || !map) return null
+      const mapWithOrg = await attachOrganisationToMapRow(client, mapRow)
+      const map = mapRecordToMemoryMap(mapWithOrg)
+      const classification = classifyFetchedMapForPublicRoute(map, options)
 
-    const mapId = map.id as string
-    const { data: allAreaRows } = await client.from('memory_areas').select('id').eq('memory_map_id', mapId)
-    const areaIds = (allAreaRows ?? []).map((a: { id: string }) => a.id)
+      if (classification === 'private') {
+        return { outcome: 'private', map }
+      }
+      if (classification === 'missing') {
+        continue
+      }
 
-    const [areasRes, categoriesRes, tagsRes] = await Promise.all([
-      client.from('memory_areas').select('*').eq('memory_map_id', mapId).eq('is_active', true).order('sort_order'),
-      client.from('memory_categories').select('*').eq('memory_map_id', mapId).eq('is_active', true).order('sort_order'),
-      client.from('memory_tags').select('id, name').eq('memory_map_id', mapId),
-    ])
-
-    const pinsRes = areaIds.length
-      ? await client.from('memory_pins').select('*').in('area_id', areaIds).eq('status', 'approved')
-      : { data: [] as MemoryMapBundle['pins'] }
-
-    const pinIds = (pinsRes.data ?? []).map((p: { id: string }) => p.id)
-    const storiesRes = pinIds.length
-      ? await client.from('memory_stories').select('*').in('pin_id', pinIds).eq('status', 'approved')
-      : { data: [] as MemoryStory[] }
-
-    const stories = await attachStoryMediaAndTags(client, (storiesRes.data ?? []) as MemoryStory[])
-
-    return {
-      map: map as Record<string, unknown>,
-      related: {
-        areas: (areasRes.data ?? []) as MemoryMapBundle['areas'],
-        categories: (categoriesRes.data ?? []) as MemoryMapBundle['categories'],
-        pins: (pinsRes.data ?? []) as MemoryMapBundle['pins'],
-        stories,
-        tags: (tagsRes.data ?? []) as MemoryMapBundle['tags'],
-      },
+      const related = await fetchMapRelatedData(client, map.id)
+      return { outcome: 'found', map: mapWithOrg, related }
     }
+
+    return { outcome: 'missing' }
   } catch (e) {
     if (process.env.NODE_ENV === 'development') {
       console.warn(`[memory-map] supabase fetch failed for ${slug}:`, e)
     }
-    return null
+    return { outcome: 'missing' }
   }
 }
 
@@ -179,12 +296,79 @@ export function resolveMemoryMapBundleLoad(
   return null
 }
 
+/** Contributor/add route: includes private maps when RLS allows member access. */
+export function resolveContributorMemoryMapBundle(
+  slug: string,
+  supabaseMap: Record<string, unknown> | null,
+  related: Omit<MemoryMapBundle, 'map'>
+): { source: MemoryMapDataSource; bundle: MemoryMapBundle } | null {
+  if (!supabaseMap) return null
+  const map = mapRecordToMemoryMap(supabaseMap)
+  if (map.status === 'archived') return null
+  if (map.visibility === 'private') {
+    if (map.status !== 'active' && map.status !== 'draft') return null
+  } else if (!memoryMapAllowsDirectPublicShell(map)) {
+    return null
+  }
+  return {
+    source: 'supabase',
+    bundle: {
+      map,
+      areas: related.areas,
+      categories: related.categories,
+      pins: related.pins,
+      stories: related.stories,
+      tags: related.tags,
+    },
+  }
+}
+
+export async function loadPublicMemoryMapBySlug(slug: string): Promise<PublicMemoryMapLoad> {
+  noStore()
+  const slugNorm = slug.trim()
+  const fetched = await fetchSupabaseBundleBySlug(slugNorm)
+
+  if (fetched.outcome === 'private') {
+    const result: PublicMemoryMapLoad = { kind: 'private', slug: slugNorm, map: fetched.map }
+    logSlugResolve(slugNorm, result)
+    return result
+  }
+
+  if (fetched.outcome === 'found') {
+    const resolved = resolvePublicMemoryMapBundle(slugNorm, fetched.map, fetched.related)
+    if (resolved) {
+      const result: PublicMemoryMapLoad = {
+        kind: 'ready',
+        source: 'supabase',
+        bundle: enrichBundle(resolved.bundle),
+      }
+      logSlugResolve(slugNorm, result)
+      return result
+    }
+  }
+
+  if (!isSupabaseConfigured()) {
+    const demo = getDemoBundle(slugNorm)
+    if (demo) {
+      const result: PublicMemoryMapLoad = { kind: 'ready', source: 'demo', bundle: enrichBundle(demo) }
+      logSlugResolve(slugNorm, result)
+      return result
+    }
+  }
+
+  const result: PublicMemoryMapLoad = { kind: 'not_found', slug: slugNorm }
+  logSlugResolve(slugNorm, result)
+  return result
+}
+
 export async function loadMemoryMapBundleBySlug(
   slug: string,
   options?: ResolveMemoryMapBundleOptions
 ): Promise<LoadedMemoryMapBundle | null> {
   noStore()
-  const supabase = await fetchSupabaseBundleBySlug(slug)
+  const fetched = await fetchSupabaseBundleBySlug(slug)
+  const supabase =
+    fetched.outcome === 'found' ? { map: fetched.map, related: fetched.related } : null
   const loaded = resolveMemoryMapBundleLoad(slug, supabase, options)
   if (loaded) {
     logBundleSource(slug, loaded.source, loaded.source === 'demo' ? 'no supabase map' : undefined)
@@ -200,13 +384,16 @@ export async function loadContributorMemoryMapBundleBySlug(slug: string): Promis
     console.info('[memory-map:add] supabase configured', isSupabaseConfigured(), 'slug', slug)
   }
 
-  const supabase = await fetchSupabaseBundleBySlug(slug)
-  if (supabase) {
-    const resolved = resolvePublicMemoryMapBundle(slug, supabase.map, supabase.related)
+  const fetched = await fetchSupabaseBundleBySlug(slug, { includePrivate: true })
+  if (fetched.outcome === 'found') {
+    const resolved = resolveContributorMemoryMapBundle(slug, fetched.map, fetched.related)
     if (resolved) {
       logBundleSource(slug, 'supabase')
       return { kind: 'ready', source: 'supabase', bundle: enrichBundle(resolved.bundle) }
     }
+  }
+  if (fetched.outcome === 'private') {
+    return { kind: 'missing', slug, reason: 'private' }
   }
 
   if (!isSupabaseConfigured()) {
@@ -230,8 +417,8 @@ export async function loadContributorMemoryMapBundleBySlug(slug: string): Promis
 }
 
 export async function fetchMemoryMapBundleBySlug(slug: string): Promise<MemoryMapBundle | null> {
-  const loaded = await loadMemoryMapBundleBySlug(slug)
-  return loaded?.bundle ?? null
+  const loaded = await loadPublicMemoryMapBySlug(slug)
+  return loaded.kind === 'ready' ? loaded.bundle : null
 }
 
 export async function fetchAdminMemoryMapBundle(mapId: string): Promise<MemoryMapBundle | null> {
