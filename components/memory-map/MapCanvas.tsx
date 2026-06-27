@@ -22,6 +22,8 @@ type Props = {
   locateTarget?: { lat: number; lng: number } | null
   initialView?: GeoView | null
   imageFocus?: ImageFocus | null
+  embedded?: boolean
+  highlightedPinId?: string | null
 }
 
 export default function MapCanvas({
@@ -36,8 +38,11 @@ export default function MapCanvas({
   locateTarget,
   initialView,
   imageFocus,
+  embedded = false,
+  highlightedPinId,
 }: Props) {
   const isImage = mode === 'image' || area.map_type === 'image'
+  const wrapperClass = embedded ? '' : 'mx-4 mb-4'
 
   function handleImageClick(e: React.MouseEvent<HTMLDivElement>) {
     if (!placementMode || !onMapClick) return
@@ -49,7 +54,7 @@ export default function MapCanvas({
 
   if (!isImage) {
     return (
-      <div className="mx-4 mb-4">
+      <div className={wrapperClass}>
         <GeoMapCanvas
           area={area}
           pins={pins}
@@ -60,6 +65,7 @@ export default function MapCanvas({
           showPlacementDebug={showPlacementDebug}
           locateTarget={locateTarget}
           initialView={initialView}
+          highlightedPinId={highlightedPinId}
         />
       </div>
     )
@@ -69,10 +75,10 @@ export default function MapCanvas({
   const focusY = imageFocus?.y ?? 50
 
   return (
-    <div className="mx-4 mb-4">
+    <div className={wrapperClass}>
       <div
         className={`relative aspect-[4/3] overflow-hidden rounded-2xl border border-white/10 bg-[#0a1628] ${
-          placementMode ? 'cursor-crosshair ring-2 ring-[var(--mm-accent)]' : ''
+          placementMode ? 'cursor-crosshair mm-ring-accent-2' : ''
         }`}
         onClick={handleImageClick}
         role={placementMode ? 'button' : undefined}
@@ -93,6 +99,7 @@ export default function MapCanvas({
             <MemoryPinMarker
               key={pin.id}
               pin={pin}
+              highlighted={highlightedPinId === pin.id}
               onClick={() => onPinClick(pin)}
               style={{ left: pos.left, top: pos.top }}
             />
@@ -100,7 +107,7 @@ export default function MapCanvas({
         })}
         {placementPreview?.x != null && placementPreview?.y != null ? (
           <span
-            className="absolute flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white bg-[var(--mm-accent)] text-xs font-black text-black"
+            className="absolute flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white mm-bg-accent text-xs font-black text-black"
             style={imagePercentToStylePosition(placementPreview.x, placementPreview.y)}
           >
             +

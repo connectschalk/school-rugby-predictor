@@ -15,10 +15,14 @@ type Props = {
   showPlacementDebug?: boolean
   locateTarget?: { lat: number; lng: number } | null
   initialView?: GeoView | null
+  highlightedPinId?: string | null
 }
 
-function pinIconHtml(colour: string, label: string): string {
-  return `<span style="display:flex;align-items:center;justify-content:center;min-width:36px;min-height:36px;padding:0 6px;border-radius:9999px;border:2px solid rgba(255,255,255,0.85);background:${colour};color:#050505;font-size:11px;font-weight:800;box-shadow:0 4px 12px rgba(0,0,0,0.35)">${label}</span>`
+function pinIconHtml(colour: string, label: string, highlighted = false): string {
+  const ring = highlighted
+    ? 'box-shadow:0 0 0 3px rgba(251,191,36,0.95), 0 0 16px rgba(251,191,36,0.55);'
+    : 'box-shadow:0 4px 12px rgba(0,0,0,0.35);'
+  return `<span style="display:flex;align-items:center;justify-content:center;min-width:36px;min-height:36px;padding:0 6px;border-radius:9999px;border:2px solid rgba(255,255,255,0.85);background:${colour};color:#050505;font-size:11px;font-weight:800;${ring}">${label}</span>`
 }
 
 export default function GeoMapCanvas({
@@ -31,6 +35,7 @@ export default function GeoMapCanvas({
   showPlacementDebug = false,
   locateTarget,
   initialView,
+  highlightedPinId,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<import('leaflet').Map | null>(null)
@@ -75,7 +80,10 @@ export default function GeoMapCanvas({
         }
 
         setReady(true)
-        setTimeout(() => map?.invalidateSize(), 100)
+        requestAnimationFrame(() => {
+          map?.invalidateSize()
+          map?.setView([centreLat, centreLng], centreZoom, { animate: false })
+        })
       } catch {
         setUseFallback(true)
       }
@@ -90,6 +98,15 @@ export default function GeoMapCanvas({
       setReady(false)
     }
   }, [area.id, centreLat, centreLng, centreZoom, useFallback, placementMode])
+
+  useEffect(() => {
+    if (!containerRef.current || !mapRef.current || !ready) return
+    const observer = new ResizeObserver(() => {
+      mapRef.current?.invalidateSize()
+    })
+    observer.observe(containerRef.current)
+    return () => observer.disconnect()
+  }, [ready])
 
   useEffect(() => {
     if (!mapRef.current || !ready || !initialView) return
@@ -107,9 +124,10 @@ export default function GeoMapCanvas({
         if (pin.lat == null || pin.lng == null) continue
         const colour = pin.colour ?? pin.category?.colour ?? '#FFD400'
         const count = pin.story_count ?? 0
+        const highlighted = highlightedPinId === pin.id
         const icon = L.divIcon({
           className: 'mm-leaflet-pin',
-          html: pinIconHtml(colour, count > 1 ? String(count) : '●'),
+          html: pinIconHtml(colour, count > 1 ? String(count) : '●', highlighted),
           iconSize: [36, 36],
           iconAnchor: [18, 18],
         })
@@ -121,7 +139,7 @@ export default function GeoMapCanvas({
         marker.addTo(layer)
       }
     })
-  }, [pins, onPinClick, ready])
+  }, [pins, onPinClick, ready, highlightedPinId])
 
   useEffect(() => {
     const map = mapRef.current
@@ -146,8 +164,9 @@ export default function GeoMapCanvas({
 
   useEffect(() => {
     if (!locateTarget || !mapRef.current) return
-    mapRef.current.setView([locateTarget.lat, locateTarget.lng], 17, { animate: true })
-  }, [locateTarget])
+    const zoom = initialView?.zoom ?? 17
+    mapRef.current.setView([locateTarget.lat, locateTarget.lng], zoom, { animate: true })
+  }, [locateTarget, initialView?.zoom])
 
   if (useFallback) {
     return (
@@ -170,7 +189,7 @@ export default function GeoMapCanvas({
       <div
         ref={containerRef}
         className={`mm-leaflet-map aspect-[4/3] overflow-hidden rounded-2xl border border-white/10 ${
-          placementMode ? 'ring-2 ring-[var(--mm-accent)]' : ''
+          placementMode ? 'mm-ring-accent-2' : ''
         }`}
       />
       {!ready ? (

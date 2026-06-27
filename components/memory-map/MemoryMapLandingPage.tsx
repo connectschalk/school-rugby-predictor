@@ -47,11 +47,11 @@ export default function MemoryMapLandingPage({ map, mapSlug, bundle, fromQr }: P
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={map.profile_image_url} alt="" className="h-full w-full object-cover" />
               ) : (
-                <span className="text-2xl font-black text-[var(--mm-accent)]">NP</span>
+                <span className="text-2xl font-black mm-text-accent">NP</span>
               )}
             </div>
             <div className="min-w-0">
-              <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[var(--mm-accent)]">Memory Map</p>
+              <p className="text-[11px] font-bold uppercase tracking-[0.2em] mm-text-accent">Memory Map</p>
               <h1 className="text-3xl font-black leading-tight drop-shadow-sm">{map.title}</h1>
               <p className="mt-1 text-base font-medium text-white/90">{map.tagline ?? 'Every place has a story.'}</p>
             </div>

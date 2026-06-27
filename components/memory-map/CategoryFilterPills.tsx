@@ -10,7 +10,7 @@ type Props = {
 
 export default function CategoryFilterPills({ categories, selectedId, onSelect }: Props) {
   return (
-    <div className="flex gap-2 overflow-x-auto px-4 py-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="flex gap-2 mm-hide-scrollbar">
       <button
         type="button"
         onClick={() => onSelect(null)}

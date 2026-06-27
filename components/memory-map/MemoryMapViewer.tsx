@@ -153,7 +153,7 @@ export default function MemoryMapViewer({ bundle, initialAreaId, initialPinId }:
         </div>
       ) : (
         <>
-          <div className="mb-3 flex gap-2 overflow-x-auto px-4 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="mb-3 flex gap-2 mm-hide-scrollbar">
             {activeAreas.map((area) => {
               const count = pins.filter((p) => p.area_id === area.id && p.status === 'approved').length
               const selected = selectedAreaId === area.id
@@ -163,7 +163,7 @@ export default function MemoryMapViewer({ bundle, initialAreaId, initialPinId }:
                   type="button"
                   onClick={() => selectArea(area.id)}
                   className={`min-h-[44px] shrink-0 rounded-2xl border px-4 py-2.5 text-left text-sm ${
-                    selected ? 'border-[var(--mm-accent)] bg-[var(--mm-accent)]/10' : 'border-white/10 bg-white/5'
+                    selected ? 'mm-border-accent mm-bg-accent-10' : 'border-white/10 bg-white/5'
                   }`}
                 >
                   <p className="font-bold leading-tight">{area.name}</p>
@@ -223,7 +223,7 @@ export default function MemoryMapViewer({ bundle, initialAreaId, initialPinId }:
               {visiblePins.length === 0 && !filteredEmpty ? (
                 <p className="mx-4 mb-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-white/80">
                   No memories have been added here yet.{' '}
-                  <Link href={`/memory-map/${map.slug}/add?area=${selectedArea.id}`} className="font-bold text-[var(--mm-accent)]">
+                  <Link href={`/memory-map/${map.slug}/add?area=${selectedArea.id}`} className="font-bold mm-text-accent">
                     Add a Memory
                   </Link>
                 </p>

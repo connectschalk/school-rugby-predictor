@@ -415,7 +415,7 @@ export default function AdminAddContentWizard({ bundle, mapId, onNavigate, onSav
         ) : null}
 
         {hasAreas ? (
-          <div className="mb-3 flex gap-2 overflow-x-auto px-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="mb-3 flex gap-2 overflow-x-auto px-1 mm-hide-scrollbar">
             {mapAreas.map((area) => {
               const count = pins.filter((p) => p.area_id === area.id && !['deleted', 'archived'].includes(p.status)).length
               return (
@@ -424,7 +424,7 @@ export default function AdminAddContentWizard({ bundle, mapId, onNavigate, onSav
                   type="button"
                   onClick={() => selectArea(area.id)}
                   className={`shrink-0 rounded-2xl border px-3 py-2 text-left text-xs ${
-                    selectedAreaId === area.id ? 'border-[var(--mm-accent)] bg-[var(--mm-accent)]/10' : 'border-white/10 bg-white/5'
+                    selectedAreaId === area.id ? 'mm-border-accent mm-bg-accent-10' : 'border-white/10 bg-white/5'
                   }`}
                 >
                   <p className="font-bold">{area.name}</p>
@@ -474,7 +474,7 @@ export default function AdminAddContentWizard({ bundle, mapId, onNavigate, onSav
         ) : null}
 
         {hasAreas && dropPinMode ? (
-          <p className="mb-2 rounded-xl border border-[var(--mm-accent)]/40 bg-[var(--mm-accent)]/10 px-3 py-2 text-xs text-[var(--mm-accent)]">
+          <p className="mb-2 rounded-xl border mm-border-accent-40 mm-bg-accent-10 px-3 py-2 text-xs mm-text-accent">
             Tap the map where this content happened.
           </p>
         ) : null}
@@ -703,7 +703,7 @@ function AddContentSheet(props: SheetProps) {
     <>
       <button type="button" className="fixed inset-0 z-40 bg-black/50 lg:hidden" aria-label="Close panel" onClick={onClose} />
       <aside
-        className={`mm-root fixed inset-x-0 bottom-0 z-50 flex max-h-[88dvh] flex-col rounded-t-3xl border border-white/10 bg-[var(--mm-bg,#05080d)] shadow-2xl lg:static lg:z-auto lg:max-h-none lg:w-[min(100%,420px)] lg:shrink-0 lg:rounded-2xl lg:border lg:border-white/10`}
+        className={`mm-root fixed inset-x-0 bottom-0 z-50 flex max-h-[88dvh] flex-col rounded-t-3xl border border-white/10 mm-bg-panel shadow-2xl lg:static lg:z-auto lg:max-h-none lg:w-[min(100%,420px)] lg:shrink-0 lg:rounded-2xl lg:border lg:border-white/10`}
       >
         <div className="shrink-0 border-b border-white/10 px-4 py-3">
           <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-white/20 lg:hidden" />
@@ -724,7 +724,7 @@ function AddContentSheet(props: SheetProps) {
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
           {error ? <p className="mb-3 rounded-xl border border-red-400/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">{error}</p> : null}
-          {uploadProgress ? <p className="mb-3 text-sm text-[var(--mm-accent)]">{uploadProgress}</p> : null}
+          {uploadProgress ? <p className="mb-3 text-sm mm-text-accent">{uploadProgress}</p> : null}
 
           {stage === 'pin-existing' && pinTarget?.kind === 'existing' ? (
             <ExistingPinSummary
@@ -764,7 +764,7 @@ function AddContentSheet(props: SheetProps) {
                 Go to published stories
               </button>
               {savedStoryId ? (
-                <Link href={`/memory-map/${mapSlug}/story/${savedStoryId}`} className="text-xs font-bold text-[var(--mm-accent)]">
+                <Link href={`/memory-map/${mapSlug}/story/${savedStoryId}`} className="text-xs font-bold mm-text-accent">
                   Preview story →
                 </Link>
               ) : null}

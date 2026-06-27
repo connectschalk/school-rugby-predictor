@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import type { MemoryStory } from '@/lib/memory-map/types'
+import { storyGovernanceBoolean } from '@/lib/memory-map/official-content'
 
 export type GovernanceChecks = {
   containsMinors: boolean
@@ -72,12 +73,13 @@ export default function StoryGovernancePanel({ story, checks, onChange, approval
 
 export function defaultGovernanceChecks(story: MemoryStory): GovernanceChecks {
   return {
-    containsMinors: story.contains_minors ?? false,
-    mentionsFullNames: story.mentions_full_names ?? false,
-    showsInjury: story.shows_injury ?? false,
-    archiveHistorical: story.is_archive_content ?? story.upload_mode === 'archive_submission',
-    sponsorReference: story.sponsor_or_brand_visible ?? false,
-    permissionConfirmed: story.has_permission_confirmed ?? true,
+    containsMinors: storyGovernanceBoolean(story, 'contains_minors'),
+    mentionsFullNames: storyGovernanceBoolean(story, 'mentions_full_names'),
+    showsInjury: storyGovernanceBoolean(story, 'shows_injury'),
+    archiveHistorical:
+      storyGovernanceBoolean(story, 'is_archive_content') || story.upload_mode === 'archive_submission',
+    sponsorReference: storyGovernanceBoolean(story, 'sponsor_or_brand_visible'),
+    permissionConfirmed: storyGovernanceBoolean(story, 'has_permission_confirmed', true),
     highRiskContent: story.risk_level === 'high' || story.risk_level === 'admin_review',
   }
 }

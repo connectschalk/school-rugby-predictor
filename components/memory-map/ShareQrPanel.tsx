@@ -95,10 +95,10 @@ export default function ShareQrPanel({ map }: Props) {
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={map.profile_image_url} alt="" className="h-16 w-16 rounded-2xl object-cover border border-white/20" />
               ) : (
-                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/10 text-xl font-black text-[var(--mm-accent)]">NP</div>
+                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/10 text-xl font-black mm-text-accent">NP</div>
               )}
               <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-[var(--mm-accent)] print:text-gray-600">NextPlay Memory Map</p>
+                <p className="text-xs font-bold uppercase tracking-wider mm-text-accent print:text-gray-600">NextPlay Memory Map</p>
                 <h2 className="text-2xl font-black">{map.title}</h2>
                 {map.tagline ? <p className="mm-muted mt-1 text-sm print:text-gray-600">{map.tagline}</p> : null}
               </div>
@@ -137,7 +137,7 @@ export default function ShareQrPanel({ map }: Props) {
                   <img src={map.profile_image_url} alt="" className="h-12 w-12 rounded-xl object-cover border border-white/20" />
                 ) : null}
                 <div>
-                  <p className="text-[10px] font-bold uppercase text-[var(--mm-accent)]">Memory Map</p>
+                  <p className="text-[10px] font-bold uppercase mm-text-accent">Memory Map</p>
                   <p className="text-lg font-black leading-tight">{map.title}</p>
                 </div>
               </div>

@@ -247,7 +247,7 @@ export default function AdminAreaForm({ mapId, map, area, onSaved, onCancel }: P
               }}
             />
             <span
-              className="absolute flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white bg-[var(--mm-accent)] text-[10px] font-black text-black"
+              className="absolute flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white mm-bg-accent text-[10px] font-black text-black"
               style={imagePercentToStylePosition(xNum, yNum)}
             >
               ●

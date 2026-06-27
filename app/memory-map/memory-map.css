@@ -36,6 +36,81 @@
   color: var(--mm-accent, #ffd400);
 }
 
+.mm-text-accent {
+  color: var(--mm-accent, #ffd400);
+}
+
+.mm-bg-accent {
+  background-color: var(--mm-accent, #ffd400);
+}
+
+.mm-bg-accent-10 {
+  background-color: color-mix(in oklab, var(--mm-accent, #ffd400) 10%, transparent);
+}
+
+.mm-bg-accent-15 {
+  background-color: color-mix(in oklab, var(--mm-accent, #ffd400) 15%, transparent);
+}
+
+.mm-bg-accent-20 {
+  background-color: color-mix(in oklab, var(--mm-accent, #ffd400) 20%, transparent);
+}
+
+.mm-border-accent {
+  border-color: var(--mm-accent, #ffd400);
+}
+
+.mm-border-accent-40 {
+  border-color: color-mix(in oklab, var(--mm-accent, #ffd400) 40%, transparent);
+}
+
+.mm-ring-accent-2 {
+  box-shadow: 0 0 0 2px var(--mm-accent, #ffd400);
+}
+
+.mm-bg-panel {
+  background: var(--mm-bg, #05080d);
+}
+
+.mm-bg-surface-card {
+  background: var(--mm-surface-card, #111827);
+}
+
+.mm-root .mm-hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.mm-root .mm-hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.mm-card-interactive {
+  transition: border-color 0.15s ease;
+}
+
+.mm-root .mm-card-interactive:hover {
+  border-color: color-mix(in oklab, var(--mm-accent, #ffd400) 30%, transparent);
+}
+
+.mm-root .mm-directory-card:hover {
+  border-color: color-mix(in oklab, var(--mm-accent, #ffd400) 40%, transparent);
+}
+
+.mm-root .mm-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--mm-accent, #ffd400);
+}
+
+.mm-root .mm-filter-chip.is-active {
+  background: var(--mm-accent, #ffd400);
+  color: var(--mm-primary-text, #050505);
+}
+
+.mm-root .mm-group:hover .mm-group-hover-accent {
+  color: var(--mm-accent, #ffd400);
+}
+
 .mm-sheet-handle {
   touch-action: none;
 }

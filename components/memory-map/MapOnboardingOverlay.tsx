@@ -46,7 +46,7 @@ export default function MapOnboardingOverlay({ mapSlug }: Props) {
             'Watch, read or add a memory',
           ].map((step, i) => (
             <li key={step} className="flex items-start gap-2">
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--mm-accent)] text-xs font-black text-black">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full mm-bg-accent text-xs font-black text-black">
                 {i + 1}
               </span>
               <span>{step}</span>

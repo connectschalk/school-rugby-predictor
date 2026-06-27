@@ -109,7 +109,7 @@ export default function AdminSetupWizard({ mapId }: Props) {
   return (
     <div className="mx-auto max-w-lg space-y-6 px-4 py-8">
       <div>
-        <Link href={base} className="text-xs font-bold text-[var(--mm-accent)]">
+        <Link href={base} className="text-xs font-bold mm-text-accent">
           ← Admin dashboard
         </Link>
         <h1 className="mt-2 text-2xl font-black">Pilot setup</h1>

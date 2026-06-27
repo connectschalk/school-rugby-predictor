@@ -29,6 +29,12 @@ import type {
   MemoryStory,
 } from '@/lib/memory-map/types'
 import { isAdminCreatedStory, isOfficialStory } from '@/lib/memory-map/official-content'
+import {
+  cannotApproveOwnStory,
+  isOwnStoryPlatformOverride,
+  OWN_STORY_APPROVAL_HELPER,
+  PLATFORM_ADMIN_OVERRIDE_LABEL,
+} from '@/lib/memory-map/own-story-approval'
 import { pinStats, storyTypeLabel, uploadModeLabel } from '@/lib/memory-map/utils'
 import { getImageMapInitialFocus, getPinMoveInitialView } from '@/lib/memory-map/map-starting-point'
 import { memoryMapThemeVars } from '@/lib/memory-map/theme'
@@ -42,13 +48,11 @@ import AdminContributorsPanel from '@/components/memory-map/admin/AdminContribut
 import AdminPilotChecklist from '@/components/memory-map/admin/AdminPilotChecklist'
 import AdminPilotQaPanel from '@/components/memory-map/admin/AdminPilotQaPanel'
 import AdminAddContentWizard from '@/components/memory-map/admin/AdminAddContentWizard'
+import AdminStoryReviewPanel from '@/components/memory-map/admin/AdminStoryReviewPanel'
 import MemoryMapAdminNav from '@/components/memory-map/admin/MemoryMapAdminNav'
 import { isAdminTab } from '@/lib/memory-map/admin-nav'
-import StoryApprovalSummary, { needsPublishConfirmation } from '@/components/memory-map/admin/StoryApprovalSummary'
-import StoryGovernancePanel, {
-  defaultGovernanceChecks,
-  type GovernanceChecks,
-} from '@/components/memory-map/admin/StoryGovernancePanel'
+import { needsPublishConfirmation } from '@/components/memory-map/admin/StoryApprovalSummary'
+import { defaultGovernanceChecks } from '@/components/memory-map/admin/StoryGovernancePanel'
 import MapCanvas from '@/components/memory-map/MapCanvas'
 import StatusBadge, { AdminCreatedBadge, OfficialBadge, RiskBadge } from '@/components/memory-map/StatusBadge'
 import ShareQrPanel from '@/components/memory-map/ShareQrPanel'
@@ -73,11 +77,9 @@ export default function AdminDashboard({ mapId }: Props) {
   const [auditLogs, setAuditLogs] = useState<MemoryAuditLog[]>([])
   const [analytics, setAnalytics] = useState<MemoryMapAnalyticsSummary | null>(null)
   const [isAppAdmin, setIsAppAdmin] = useState(false)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [areaFormArea, setAreaFormArea] = useState<MemoryArea | null | undefined>(undefined)
-  const [governanceChecks, setGovernanceChecks] = useState<GovernanceChecks | null>(null)
-  const [approvalNote, setApprovalNote] = useState('')
   const [highRiskConfirm, setHighRiskConfirm] = useState<MemoryStory | null>(null)
-  const [publishConfirmed, setPublishConfirmed] = useState(false)
 
   const [selectedStory, setSelectedStory] = useState<MemoryStory | null>(null)
   const [rejectStory, setRejectStory] = useState<MemoryStory | null>(null)
@@ -119,6 +121,7 @@ export default function AdminDashboard({ mapId }: Props) {
         setAuditLogs(logs)
         setAnalytics(stats)
         setIsAppAdmin(adminCheck.isAdmin)
+        setCurrentUserId(userId || null)
       } else if (mapId === DEMO_MEMORY_MAP_BUNDLE.map.id) {
         setBundle({ ...DEMO_MEMORY_MAP_BUNDLE, stories: [...DEMO_MEMORY_MAP_BUNDLE.stories] })
       } else {
@@ -140,6 +143,11 @@ export default function AdminDashboard({ mapId }: Props) {
   const categories = bundle?.categories ?? []
   const pins = bundle?.pins ?? []
   const stories = bundle?.stories ?? []
+
+  const reviewStory = useMemo(() => {
+    if (!selectedStory) return null
+    return stories.find((s) => s.id === selectedStory.id) ?? selectedStory
+  }, [selectedStory, stories])
 
   const pendingMembers = useMemo(() => allMembers.filter((m) => m.status === 'pending'), [allMembers])
   const pending = useMemo(
@@ -198,35 +206,54 @@ export default function AdminDashboard({ mapId }: Props) {
 
   function openStoryReview(story: MemoryStory) {
     setSelectedStory(story)
-    setGovernanceChecks(defaultGovernanceChecks(story))
-    setApprovalNote('')
-    setPublishConfirmed(false)
   }
 
-  async function onApproveStory(storyId: string, skipWeakCheck = false, skipHighRiskCheck = false) {
+  function shouldForceReview(story: MemoryStory): boolean {
+    return needsPublishConfirmation(story, defaultGovernanceChecks(story))
+  }
+
+  async function onQuickApprove(story: MemoryStory) {
+    if (cannotApproveOwnStory(story, currentUserId, isAppAdmin)) {
+      openStoryReview(story)
+      return
+    }
+    if (shouldForceReview(story)) {
+      openStoryReview(story)
+      return
+    }
+    await onApproveStory(story.id)
+  }
+
+  async function onApproveStory(
+    storyId: string,
+    skipWeakCheck = false,
+    skipHighRiskCheck = false,
+    approvalNote?: string
+  ) {
     const story = stories.find((s) => s.id === storyId)
+    if (story && cannotApproveOwnStory(story, currentUserId, isAppAdmin)) {
+      setError(OWN_STORY_APPROVAL_HELPER)
+      return false
+    }
     if (story && !skipWeakCheck) {
       const weak = (!story.media || story.media.length === 0) && (story.description?.trim().length ?? 0) < 40
       if (weak) {
         setApproveWeakWarning(story)
-        return
+        return false
       }
     }
     if (story && !skipHighRiskCheck && (story.risk_level === 'high' || story.risk_level === 'admin_review')) {
       setHighRiskConfirm(story)
-      return
+      return false
     }
-    const note = approvalNote.trim() || undefined
-    const ok = await runAction(() => approveMemoryStory(supabase, storyId, note))
+    const ok = await runAction(() => approveMemoryStory(supabase, storyId, approvalNote))
     if (ok) {
       setSelectedStory(null)
       setRejectStory(null)
       setApproveWeakWarning(null)
       setHighRiskConfirm(null)
-      setGovernanceChecks(null)
-      setApprovalNote('')
-      setPublishConfirmed(false)
     }
+    return ok
   }
 
   async function onMergePins() {
@@ -351,7 +378,7 @@ export default function AdminDashboard({ mapId }: Props) {
     return (
       <div className="mm-root flex min-h-dvh flex-col items-center justify-center gap-3 p-8 text-center">
         <p className="text-sm text-white/70">Memory map not found or you do not have access.</p>
-        <Link href="/memory-map" className="text-sm font-bold text-[var(--mm-accent)]">
+        <Link href="/memory-map" className="text-sm font-bold mm-text-accent">
           ← Back
         </Link>
       </div>
@@ -366,7 +393,7 @@ export default function AdminDashboard({ mapId }: Props) {
   return (
     <div className="mm-root min-h-dvh pb-8" style={memoryMapThemeVars(map)}>
       <header className="mm-card border-x-0 border-t-0 px-4 py-4">
-        <Link href="/memory-map" className="text-xs font-bold text-[var(--mm-accent)]">
+        <Link href="/memory-map" className="text-xs font-bold mm-text-accent">
           ← Memory Map
         </Link>
         <h1 className="mt-2 text-xl font-black">{map.title} — Admin</h1>
@@ -434,6 +461,8 @@ export default function AdminDashboard({ mapId }: Props) {
               filteredPending.map((story) => {
                 const pin = pins.find((p) => p.id === story.pin_id)
                 const thumb = story.media?.[0]?.thumbnail_url ?? story.media?.[0]?.file_url
+                const ownStoryBlocked = cannotApproveOwnStory(story, currentUserId, isAppAdmin)
+                const platformOverride = isOwnStoryPlatformOverride(story, currentUserId, isAppAdmin)
                 return (
                   <div key={story.id} className="mm-card rounded-2xl p-4">
                     <div className="flex gap-3">
@@ -463,11 +492,25 @@ export default function AdminDashboard({ mapId }: Props) {
                         </div>
                       </div>
                     </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
                       <button type="button" onClick={() => openStoryReview(story)} className="mm-btn-secondary rounded-lg px-3 py-1.5 text-xs font-bold">Review</button>
-                      <button type="button" disabled={busy} onClick={() => void onApproveStory(story.id)} className="mm-btn-primary rounded-lg px-3 py-1.5 text-xs font-bold disabled:opacity-50">Approve</button>
+                      <button
+                        type="button"
+                        disabled={busy || ownStoryBlocked}
+                        title={ownStoryBlocked ? OWN_STORY_APPROVAL_HELPER : undefined}
+                        onClick={() => void onQuickApprove(story)}
+                        className="mm-btn-primary rounded-lg px-3 py-1.5 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        Approve
+                      </button>
+                      {platformOverride ? (
+                        <span className="text-[10px] font-bold uppercase tracking-wide text-amber-200">{PLATFORM_ADMIN_OVERRIDE_LABEL}</span>
+                      ) : null}
                       <button type="button" disabled={busy} onClick={() => { setRejectStory(story); setRejectReason('') }} className="rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-1.5 text-xs font-bold text-red-300 disabled:opacity-50">Reject</button>
                     </div>
+                    {ownStoryBlocked ? (
+                      <p className="mm-muted mt-2 text-xs">{OWN_STORY_APPROVAL_HELPER}</p>
+                    ) : null}
                   </div>
                 )
               })
@@ -641,91 +684,27 @@ export default function AdminDashboard({ mapId }: Props) {
       </div>
       ) : null}
 
-      {selectedStory ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 sm:items-center">
-          <div className="mm-card max-h-[85dvh] w-full max-w-lg overflow-y-auto rounded-2xl p-5">
-            <h3 className="text-lg font-black">{selectedStory.title}</h3>
-            <p className="mm-muted mt-1 text-xs">
-              {selectedStory.event_year} · {selectedStory.logged_by_display_name}
-            </p>
-            <p className="mm-muted mt-2 text-sm whitespace-pre-wrap">{selectedStory.description}</p>
-            {selectedStory.tags && selectedStory.tags.length > 0 ? (
-              <p className="mt-2 text-xs text-white/60">{selectedStory.tags.map((t) => `#${t}`).join(' ')}</p>
-            ) : null}
-            {selectedStory.media && selectedStory.media.length > 0 ? (
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                {selectedStory.media.map((m) =>
-                  m.media_type === 'image' ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img key={m.id} src={m.file_url} alt="" className="rounded-lg object-cover" />
-                  ) : (
-                    <video key={m.id} src={m.file_url} controls className="rounded-lg" />
-                  )
-                )}
-              </div>
-            ) : null}
-            {governanceChecks && selectedStory ? (
-              <div className="mt-4 space-y-3">
-                <StoryApprovalSummary
-                  story={selectedStory}
-                  pin={pins.find((p) => p.id === selectedStory.pin_id) ?? null}
-                  area={areas.find((a) => a.id === pins.find((p) => p.id === selectedStory.pin_id)?.area_id) ?? null}
-                  category={categories.find((c) => c.id === pins.find((p) => p.id === selectedStory.pin_id)?.category_id) ?? null}
-                  checks={governanceChecks}
-                />
-                <StoryGovernancePanel
-                  story={selectedStory}
-                  checks={governanceChecks}
-                  onChange={setGovernanceChecks}
-                  approvalNote={approvalNote}
-                  onApprovalNoteChange={setApprovalNote}
-                />
-                {needsPublishConfirmation(selectedStory, governanceChecks) ? (
-                  <label className="flex items-start gap-2 text-xs">
-                    <input
-                      type="checkbox"
-                      checked={publishConfirmed}
-                      onChange={(e) => setPublishConfirmed(e.target.checked)}
-                      className="mt-0.5"
-                    />
-                    I have reviewed this story and confirm it may be published.
-                  </label>
-                ) : null}
-              </div>
-            ) : null}
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button
-                type="button"
-                disabled={
-                  busy ||
-                  Boolean(
-                    selectedStory &&
-                      governanceChecks &&
-                      needsPublishConfirmation(selectedStory, governanceChecks) &&
-                      !publishConfirmed
-                  )
-                }
-                onClick={() => void onApproveStory(selectedStory.id)}
-                className="mm-btn-primary rounded-lg px-3 py-2 text-xs font-bold disabled:opacity-50"
-              >
-                Approve
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setRejectStory(selectedStory)
-                  setRejectReason('')
-                }}
-                className="rounded-lg border border-red-400/40 px-3 py-2 text-xs font-bold text-red-300"
-              >
-                Reject
-              </button>
-              <button type="button" onClick={() => setSelectedStory(null)} className="mm-btn-secondary rounded-lg px-3 py-2 text-xs font-bold">
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
+      {reviewStory && bundle ? (
+        <AdminStoryReviewPanel
+          story={reviewStory}
+          pin={pins.find((p) => p.id === reviewStory.pin_id) ?? null}
+          area={areas.find((a) => a.id === pins.find((p) => p.id === reviewStory.pin_id)?.area_id) ?? null}
+          categories={categories}
+          areas={areas}
+          pins={pins}
+          stories={stories}
+          map={map}
+          busy={busy}
+          currentUserId={currentUserId}
+          isAppAdmin={isAppAdmin}
+          onClose={() => setSelectedStory(null)}
+          onRefresh={reload}
+          onApprove={async (note) => onApproveStory(reviewStory.id, true, true, note)}
+          onReject={() => {
+            setRejectStory(reviewStory)
+            setRejectReason('')
+          }}
+        />
       ) : null}
 
       {rejectStory ? (
@@ -773,7 +752,7 @@ export default function AdminDashboard({ mapId }: Props) {
                       setMoveStoryPinId(pin.id)
                       setMoveStoryNewPinTitle('')
                     }}
-                    className={`mm-card w-full rounded-lg p-2 text-left text-sm ${moveStoryPinId === pin.id ? 'ring-2 ring-[var(--mm-accent)]' : ''}`}
+                    className={`mm-card w-full rounded-lg p-2 text-left text-sm ${moveStoryPinId === pin.id ? 'mm-ring-accent-2' : ''}`}
                   >
                     {pin.title}
                   </button>
@@ -913,7 +892,7 @@ export default function AdminDashboard({ mapId }: Props) {
                         setPinDeleteAction(value)
                         if (value === 'move') setPinMoveStoriesToId(null)
                       }}
-                      className={`mm-card w-full rounded-lg p-3 text-left text-sm ${pinDeleteAction === value ? 'ring-2 ring-[var(--mm-accent)]' : ''}`}
+                      className={`mm-card w-full rounded-lg p-3 text-left text-sm ${pinDeleteAction === value ? 'mm-ring-accent-2' : ''}`}
                     >
                       {label}
                     </button>
@@ -969,7 +948,7 @@ export default function AdminDashboard({ mapId }: Props) {
             <p className="mt-2 text-sm text-red-200">
               This story is marked high-risk/admin review. Confirm you have checked school policy before publishing.
             </p>
-            {governanceChecks?.containsMinors ? (
+            {defaultGovernanceChecks(highRiskConfirm).containsMinors ? (
               <p className="mt-2 rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
                 Ensure this aligns with the school&apos;s media/consent policy.
               </p>

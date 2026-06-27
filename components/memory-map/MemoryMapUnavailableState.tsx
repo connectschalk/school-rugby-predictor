@@ -13,7 +13,7 @@ export default function MemoryMapUnavailableState({ slug, reason }: Props) {
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-lg flex-col px-5 py-10">
-      <p className="text-xs font-bold uppercase tracking-[0.25em] text-[var(--mm-accent,#FFD400)]">
+      <p className="mm-text-accent text-xs font-bold uppercase tracking-[0.25em]">
         NextPlay Memory Map
       </p>
       <h1 className="mt-3 text-2xl font-black leading-tight">

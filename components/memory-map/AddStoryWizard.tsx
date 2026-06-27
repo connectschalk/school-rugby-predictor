@@ -19,6 +19,7 @@ import {
   defaultCategoryId,
   getQuickContributorFieldErrors,
   resolveMemoryTitle,
+  resolveMemoryDescription,
   validateQuickContributorSubmit,
   validateImageFile,
   validateVideoFile,
@@ -530,6 +531,9 @@ export default function AddStoryWizard({ bundle, dataSource, initialPinId, initi
       ? defaultPinCategoryId(activeCategories) || null
       : (pinTarget.pin.category_id ?? categoryId)
 
+    const pinTitle =
+      pinTarget?.kind === 'existing' ? pinTarget.pin.title : pinTarget?.kind === 'new' ? pinTarget.title : ''
+
     const contentErr = validateQuickContributorSubmit({
       memoryTitle,
       shortNote,
@@ -539,6 +543,7 @@ export default function AddStoryWizard({ bundle, dataSource, initialPinId, initi
       hasVideo,
       hasSubmissionPolicy,
       displayName,
+      pinTitle,
     })
     if (contentErr) {
       setError(contentErr)
@@ -555,9 +560,10 @@ export default function AddStoryWizard({ bundle, dataSource, initialPinId, initi
       }
     }
 
-    const storyTitle = resolveMemoryTitle(memoryTitle, shortNote, textBody, year)
+    const storyTitle = resolveMemoryTitle(memoryTitle, shortNote, textBody, year, pinTitle)
     const eventYear = eventDate ? parseInt(eventDate.slice(0, 4), 10) : parseInt(year, 10)
-    const finalDescription = buildFinalDescription() || storyTitle
+    const finalDescription =
+      buildFinalDescription() || resolveMemoryDescription(shortNote, textBody, storyTitle, hasPhoto || hasVideo)
     const hasText = Boolean(finalDescription.trim())
 
     setSubmitting(true)
@@ -633,6 +639,12 @@ export default function AddStoryWizard({ bundle, dataSource, initialPinId, initi
         hasVideo: Boolean(videoFile),
         hasSubmissionPolicy,
         displayName,
+        pinTitle:
+          pinTarget?.kind === 'existing'
+            ? pinTarget.pin.title
+            : pinTarget?.kind === 'new'
+              ? pinTarget.title
+              : '',
       }),
     [memoryTitle, shortNote, textBody, year, photoFiles.length, videoFile, hasSubmissionPolicy, displayName]
   )
@@ -740,7 +752,7 @@ export default function AddStoryWizard({ bundle, dataSource, initialPinId, initi
           ) : null}
 
           <p className="mm-muted mb-2 text-[11px] font-semibold uppercase tracking-wide">Choose area</p>
-          <div className="mb-3 flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="mb-3 flex gap-2 mm-hide-scrollbar">
             {mapAreas.map((area) => {
               const count = pins.filter((p) => p.area_id === area.id && p.status === 'approved').length
               const selected = selectedAreaId === area.id
@@ -750,7 +762,7 @@ export default function AddStoryWizard({ bundle, dataSource, initialPinId, initi
                   type="button"
                   onClick={() => selectArea(area.id)}
                   className={`min-h-[44px] shrink-0 rounded-2xl border px-4 py-2.5 text-left text-sm ${
-                    selected ? 'border-[var(--mm-accent)] bg-[var(--mm-accent)]/10' : 'border-white/10 bg-white/5'
+                    selected ? 'mm-border-accent mm-bg-accent-10' : 'border-white/10 bg-white/5'
                   }`}
                 >
                   <p className="font-bold leading-tight">{area.name}</p>
@@ -992,7 +1004,7 @@ function ContributorAddSheet(props: SheetProps) {
     <>
       <button type="button" className="fixed inset-0 z-40 bg-black/50 lg:hidden" aria-label="Close" onClick={onClose} />
       <aside
-        className={`mm-root fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-3xl border border-white/10 bg-[var(--mm-bg,#05080d)] shadow-2xl lg:static lg:z-auto lg:max-h-none lg:w-[min(100%,420px)] lg:shrink-0 lg:rounded-2xl ${
+        className={`mm-root fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-3xl border border-white/10 mm-bg-panel shadow-2xl lg:static lg:z-auto lg:max-h-none lg:w-[min(100%,420px)] lg:shrink-0 lg:rounded-2xl ${
           stage === 'content' ? 'max-h-[85dvh]' : stage === 'success' ? 'max-h-[70dvh]' : 'max-h-[68dvh]'
         }`}
       >
@@ -1023,7 +1035,7 @@ function ContributorAddSheet(props: SheetProps) {
             </p>
           ) : null}
           {uploadProgress ? (
-            <p className="mb-3 flex items-center gap-2 text-sm text-[var(--mm-accent)]">
+            <p className="mb-3 flex items-center gap-2 text-sm mm-text-accent">
               <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
               {uploadProgress}
             </p>
@@ -1065,7 +1077,7 @@ function ContributorAddSheet(props: SheetProps) {
         </div>
 
         {stage === 'content' ? (
-          <div className="shrink-0 border-t border-white/10 bg-[var(--mm-bg,#05080d)] px-4 py-3 mm-safe-bottom">
+          <div className="shrink-0 border-t border-white/10 mm-bg-panel px-4 py-3 mm-safe-bottom">
             {!canSubmit && submissionNotice ? (
               <p className="mb-2 text-xs text-amber-100">{submissionNotice}</p>
             ) : null}
@@ -1298,21 +1310,21 @@ function QuickMemoryForm(props: SheetProps & { pinTitle: string }) {
           <button
             type="button"
             onClick={() => photoInputRef.current?.click()}
-            className={`rounded-xl border-2 py-4 text-xs font-black ${photoFiles.length > 0 ? 'border-[var(--mm-accent)] bg-[var(--mm-accent)]/10' : 'border-white/15 bg-white/5'}`}
+            className={`rounded-xl border-2 py-4 text-xs font-black ${photoFiles.length > 0 ? 'mm-border-accent mm-bg-accent-10' : 'border-white/15 bg-white/5'}`}
           >
             Photo
           </button>
           <button
             type="button"
             onClick={() => videoInputRef.current?.click()}
-            className={`rounded-xl border-2 py-4 text-xs font-black ${videoFile ? 'border-[var(--mm-accent)] bg-[var(--mm-accent)]/10' : 'border-white/15 bg-white/5'}`}
+            className={`rounded-xl border-2 py-4 text-xs font-black ${videoFile ? 'mm-border-accent mm-bg-accent-10' : 'border-white/15 bg-white/5'}`}
           >
             Video
           </button>
           <button
             type="button"
             onClick={() => setShowTextEditor(true)}
-            className={`rounded-xl border-2 py-4 text-xs font-black ${textBody.trim() ? 'border-[var(--mm-accent)] bg-[var(--mm-accent)]/10' : 'border-white/15 bg-white/5'}`}
+            className={`rounded-xl border-2 py-4 text-xs font-black ${textBody.trim() ? 'mm-border-accent mm-bg-accent-10' : 'border-white/15 bg-white/5'}`}
           >
             Text
           </button>
@@ -1363,7 +1375,7 @@ function QuickMemoryForm(props: SheetProps & { pinTitle: string }) {
       </div>
 
       {!showDateDetails ? (
-        <button type="button" onClick={() => setShowDateDetails(true)} className="text-xs font-bold text-[var(--mm-accent)]">
+        <button type="button" onClick={() => setShowDateDetails(true)} className="text-xs font-bold mm-text-accent">
           Add month or exact date
         </button>
       ) : (
@@ -1379,16 +1391,18 @@ function QuickMemoryForm(props: SheetProps & { pinTitle: string }) {
 
       <div>
         <label className="mb-1 block text-sm font-semibold" htmlFor="memory-title">
-          Memory title
+          Memory title <span className="font-normal text-white/50">(optional)</span>
         </label>
         <input
           id="memory-title"
           value={memoryTitle}
           onChange={(e) => setMemoryTitle(e.target.value)}
-          placeholder="Give this memory a short name"
-          className={`w-full rounded-xl border bg-white/5 px-3 py-2.5 text-sm ${showHints && fieldErrors.title ? 'border-amber-400/60' : 'border-white/15'}`}
+          placeholder={pinTitle ? `e.g. ${year || '2024'} memory at ${pinTitle}` : 'Optional short name'}
+          className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2.5 text-sm"
         />
-        <FieldHint message={showHints ? fieldErrors.title : undefined} />
+        <p className="mm-muted mt-1 text-[11px]">
+          Optional. We can use the place name if you leave this blank.
+        </p>
       </div>
 
       <div>

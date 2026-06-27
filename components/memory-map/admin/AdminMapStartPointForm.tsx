@@ -95,7 +95,7 @@ export default function AdminMapStartPointForm({ map, onSaved }: Props) {
           onZoomChange={(z) => setZoom(String(z))}
         />
         {pickHint ? (
-          <p className="mt-2 text-sm font-semibold text-[var(--mm-accent)]">Tap the map to set the default opening point.</p>
+          <p className="mt-2 text-sm font-semibold mm-text-accent">Tap the map to set the default opening point.</p>
         ) : null}
       </div>
 

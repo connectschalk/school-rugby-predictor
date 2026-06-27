@@ -19,7 +19,7 @@ const OPTIONS: { key: YearFilterKey; label: string }[] = [
 export default function YearFilterPills({ value, customYear, onChange, onCustomYear }: Props) {
   return (
     <div className="space-y-2 px-4">
-      <div className="flex gap-2 overflow-x-auto py-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="flex gap-2 mm-hide-scrollbar">
         {OPTIONS.map((opt) => (
           <button
             key={opt.key}

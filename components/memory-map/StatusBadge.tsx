@@ -46,7 +46,7 @@ export function RiskBadge({ level }: { level: RiskLevel }) {
 
 export function OfficialBadge() {
   return (
-    <span className="inline-flex rounded-full bg-[var(--mm-accent)]/20 px-2 py-0.5 text-[10px] font-bold uppercase text-[var(--mm-accent)]">
+    <span className="inline-flex rounded-full mm-bg-accent-20 px-2 py-0.5 text-[10px] font-bold uppercase mm-text-accent">
       Official
     </span>
   )

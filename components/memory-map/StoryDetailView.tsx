@@ -10,7 +10,7 @@ import StoryCard from '@/components/memory-map/StoryCard'
 import MemoryMapSponsorStrip from '@/components/memory-map/MemoryMapSponsorStrip'
 import StatusBadge from '@/components/memory-map/StatusBadge'
 import { reviewLevelAdminLabel } from '@/lib/memory-map/review-level'
-import { isOfficialStory } from '@/lib/memory-map/official-content'
+import { isOfficialStory, storyGovernanceBoolean } from '@/lib/memory-map/official-content'
 import { OfficialBadge } from '@/components/memory-map/StatusBadge'
 
 type Props = {
@@ -38,7 +38,7 @@ export default function StoryDetailView({ bundle, story, isAdminView }: Props) {
 
       <article className="mx-auto max-w-lg px-4 py-6 pb-24">
         <div className="flex flex-wrap items-center gap-2">
-          <p className="text-xs font-bold uppercase tracking-wide text-[var(--mm-accent)]">{story.event_year}</p>
+          <p className="text-xs font-bold uppercase tracking-wide mm-text-accent">{story.event_year}</p>
           <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold">{storyTypeLabel(story.story_type)}</span>
           {!isAdminView && isOfficialStory(story) ? <OfficialBadge /> : null}
           {isAdminView ? <StatusBadge status={story.status} /> : null}
@@ -96,11 +96,21 @@ export default function StoryDetailView({ bundle, story, isAdminView }: Props) {
             <p><span className="mm-muted">Upload mode:</span> {uploadModeLabel(story.upload_mode)}</p>
             <p><span className="mm-muted">Status:</span> {story.status}</p>
             <p><span className="mm-muted">Review level:</span> {reviewLevelAdminLabel(story.risk_level)}</p>
-            {story.contains_minors ? <p><span className="mm-muted">Contains minors:</span> Yes</p> : null}
-            {story.mentions_full_names ? <p><span className="mm-muted">Mentions full names:</span> Yes</p> : null}
-            {story.shows_injury ? <p><span className="mm-muted">Shows injury:</span> Yes</p> : null}
-            {story.is_archive_content ? <p><span className="mm-muted">Historical/archive:</span> Yes</p> : null}
-            {story.sponsor_or_brand_visible ? <p><span className="mm-muted">Sponsor or brand visible:</span> Yes</p> : null}
+            {storyGovernanceBoolean(story, 'contains_minors') ? (
+              <p><span className="mm-muted">Contains minors:</span> Yes</p>
+            ) : null}
+            {storyGovernanceBoolean(story, 'mentions_full_names') ? (
+              <p><span className="mm-muted">Mentions full names:</span> Yes</p>
+            ) : null}
+            {storyGovernanceBoolean(story, 'shows_injury') ? (
+              <p><span className="mm-muted">Shows injury:</span> Yes</p>
+            ) : null}
+            {storyGovernanceBoolean(story, 'is_archive_content') ? (
+              <p><span className="mm-muted">Historical/archive:</span> Yes</p>
+            ) : null}
+            {storyGovernanceBoolean(story, 'sponsor_or_brand_visible') ? (
+              <p><span className="mm-muted">Sponsor or brand visible:</span> Yes</p>
+            ) : null}
             {story.rejection_reason ? <p><span className="mm-muted">Rejection:</span> {story.rejection_reason}</p> : null}
           </div>
         ) : null}

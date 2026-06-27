@@ -23,6 +23,15 @@ describe('official-content helpers', () => {
     expect(isAdminCreatedStory(story)).toBe(true)
     expect(publishOptionLabel('draft')).toBe('Save as draft')
   })
+
+  it('admin-created pending stories are not blocked by own-story approval UI rule', async () => {
+    const { cannotApproveOwnStory } = await import('./own-story-approval')
+    const story = {
+      uploaded_by: 'admin-1',
+      governance_flags: { admin_created: true },
+    } as MemoryStory
+    expect(cannotApproveOwnStory(story, 'admin-1', false)).toBe(false)
+  })
 })
 
 describe('validateAdminStoryDraft', () => {

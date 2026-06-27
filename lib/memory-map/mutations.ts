@@ -1,5 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { normalizeApprovalError } from '@/lib/memory-map/own-story-approval'
 import type { MemoryMapDataSource } from '@/lib/memory-map/queries'
+import { contributorGovernanceRpcParams } from '@/lib/memory-map/submit-governance'
 import { validateMemoryMapSubmitIds } from '@/lib/memory-map/submit-ids'
 import type { RiskLevel, StoryStatus, StoryType, UploadMode } from '@/lib/memory-map/types'
 
@@ -163,12 +165,14 @@ export async function submitMemoryStory(
     p_upload_mode: input.uploadMode,
     p_risk_level: input.riskLevel,
     p_logged_by_display_name: input.loggedByDisplayName ?? null,
-    p_has_permission_confirmed: input.hasPermissionConfirmed,
-    p_contains_minors: input.containsMinors ?? false,
-    p_mentions_full_names: input.mentionsFullNames ?? false,
-    p_shows_injury: input.showsInjury ?? false,
-    p_is_archive_content: input.isArchiveContent ?? false,
-    p_sponsor_or_brand_visible: input.sponsorOrBrandVisible ?? false,
+    ...contributorGovernanceRpcParams({
+      hasPermissionConfirmed: input.hasPermissionConfirmed,
+      containsMinors: input.containsMinors,
+      mentionsFullNames: input.mentionsFullNames,
+      showsInjury: input.showsInjury,
+      isArchiveContent: input.isArchiveContent,
+      sponsorOrBrandVisible: input.sponsorOrBrandVisible,
+    }),
     p_tags: input.tags,
     p_media: input.media,
   })
@@ -215,6 +219,64 @@ export async function approveMemoryStory(
   const { error } = await client.rpc('approve_memory_story', {
     p_story_id: storyId,
     p_approval_note: approvalNote ?? null,
+  })
+  return { error: normalizeApprovalError(error?.message) }
+}
+
+export type AdminUpdateStoryInput = {
+  storyId: string
+  title?: string
+  description?: string | null
+  eventYear?: number
+  eventDate?: string | null
+  loggedByDisplayName?: string | null
+  riskLevel?: RiskLevel
+  governanceFlags?: Record<string, unknown>
+  tags?: string[]
+}
+
+export async function adminUpdateMemoryStory(
+  client: SupabaseClient,
+  input: AdminUpdateStoryInput
+): Promise<{ error: string | null }> {
+  const { error } = await client.rpc('admin_update_memory_story', {
+    p_story_id: input.storyId,
+    p_title: input.title ?? null,
+    p_description: input.description ?? null,
+    p_event_year: input.eventYear ?? null,
+    p_event_date: input.eventDate ?? null,
+    p_logged_by_display_name: input.loggedByDisplayName ?? null,
+    p_risk_level: input.riskLevel ?? null,
+    p_governance_flags: input.governanceFlags ?? null,
+    p_tags: input.tags ?? null,
+  })
+  return { error: error?.message ?? null }
+}
+
+export type AdminUpdatePinInput = {
+  pinId: string
+  title?: string
+  description?: string | null
+  categoryId?: string | null
+  lat?: number | null
+  lng?: number | null
+  x?: number | null
+  y?: number | null
+}
+
+export async function adminUpdateMemoryPin(
+  client: SupabaseClient,
+  input: AdminUpdatePinInput
+): Promise<{ error: string | null }> {
+  const { error } = await client.rpc('admin_update_memory_pin', {
+    p_pin_id: input.pinId,
+    p_title: input.title ?? null,
+    p_description: input.description ?? null,
+    p_category_id: input.categoryId ?? null,
+    p_lat: input.lat ?? null,
+    p_lng: input.lng ?? null,
+    p_x_position: input.x ?? null,
+    p_y_position: input.y ?? null,
   })
   return { error: error?.message ?? null }
 }

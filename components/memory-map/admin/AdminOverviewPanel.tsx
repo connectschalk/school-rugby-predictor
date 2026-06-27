@@ -106,7 +106,7 @@ export default function AdminOverviewPanel({ bundle, pendingContributors, analyt
       <div className="mm-card rounded-2xl p-4">
         <div className="flex items-center justify-between">
           <p className="text-sm font-black">Map health</p>
-          <span className="text-xs font-bold text-[var(--mm-accent)]">{healthOk}/{health.length}</span>
+          <span className="text-xs font-bold mm-text-accent">{healthOk}/{health.length}</span>
         </div>
         <ul className="mt-3 space-y-2">
           {health.map((item) => (
@@ -123,7 +123,7 @@ export default function AdminOverviewPanel({ bundle, pendingContributors, analyt
         <p className="mm-muted mt-1 break-all text-xs">
           {typeof window !== 'undefined' ? `${window.location.origin}/memory-map/${bundle.map.slug}` : `/memory-map/${bundle.map.slug}`}
         </p>
-        <Link href={`/memory-map/${bundle.map.slug}`} className="mt-2 inline-block text-xs font-bold text-[var(--mm-accent)]">
+        <Link href={`/memory-map/${bundle.map.slug}`} className="mt-2 inline-block text-xs font-bold mm-text-accent">
           Preview public landing →
         </Link>
       </div>

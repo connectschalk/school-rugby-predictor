@@ -52,7 +52,7 @@ function NavItemButton({
         href={item.href(mapId)}
         onClick={onSelect}
         className={`block w-full rounded-lg px-3 py-2 text-left text-sm font-semibold transition ${
-          active ? 'bg-[var(--mm-accent)]/15 text-[var(--mm-accent)]' : 'text-white/90 hover:bg-white/5'
+          active ? 'mm-bg-accent-15 mm-text-accent' : 'text-white/90 hover:bg-white/5'
         } ${className}`}
       >
         {label}
@@ -65,7 +65,7 @@ function NavItemButton({
       type="button"
       onClick={onSelect}
       className={`block w-full rounded-lg px-3 py-2 text-left text-sm font-semibold transition ${
-        active ? 'bg-[var(--mm-accent)]/15 text-[var(--mm-accent)]' : 'text-white/90 hover:bg-white/5'
+        active ? 'mm-bg-accent-15 mm-text-accent' : 'text-white/90 hover:bg-white/5'
       } ${className}`}
     >
       {label}
@@ -120,7 +120,7 @@ function GroupDropdown({
         </span>
       </button>
       {open ? (
-        <div className="absolute left-0 top-full z-30 mt-1 min-w-[200px] rounded-xl border border-white/10 bg-[var(--mm-surface-card,#111827)] p-1.5 shadow-xl">
+        <div className="absolute left-0 top-full z-30 mt-1 min-w-[200px] rounded-xl border border-white/10 mm-bg-surface-card p-1.5 shadow-xl">
           {group.items.map((item) => (
             <NavItemButton
               key={item.id}
@@ -195,7 +195,7 @@ export default function MemoryMapAdminNav({ mapId, activeTab, onTabChange, badge
             aria-label="Close menu"
             onClick={() => setMobileOpen(false)}
           />
-          <div className="absolute inset-x-0 bottom-0 max-h-[80dvh] overflow-y-auto rounded-t-2xl border border-white/10 bg-[var(--mm-surface-card,#111827)] p-4 mm-safe-bottom">
+          <div className="absolute inset-x-0 bottom-0 max-h-[80dvh] overflow-y-auto rounded-t-2xl border border-white/10 mm-bg-surface-card p-4 mm-safe-bottom">
             <div className="mb-3 flex items-center justify-between">
               <p className="text-sm font-black">Admin sections</p>
               <button type="button" onClick={() => setMobileOpen(false)} className="text-xs font-bold text-white/60">

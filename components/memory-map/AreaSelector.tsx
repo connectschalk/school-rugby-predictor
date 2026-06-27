@@ -49,7 +49,7 @@ export default function AreaSelector({ areas, pins, stories, map, selectedAreaId
   return (
     <div className="space-y-4 px-4 pb-4">
       {groups.length > 1 ? (
-        <div className="flex gap-2 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="flex gap-2 mm-hide-scrollbar">
           <button
             type="button"
             onClick={() => setGroupFilter('all')}
@@ -86,7 +86,7 @@ export default function AreaSelector({ areas, pins, stories, map, selectedAreaId
               type="button"
               onClick={() => onSelect(area.id)}
               className={`mm-card overflow-hidden rounded-2xl text-left transition ${
-                active ? 'ring-2 ring-[var(--mm-accent)]' : 'hover:border-white/25'
+                active ? 'mm-ring-accent-2' : 'hover:border-white/25'
               }`}
             >
               <div

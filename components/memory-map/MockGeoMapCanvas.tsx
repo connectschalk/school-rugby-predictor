@@ -53,7 +53,7 @@ export default function MockGeoMapCanvas({
   return (
     <div
       className={`relative aspect-[4/3] overflow-hidden rounded-2xl border border-white/10 bg-[#0a1628] ${
-        placementMode ? 'cursor-crosshair ring-2 ring-[var(--mm-accent)]' : ''
+        placementMode ? 'cursor-crosshair mm-ring-accent-2' : ''
       }`}
       onClick={handleClick}
       role={placementMode ? 'button' : undefined}
@@ -82,7 +82,7 @@ export default function MockGeoMapCanvas({
       })}
       {placementPreview?.lat != null && placementPreview?.lng != null ? (
         <span
-          className="absolute flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white bg-[var(--mm-accent)] text-xs font-black text-black"
+          className="absolute flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white mm-bg-accent text-xs font-black text-black"
           style={geoToPercent(placementPreview.lat, placementPreview.lng, area, initialView)}
         >
           +
