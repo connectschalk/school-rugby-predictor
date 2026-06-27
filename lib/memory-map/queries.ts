@@ -11,6 +11,10 @@ export type LoadedMemoryMapBundle = {
   bundle: MemoryMapBundle
 }
 
+export type ContributorMemoryMapLoad =
+  | { kind: 'ready'; source: MemoryMapDataSource; bundle: MemoryMapBundle }
+  | { kind: 'missing'; slug: string; reason: 'not_found' | 'private' }
+
 export function isSupabaseConfigured(): boolean {
   return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
 }
@@ -188,9 +192,41 @@ export async function loadMemoryMapBundleBySlug(
   return loaded
 }
 
-/** Add Memory route: prefer Supabase and avoid masking a real map with in-memory demo. */
-export async function loadContributorMemoryMapBundleBySlug(slug: string): Promise<LoadedMemoryMapBundle | null> {
-  return loadMemoryMapBundleBySlug(slug, { preferSupabase: true })
+/** Add Memory route: prefer live Supabase data; never return null (no generic 404). */
+export async function loadContributorMemoryMapBundleBySlug(slug: string): Promise<ContributorMemoryMapLoad> {
+  noStore()
+
+  if (process.env.NODE_ENV === 'development') {
+    console.info('[memory-map:add] supabase configured', isSupabaseConfigured(), 'slug', slug)
+  }
+
+  const supabase = await fetchSupabaseBundleBySlug(slug)
+  if (supabase) {
+    const resolved = resolvePublicMemoryMapBundle(slug, supabase.map, supabase.related)
+    if (resolved) {
+      logBundleSource(slug, 'supabase')
+      return { kind: 'ready', source: 'supabase', bundle: enrichBundle(resolved.bundle) }
+    }
+  }
+
+  if (!isSupabaseConfigured()) {
+    const demo = getDemoBundle(slug)
+    if (demo) {
+      logBundleSource(slug, 'demo', 'offline preview')
+      return { kind: 'ready', source: 'demo', bundle: enrichBundle(demo) }
+    }
+    return { kind: 'missing', slug, reason: 'not_found' }
+  }
+
+  // Supabase is configured but no live row — use demo preview for known demo slugs
+  // so Add Memory matches the landing page while DB setup is pending.
+  const demo = getDemoBundle(slug)
+  if (demo) {
+    logBundleSource(slug, 'demo', 'no live row')
+    return { kind: 'ready', source: 'demo', bundle: enrichBundle(demo) }
+  }
+
+  return { kind: 'missing', slug, reason: 'not_found' }
 }
 
 export async function fetchMemoryMapBundleBySlug(slug: string): Promise<MemoryMapBundle | null> {

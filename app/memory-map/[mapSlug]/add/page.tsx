@@ -1,5 +1,5 @@
-import { notFound } from 'next/navigation'
 import AddStoryWizard from '@/components/memory-map/AddStoryWizard'
+import MemoryMapUnavailableState from '@/components/memory-map/MemoryMapUnavailableState'
 import { loadContributorMemoryMapBundleBySlug } from '@/lib/memory-map/queries'
 
 type Props = {
@@ -13,7 +13,10 @@ export default async function MemoryMapAddPage({ params, searchParams }: Props) 
   const { mapSlug } = await params
   const { pin, area } = await searchParams
   const loaded = await loadContributorMemoryMapBundleBySlug(mapSlug)
-  if (!loaded) notFound()
+
+  if (loaded.kind === 'missing') {
+    return <MemoryMapUnavailableState slug={mapSlug} reason={loaded.reason} />
+  }
 
   return (
     <AddStoryWizard

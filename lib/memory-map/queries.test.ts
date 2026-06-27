@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { resolveMemoryMapBundleLoad, resolvePublicMemoryMapBundle } from './queries'
+import {
+  resolveMemoryMapBundleLoad,
+  resolvePublicMemoryMapBundle,
+  loadContributorMemoryMapBundleBySlug,
+  isSupabaseConfigured,
+} from './queries'
 
 describe('resolvePublicMemoryMapBundle', () => {
   const supabaseMap = {
@@ -117,6 +122,42 @@ describe('resolveMemoryMapBundleLoad', () => {
 
     const loaded = resolveMemoryMapBundleLoad('boishaai', null, { preferSupabase: true })
     expect(loaded).toBeNull()
+
+    process.env.NEXT_PUBLIC_SUPABASE_URL = prevUrl
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = prevKey
+  })
+})
+
+describe('loadContributorMemoryMapBundleBySlug', () => {
+  it('returns missing for unknown slug when supabase is configured', async () => {
+    const prevUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const prevKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://example.supabase.co'
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'test-anon-key'
+
+    const loaded = await loadContributorMemoryMapBundleBySlug('unknown-school-map')
+    expect(loaded.kind).toBe('missing')
+    if (loaded.kind === 'missing') {
+      expect(loaded.reason).toBe('not_found')
+    }
+
+    process.env.NEXT_PUBLIC_SUPABASE_URL = prevUrl
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = prevKey
+  })
+
+  it('returns demo preview for boishaai when supabase is not configured', async () => {
+    const prevUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const prevKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    delete process.env.NEXT_PUBLIC_SUPABASE_URL
+    delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+    expect(isSupabaseConfigured()).toBe(false)
+    const loaded = await loadContributorMemoryMapBundleBySlug('boishaai')
+    expect(loaded.kind).toBe('ready')
+    if (loaded.kind === 'ready') {
+      expect(loaded.source).toBe('demo')
+      expect(loaded.bundle.areas.length).toBeGreaterThan(0)
+    }
 
     process.env.NEXT_PUBLIC_SUPABASE_URL = prevUrl
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = prevKey
