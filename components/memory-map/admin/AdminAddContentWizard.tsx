@@ -7,7 +7,8 @@ import { activeAreas } from '@/lib/memory-map/add-story-placement'
 import { validateAdminStoryDraft } from '@/lib/memory-map/admin-create-validation'
 import { inferStoryType } from '@/lib/memory-map/infer-story-type'
 import { publishOptionLabel, type AdminPublishOption } from '@/lib/memory-map/official-content'
-import { adminCreateMemoryStory, type StoryMediaPayload } from '@/lib/memory-map/mutations'
+import { adminCreateMemoryStory, ensureDefaultMemoryArea, type StoryMediaPayload } from '@/lib/memory-map/mutations'
+import { hasOnlyGeneralArea, shouldShowAreaSelector } from '@/lib/memory-map/default-area'
 import { getImageMapInitialFocus, getMapInitialView } from '@/lib/memory-map/map-starting-point'
 import {
   ADMIN_REVIEW_LEVEL_OPTIONS,
@@ -26,14 +27,14 @@ import {
 } from '@/lib/memory-map/validation'
 import MapCanvas from '@/components/memory-map/MapCanvas'
 import CategoryFilterPills from '@/components/memory-map/CategoryFilterPills'
-import MemoryMapShell from '@/components/memory-map/MemoryMapShell'
 import { OfficialBadge } from '@/components/memory-map/StatusBadge'
 
 type Props = {
   bundle: MemoryMapBundle
   mapId: string
-  onNavigate: (tab: AdminTab) => void
+  onNavigate: (tab: AdminTab, options?: { areaFilterId?: string }) => void
   onSaved: () => void
+  onEnsureAreas: () => void
 }
 
 type PinTarget =
@@ -49,12 +50,15 @@ type PinTarget =
 
 type SheetStage = 'pin-existing' | 'pin-new' | 'content' | 'success'
 
-export default function AdminAddContentWizard({ bundle, mapId, onNavigate, onSaved }: Props) {
+export default function AdminAddContentWizard({ bundle, mapId, onNavigate, onSaved, onEnsureAreas }: Props) {
   const { map, areas, categories, pins, stories } = bundle
   const mapAreas = useMemo(() => activeAreas(areas), [areas])
   const activeCategories = useMemo(() => categories.filter((c) => c.is_active), [categories])
-  const hasAreas = mapAreas.length > 0
+  const usingGeneralOnly = hasOnlyGeneralArea(areas)
+  const showAreaSelector = shouldShowAreaSelector(areas)
+  const [ensuringAreas, setEnsuringAreas] = useState(false)
   const hasCategories = activeCategories.length > 0
+  const hasAreas = mapAreas.length > 0
 
   const [selectedAreaId, setSelectedAreaId] = useState(mapAreas[0]?.id ?? '')
   const [dropPinMode, setDropPinMode] = useState(false)
@@ -102,6 +106,15 @@ export default function AdminAddContentWizard({ bundle, mapId, onNavigate, onSav
       if (name?.trim()) setDisplayName(name.trim())
     })
   }, [])
+
+  useEffect(() => {
+    if (mapAreas.length > 0) return
+    setEnsuringAreas(true)
+    void ensureDefaultMemoryArea(supabase, mapId).then(({ error }) => {
+      setEnsuringAreas(false)
+      if (!error) onEnsureAreas()
+    })
+  }, [mapAreas.length, mapId, onEnsureAreas])
 
   const selectedArea = mapAreas.find((a) => a.id === selectedAreaId) ?? mapAreas[0]
   const mapMode = selectedArea?.map_type === 'image' ? 'image' : 'geo'
@@ -212,6 +225,12 @@ export default function AdminAddContentWizard({ bundle, mapId, onNavigate, onSav
     })
     setSheetStage('pin-new')
   }
+
+  useEffect(() => {
+    if (mapAreas.length > 0 && !mapAreas.some((a) => a.id === selectedAreaId)) {
+      setSelectedAreaId(mapAreas[0]!.id)
+    }
+  }, [mapAreas, selectedAreaId])
 
   useEffect(() => {
     if (geo.status === 'success' && geo.location) {
@@ -397,10 +416,14 @@ export default function AdminAddContentWizard({ bundle, mapId, onNavigate, onSav
           </p>
         </div>
 
-        {!hasAreas ? (
-          <div className="mb-3 rounded-xl border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
-            Create an area before placing content on the map.
-          </div>
+        {ensuringAreas ? (
+          <p className="mb-3 text-xs text-white/70">Preparing the map…</p>
+        ) : null}
+
+        {usingGeneralOnly ? (
+          <p className="mb-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-white/80">
+            Using General area. You can organise content into areas later.
+          </p>
         ) : null}
 
         {!hasCategories ? (
@@ -409,7 +432,7 @@ export default function AdminAddContentWizard({ bundle, mapId, onNavigate, onSav
           </p>
         ) : null}
 
-        {hasAreas ? (
+        {showAreaSelector ? (
           <div className="mb-3 flex gap-2 overflow-x-auto px-1 mm-hide-scrollbar">
             {mapAreas.map((area) => {
               const count = pins.filter((p) => p.area_id === area.id && !['deleted', 'archived'].includes(p.status)).length
@@ -430,7 +453,7 @@ export default function AdminAddContentWizard({ bundle, mapId, onNavigate, onSav
           </div>
         ) : null}
 
-        {hasAreas ? (
+        {hasAreas && selectedArea ? (
           <div className="mb-2 flex flex-wrap gap-2 px-1">
           {mapMode === 'geo' ? (
             <>
@@ -532,18 +555,7 @@ export default function AdminAddContentWizard({ bundle, mapId, onNavigate, onSav
               imageFocus={areaImageFocus}
             />
           </div>
-        ) : (
-          <div className="-mx-2 min-h-[50vh] lg:min-h-[calc(100dvh-16rem)]">
-            <MemoryMapShell map={map} message="Create your first area to start adding content to the map.">
-              <button type="button" onClick={() => onNavigate('areas')} className="mm-btn-primary rounded-xl px-4 py-2 text-xs font-bold">
-                Create area
-              </button>
-              <button type="button" onClick={() => onNavigate('map-defaults')} className="mm-btn-secondary rounded-xl px-4 py-2 text-xs font-bold">
-                Use Memory Map default location
-              </button>
-            </MemoryMapShell>
-          </div>
-        )}
+        ) : null}
       </div>
 
       {sheetOpen ? (

@@ -11,6 +11,7 @@ import PoolCreateScopeModal from '@/components/pools/PoolCreateScopeModal'
 import PoolCreateSelectTeamsModal from '@/components/pools/PoolCreateSelectTeamsModal'
 import PoolTeamPicker from '@/components/pools/PoolTeamPicker'
 import PoolVisibilitySetting from '@/components/pools/PoolVisibilitySetting'
+import PoolInviteJoinModeSetting from '@/components/pools/PoolInviteJoinModeSetting'
 import ProvinceLogoMark from '@/components/ProvinceLogoMark'
 import CompetitionTeamLogo from '@/components/CompetitionTeamLogo'
 import { fetchUserIsAdmin } from '@/lib/admin-access'
@@ -45,6 +46,8 @@ import {
   searchPublicPools,
   setPoolGroups,
   updatePoolVisibility,
+  updatePoolInviteJoinMode,
+  type PoolInviteJoinMode,
   fetchGameMatchGroupLinksForGroups,
   fetchFixtureGroupTeamsForGroups,
   fetchFixtureGroupAliasesMap,
@@ -158,6 +161,7 @@ export default function ManagePoolsPage() {
   const [poolTeamsRows, setPoolTeamsRows] = useState<PoolTeamRow[]>([])
   const [savingPoolTeams, setSavingPoolTeams] = useState(false)
   const [savingVisibility, setSavingVisibility] = useState(false)
+  const [savingInviteJoinMode, setSavingInviteJoinMode] = useState(false)
   const [createClientGraph, setCreateClientGraph] = useState<PoolPreviewGraph | null>(null)
   const [teamsModalOpen, setTeamsModalOpen] = useState(false)
   const [scopeModalOpen, setScopeModalOpen] = useState(false)
@@ -725,6 +729,27 @@ export default function ManagePoolsPage() {
       setMessage(pool.is_public ? 'Pool is now public.' : 'Pool is now private.')
     } finally {
       setSavingVisibility(false)
+    }
+  }
+
+  async function onChangeInviteJoinMode(mode: PoolInviteJoinMode) {
+    if (!selectedPoolId || !canManageSelectedPool) return
+    setSavingInviteJoinMode(true)
+    setMessage('')
+    try {
+      const { pool, error } = await updatePoolInviteJoinMode(supabase, selectedPoolId, mode)
+      if (error || !pool) {
+        setMessage(error?.message ?? 'Could not update invite link access.')
+        return
+      }
+      setMyPools((prev) => prev.map((p) => (p.id === pool.id ? pool : p)))
+      setMessage(
+        pool.invite_join_mode === 'auto'
+          ? 'Invite link users can now join automatically.'
+          : 'Invite link users must request to join.'
+      )
+    } finally {
+      setSavingInviteJoinMode(false)
     }
   }
 
@@ -1361,6 +1386,14 @@ export default function ManagePoolsPage() {
                     onChange={(next) => void onTogglePoolVisibility(next)}
                   />
                 </div>
+              </div>
+
+              <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50/80 p-4">
+                <PoolInviteJoinModeSetting
+                  value={selectedPool.invite_join_mode}
+                  saving={savingInviteJoinMode}
+                  onChange={(next) => void onChangeInviteJoinMode(next)}
+                />
               </div>
 
               <div className="mt-3 flex flex-wrap items-center gap-3">

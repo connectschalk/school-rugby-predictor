@@ -7,7 +7,8 @@ import { buildMemoryMapSignInHref } from '@/lib/memory-map/auth-routes'
 import MemoryMapSignInGate from '@/components/memory-map/MemoryMapSignInGate'
 import type { ContributorAccess } from '@/lib/memory-map/membership'
 import { fetchContributorAccess } from '@/lib/memory-map/membership'
-import { requestContributorAccess, submitMemoryStory, type StoryMediaPayload } from '@/lib/memory-map/mutations'
+import { requestContributorAccess, submitMemoryStory, ensureDefaultMemoryArea, type StoryMediaPayload } from '@/lib/memory-map/mutations'
+import { hasOnlyGeneralArea, shouldShowAreaSelector } from '@/lib/memory-map/default-area'
 import type { MemoryMapDataSource } from '@/lib/memory-map/queries'
 import { fetchPublicMemoryMapBundleClient } from '@/lib/memory-map/client-queries'
 import { isUuid, validateMemoryMapSubmitIds } from '@/lib/memory-map/submit-ids'
@@ -83,6 +84,9 @@ export default function AddStoryWizard({ bundle, dataSource, initialPinId, initi
   const { map, areas, categories, pins, stories } = resolvedBundle
   const mapAreas = useMemo(() => activeAreas(areas), [areas])
   const activeCategories = useMemo(() => categories.filter((c) => c.is_active), [categories])
+  const usingGeneralOnly = hasOnlyGeneralArea(areas)
+  const showAreaSelector = shouldShowAreaSelector(areas)
+  const [ensuringAreas, setEnsuringAreas] = useState(false)
 
   const [access, setAccess] = useState<ContributorAccess | null>(null)
   const [accessLoading, setAccessLoading] = useState(true)
@@ -162,6 +166,23 @@ export default function AddStoryWizard({ bundle, dataSource, initialPinId, initi
       cancelled = true
     }
   }, [bundle.map.slug, dataSource])
+
+  useEffect(() => {
+    if (resolvedSource !== 'supabase' || mapAreas.length > 0) return
+    setEnsuringAreas(true)
+    void ensureDefaultMemoryArea(supabase, map.id)
+      .then(({ error }) => {
+        if (error) return
+        return fetchPublicMemoryMapBundleClient(supabase, map.slug)
+      })
+      .then((live) => {
+        if (live) {
+          setResolvedBundle(live)
+          setResolvedSource('supabase')
+        }
+      })
+      .finally(() => setEnsuringAreas(false))
+  }, [resolvedSource, mapAreas.length, map.id, map.slug])
 
   useEffect(() => {
     const nextAreas = activeAreas(resolvedBundle.areas)
@@ -708,22 +729,12 @@ export default function AddStoryWizard({ bundle, dataSource, initialPinId, initi
     )
   }
 
-  if (mapAreas.length === 0) {
+  if (mapAreas.length === 0 && ensuringAreas) {
     return (
       <div className="mm-root min-h-dvh" style={memoryMapThemeVars(map)}>
         <MemoryMapHeader map={map} mapSlug={map.slug} backHref={`/memory-map/${map.slug}/map`} />
-        <div className="px-4 py-3">
-          <h1 className="text-xl font-black">Add a memory</h1>
-          <p className="mm-muted mt-1 text-sm">Tap a pin or tap the map where this memory happened.</p>
-          {sourceHydrating ? <p className="mm-muted mt-2 text-xs">Loading live map data…</p> : null}
-          {submissionNotice ? (
-            <p className="mt-3 rounded-xl border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
-              {submissionNotice}
-            </p>
-          ) : null}
-        </div>
-        <div className="px-2 pb-4">
-          <MemoryMapShell map={map} message="This Memory Map does not have areas yet. Ask the school admin to add an area first." />
+        <div className="px-4 py-6">
+          <p className="mm-muted text-sm">Preparing the map…</p>
         </div>
       </div>
     )
@@ -747,26 +758,36 @@ export default function AddStoryWizard({ bundle, dataSource, initialPinId, initi
             </p>
           ) : null}
 
-          <p className="mm-muted mb-2 text-[11px] font-semibold uppercase tracking-wide">Choose area</p>
-          <div className="mb-3 flex gap-2 mm-hide-scrollbar">
-            {mapAreas.map((area) => {
-              const count = pins.filter((p) => p.area_id === area.id && p.status === 'approved').length
-              const selected = selectedAreaId === area.id
-              return (
-                <button
-                  key={area.id}
-                  type="button"
-                  onClick={() => selectArea(area.id)}
-                  className={`min-h-[44px] shrink-0 rounded-2xl border px-4 py-2.5 text-left text-sm ${
-                    selected ? 'mm-border-accent mm-bg-accent-10' : 'border-white/10 bg-white/5'
-                  }`}
-                >
-                  <p className="font-bold leading-tight">{area.name}</p>
-                  <p className="mm-muted mt-0.5 text-[11px]">{count} pins</p>
-                </button>
-              )
-            })}
-          </div>
+          {usingGeneralOnly ? (
+            <p className="mb-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-white/80">
+              Memories are saved to the General area. Your school admin can organise them into areas later.
+            </p>
+          ) : null}
+
+          {showAreaSelector ? (
+            <>
+              <p className="mm-muted mb-2 text-[11px] font-semibold uppercase tracking-wide">Choose area</p>
+              <div className="mb-3 flex gap-2 mm-hide-scrollbar">
+                {mapAreas.map((area) => {
+                  const count = pins.filter((p) => p.area_id === area.id && p.status === 'approved').length
+                  const selected = selectedAreaId === area.id
+                  return (
+                    <button
+                      key={area.id}
+                      type="button"
+                      onClick={() => selectArea(area.id)}
+                      className={`min-h-[44px] shrink-0 rounded-2xl border px-4 py-2.5 text-left text-sm ${
+                        selected ? 'mm-border-accent mm-bg-accent-10' : 'border-white/10 bg-white/5'
+                      }`}
+                    >
+                      <p className="font-bold leading-tight">{area.name}</p>
+                      <p className="mm-muted mt-0.5 text-[11px]">{count} pins</p>
+                    </button>
+                  )
+                })}
+              </div>
+            </>
+          ) : null}
 
           <div className="mb-2 flex flex-wrap items-center gap-2">
             {mapMode === 'geo' ? (

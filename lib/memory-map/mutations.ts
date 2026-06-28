@@ -481,6 +481,17 @@ export type UpsertAreaInput = {
   imageHeight?: number | null
   sortOrder?: number
   isActive?: boolean
+  bounds?: unknown
+  isSystemDefault?: boolean
+  createdFrom?: string
+}
+
+export async function ensureDefaultMemoryArea(client: SupabaseClient, mapId: string) {
+  const { data, error } = await client.rpc('ensure_default_memory_area', {
+    p_memory_map_id: mapId,
+  })
+  if (error) return { areaId: null, error: error.message }
+  return { areaId: String(data), error: null }
 }
 
 export async function upsertMemoryArea(client: SupabaseClient, input: UpsertAreaInput) {
@@ -503,6 +514,9 @@ export async function upsertMemoryArea(client: SupabaseClient, input: UpsertArea
     p_default_x_position: input.defaultXPosition ?? null,
     p_default_y_position: input.defaultYPosition ?? null,
     p_default_image_zoom: input.defaultImageZoom ?? null,
+    p_bounds: input.bounds ?? null,
+    p_is_system_default: input.isSystemDefault ?? false,
+    p_created_from: input.createdFrom ?? null,
   })
   if (error) return { areaId: null, error: error.message }
   return { areaId: String(data), error: null }

@@ -4,6 +4,9 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { trackMemoryMapEvent } from '@/lib/memory-map/analytics'
+import { fetchPublicMemoryMapBundleClient } from '@/lib/memory-map/client-queries'
+import { ensureDefaultMemoryArea } from '@/lib/memory-map/mutations'
+import { shouldShowAreaSelector } from '@/lib/memory-map/default-area'
 import { useMemoryMapGeolocation } from '@/lib/memory-map/use-memory-map-geolocation'
 import type { MemoryMapBundle, MemoryPin } from '@/lib/memory-map/types'
 import { memoryMapThemeVars } from '@/lib/memory-map/theme'
@@ -26,8 +29,11 @@ type Props = {
 }
 
 export default function MemoryMapViewer({ bundle, initialAreaId, initialPinId }: Props) {
-  const { map, areas, categories, pins, stories } = bundle
+  const [resolvedBundle, setResolvedBundle] = useState(bundle)
+  const [ensuringAreas, setEnsuringAreas] = useState(false)
+  const { map, areas, categories, pins, stories } = resolvedBundle
   const activeAreas = areas.filter((a) => a.is_active)
+  const showAreaSelector = shouldShowAreaSelector(areas)
   const defaultAreaId =
     initialAreaId && activeAreas.some((a) => a.id === initialAreaId)
       ? initialAreaId
@@ -49,6 +55,20 @@ export default function MemoryMapViewer({ bundle, initialAreaId, initialPinId }:
   useEffect(() => {
     void trackMemoryMapEvent(supabase, { memoryMapId: map.id, eventType: 'map_opened' })
   }, [map.id])
+
+  useEffect(() => {
+    if (activeAreas.length > 0) return
+    setEnsuringAreas(true)
+    void ensureDefaultMemoryArea(supabase, map.id)
+      .then(({ error }) => {
+        if (error) return
+        return fetchPublicMemoryMapBundleClient(supabase, map.slug)
+      })
+      .then((live) => {
+        if (live) setResolvedBundle(live)
+      })
+      .finally(() => setEnsuringAreas(false))
+  }, [activeAreas.length, map.id, map.slug])
 
   useEffect(() => {
     if (!initialPinId) return
@@ -142,10 +162,11 @@ export default function MemoryMapViewer({ bundle, initialAreaId, initialPinId }:
 
       {!hasAreas ? (
         <div className="px-2 pb-4">
-          <MemoryMapShell map={map} message="No areas have been published yet." />
+          <MemoryMapShell map={map} message={ensuringAreas ? 'Preparing the map…' : 'No areas have been published yet.'} />
         </div>
       ) : (
         <>
+          {showAreaSelector ? (
           <div className="mb-3 flex gap-2 mm-hide-scrollbar">
             {activeAreas.map((area) => {
               const count = pins.filter((p) => p.area_id === area.id && p.status === 'approved').length
@@ -165,6 +186,7 @@ export default function MemoryMapViewer({ bundle, initialAreaId, initialPinId }:
               )
             })}
           </div>
+          ) : null}
 
           {selectedArea ? (
             <>

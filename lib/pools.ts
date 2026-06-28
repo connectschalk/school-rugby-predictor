@@ -16,9 +16,12 @@ import {
   POOL_JOIN_CODE_TAKEN_MESSAGE,
   validatePoolJoinCodeInput,
 } from '@/lib/pool-join-code'
+import { normalizePoolInviteJoinMode, type PoolInviteJoinMode } from '@/lib/pool-invite-join-mode'
 import type { GameMatch } from '@/lib/public-prediction-game'
 
 export type GameMatchForPoolPicks = GameMatch & { prediction_cutoff_time?: string | null }
+
+export type { PoolInviteJoinMode } from '@/lib/pool-invite-join-mode'
 
 export type PoolRow = {
   id: string
@@ -28,6 +31,7 @@ export type PoolRow = {
   is_public: boolean
   invite_token: string
   join_code: string
+  invite_join_mode: PoolInviteJoinMode
   is_closed: boolean
   competition_id?: string | null
   logo_url?: string | null
@@ -137,6 +141,7 @@ function normalizePoolRow(data: Record<string, unknown>): PoolRow {
     is_public: Boolean(data.is_public),
     invite_token: String(data.invite_token ?? '').trim(),
     join_code: String(data.join_code ?? '').trim().toLowerCase(),
+    invite_join_mode: normalizePoolInviteJoinMode(data.invite_join_mode),
     is_closed: Boolean(data.is_closed),
     competition_id: data.competition_id != null ? String(data.competition_id) : null,
     logo_url: data.logo_url == null ? null : String(data.logo_url),
@@ -289,22 +294,7 @@ export async function fetchMyPools(
 
   const rows = (data as MyPoolsRpcRow[] | null) ?? []
 
-  let pools: PoolRow[] = rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    admin_user_id: row.admin_user_id,
-    created_by: row.created_by,
-    is_public: row.is_public,
-    invite_token: row.invite_token,
-    join_code: String(row.join_code ?? '').trim().toLowerCase(),
-    is_closed: row.is_closed,
-    competition_id: row.competition_id != null ? String(row.competition_id) : null,
-    logo_url: row.logo_url == null ? null : String(row.logo_url),
-    logo_path: row.logo_path == null ? null : String(row.logo_path),
-    logo_updated_at: row.logo_updated_at == null ? null : String(row.logo_updated_at),
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-  }))
+  let pools: PoolRow[] = rows.map((row) => normalizePoolRow(row as unknown as Record<string, unknown>))
 
   if (competitionId) {
     const { competition: schoolsCompetition } = await getCompetitionBySlug(
@@ -551,6 +541,20 @@ export async function updatePoolVisibility(
   })
   if (error) return { pool: null, error: new Error(error.message) }
   if (!data) return { pool: null, error: new Error('Could not update pool visibility.') }
+  return { pool: normalizePoolRow(data as Record<string, unknown>), error: null }
+}
+
+export async function updatePoolInviteJoinMode(
+  client: SupabaseClient,
+  poolId: string,
+  inviteJoinMode: PoolInviteJoinMode
+): Promise<{ pool: PoolRow | null; error: Error | null }> {
+  const { data, error } = await client.rpc('update_pool_invite_join_mode', {
+    p_pool_id: poolId,
+    p_invite_join_mode: inviteJoinMode,
+  })
+  if (error) return { pool: null, error: new Error(error.message) }
+  if (!data) return { pool: null, error: new Error('Could not update invite link access.') }
   return { pool: normalizePoolRow(data as Record<string, unknown>), error: null }
 }
 

@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { archiveMemoryArea, upsertMemoryArea } from '@/lib/memory-map/mutations'
 import { MM_BUCKET_BACKGROUNDS, MM_MAX_BACKGROUND_BYTES, uploadMemoryMapImage } from '@/lib/memory-map/storage'
 import { getMemoryMapDefaultCenter } from '@/lib/memory-map/map-starting-point'
+import { isSystemDefaultArea } from '@/lib/memory-map/default-area'
 import type { MemoryArea, MemoryMap } from '@/lib/memory-map/types'
 import AdminGeoMapPicker, { useBrowserGeo } from '@/components/memory-map/admin/AdminGeoMapPicker'
 import { imagePercentToStylePosition } from '@/lib/memory-map/map-placement'
@@ -284,7 +285,7 @@ export default function AdminAreaForm({ mapId, map, area, onSaved, onCancel }: P
       <div className="flex flex-wrap gap-2 border-t border-white/10 pt-4">
         <button type="button" disabled={saving} onClick={() => void onSave()} className="mm-btn-primary rounded-xl px-4 py-2 text-sm font-bold disabled:opacity-50">Save area</button>
         <button type="button" onClick={onCancel} className="mm-btn-secondary rounded-xl px-4 py-2 text-sm font-bold">Cancel</button>
-        {area ? (
+        {area && !isSystemDefaultArea(area) ? (
           <button type="button" onClick={() => void onArchive()} className="rounded-xl border border-red-400/40 px-4 py-2 text-sm font-bold text-red-300">Archive</button>
         ) : null}
       </div>

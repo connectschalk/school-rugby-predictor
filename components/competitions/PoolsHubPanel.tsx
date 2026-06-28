@@ -17,6 +17,7 @@ import PoolInformationModal from '@/components/pools/PoolInformationModal'
 import PoolLogo from '@/components/pools/PoolLogo'
 import PoolLogoUploadSection from '@/components/pools/PoolLogoUploadSection'
 import PoolVisibilitySetting from '@/components/pools/PoolVisibilitySetting'
+import PoolInviteJoinModeSetting from '@/components/pools/PoolInviteJoinModeSetting'
 import PoolPicksSection from '@/components/pools/PoolPicksSection'
 import PoolPredictTabSection from '@/components/pools/PoolPredictTabSection'
 import { buildLoginHref } from '@/lib/auth-return-path'
@@ -41,6 +42,8 @@ import {
   requestJoinPool,
   searchPublicPools,
   updatePoolVisibility,
+  updatePoolInviteJoinMode,
+  type PoolInviteJoinMode,
   upsertPoolMatches,
   MAX_POOLS_PER_COMPETITION,
   POOL_CREATION_LIMIT_MESSAGE,
@@ -157,6 +160,7 @@ function PoolsPageContent({
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deletingPool, setDeletingPool] = useState(false)
   const [savingVisibility, setSavingVisibility] = useState(false)
+  const [savingInviteJoinMode, setSavingInviteJoinMode] = useState(false)
   const [isUserAdmin, setIsUserAdmin] = useState(false)
   const [activePoolView, setActivePoolView] = useState<'my-pools' | 'join' | 'create'>('my-pools')
   const showManagement = competitionMode === 'official_fixed_fixtures'
@@ -642,6 +646,27 @@ function PoolsPageContent({
       setMessage(pool.is_public ? 'Pool is now public.' : 'Pool is now private.')
     } finally {
       setSavingVisibility(false)
+    }
+  }
+
+  async function onChangeInviteJoinMode(mode: PoolInviteJoinMode) {
+    if (!selectedPoolId || !canManagePool) return
+    setSavingInviteJoinMode(true)
+    setMessage('')
+    try {
+      const { pool, error } = await updatePoolInviteJoinMode(supabase, selectedPoolId, mode)
+      if (error || !pool) {
+        setMessage(error?.message ?? 'Could not update invite link access.')
+        return
+      }
+      handlePoolLogoUpdated(pool)
+      setMessage(
+        pool.invite_join_mode === 'auto'
+          ? 'Invite link users can now join automatically.'
+          : 'Invite link users must request to join.'
+      )
+    } finally {
+      setSavingInviteJoinMode(false)
     }
   }
 
@@ -1236,6 +1261,14 @@ function PoolsPageContent({
                             onChange={(next) => void onTogglePoolVisibility(next)}
                           />
                         </div>
+                      </section>
+
+                      <section>
+                        <PoolInviteJoinModeSetting
+                          value={selectedPool.invite_join_mode}
+                          saving={savingInviteJoinMode}
+                          onChange={(next) => void onChangeInviteJoinMode(next)}
+                        />
                       </section>
 
                       <section>

@@ -5,6 +5,7 @@ import {
   validatePoolLogoFile,
 } from '@/lib/pool-logo'
 import type { PoolRow } from '@/lib/pools'
+import { normalizePoolInviteJoinMode } from '@/lib/pool-invite-join-mode'
 
 function cacheBustPublicUrl(path: string, publicUrl: string): string {
   return `${publicUrl}${publicUrl.includes('?') ? '&' : '?'}v=${encodeURIComponent(path)}`
@@ -74,6 +75,7 @@ export function normalizePoolLogoRow(data: Record<string, unknown>): PoolRow {
     is_public: Boolean(data.is_public),
     invite_token: String(data.invite_token ?? '').trim(),
     join_code: String(data.join_code ?? '').trim().toLowerCase(),
+    invite_join_mode: normalizePoolInviteJoinMode(data.invite_join_mode),
     is_closed: Boolean(data.is_closed),
     competition_id: data.competition_id != null ? String(data.competition_id) : null,
     logo_url: data.logo_url == null ? null : String(data.logo_url),

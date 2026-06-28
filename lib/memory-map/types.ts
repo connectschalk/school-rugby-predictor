@@ -77,6 +77,9 @@ export type MemoryArea = {
   image_height: number | null
   sort_order: number
   is_active: boolean
+  is_system_default?: boolean
+  bounds?: unknown | null
+  created_from?: string | null
   area_group?: string | null
   pin_count?: number
   story_count?: number

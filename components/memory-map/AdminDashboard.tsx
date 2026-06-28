@@ -43,6 +43,8 @@ import AdminBrandingForm from '@/components/memory-map/admin/AdminBrandingForm'
 import AdminMapStartPointForm from '@/components/memory-map/admin/AdminMapStartPointForm'
 import AdminSponsorForm from '@/components/memory-map/admin/AdminSponsorForm'
 import AdminAreaForm from '@/components/memory-map/admin/AdminAreaForm'
+import AdminAreasPanel from '@/components/memory-map/admin/AdminAreasPanel'
+import AdminAreaDrawForm from '@/components/memory-map/admin/AdminAreaDrawForm'
 import AdminContributorsPanel from '@/components/memory-map/admin/AdminContributorsPanel'
 import AdminPilotChecklist from '@/components/memory-map/admin/AdminPilotChecklist'
 import AdminPilotQaPanel from '@/components/memory-map/admin/AdminPilotQaPanel'
@@ -80,6 +82,8 @@ export default function AdminDashboard({ mapId }: Props) {
   const [canManageSettings, setCanManageSettings] = useState(false)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [areaFormArea, setAreaFormArea] = useState<MemoryArea | null | undefined>(undefined)
+  const [areaDrawMode, setAreaDrawMode] = useState(false)
+  const [pinsAreaFilterId, setPinsAreaFilterId] = useState<string | null>(null)
   const [highRiskConfirm, setHighRiskConfirm] = useState<MemoryStory | null>(null)
 
   const [selectedStory, setSelectedStory] = useState<MemoryStory | null>(null)
@@ -194,7 +198,19 @@ export default function AdminDashboard({ mapId }: Props) {
     return list
   }, [pending, pendingSearch, pendingRiskOnly, pendingSort])
   const published = useMemo(() => stories.filter((s) => s.status === 'approved'), [stories])
-  const visiblePins = useMemo(() => pins.filter((p) => !['deleted', 'archived'].includes(p.status)), [pins])
+  const visiblePins = useMemo(() => {
+    let list = pins.filter((p) => !['deleted', 'archived'].includes(p.status))
+    if (tab === 'pins' && pinsAreaFilterId) {
+      list = list.filter((p) => p.area_id === pinsAreaFilterId)
+    }
+    return list
+  }, [pins, tab, pinsAreaFilterId])
+
+  function navigateToTab(nextTab: AdminTab, options?: { areaFilterId?: string }) {
+    if (options?.areaFilterId) setPinsAreaFilterId(options.areaFilterId)
+    else if (nextTab !== 'pins') setPinsAreaFilterId(null)
+    setTab(nextTab)
+  }
 
   function updateMap(partial: Partial<MemoryMap>) {
     setBundle((b) => (b ? { ...b, map: { ...b.map, ...partial } } : b))
@@ -427,8 +443,9 @@ export default function AdminDashboard({ mapId }: Props) {
           <AdminAddContentWizard
             bundle={bundle}
             mapId={mapId}
-            onNavigate={setTab}
+            onNavigate={navigateToTab}
             onSaved={() => void reload()}
+            onEnsureAreas={() => void reload()}
           />
         </div>
       ) : null}
@@ -565,6 +582,14 @@ export default function AdminDashboard({ mapId }: Props) {
 
         {tab === 'pins' ? (
           <div className="space-y-3">
+            {pinsAreaFilterId ? (
+              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs">
+                <span className="mm-muted">Showing memories in the General area.</span>
+                <button type="button" onClick={() => setPinsAreaFilterId(null)} className="mm-btn-secondary rounded-lg px-2 py-1 font-bold">
+                  Show all pins
+                </button>
+              </div>
+            ) : null}
             {visiblePins.map((pin) => {
               const stats = pinStats(pin, stories)
               return (
@@ -609,7 +634,17 @@ export default function AdminDashboard({ mapId }: Props) {
 
         {tab === 'areas' && canManageSettings ? (
           <div className="space-y-3">
-            {areaFormArea !== undefined ? (
+            {areaDrawMode ? (
+              <AdminAreaDrawForm
+                mapId={mapId}
+                map={map}
+                onSaved={() => {
+                  setAreaDrawMode(false)
+                  void reload()
+                }}
+                onCancel={() => setAreaDrawMode(false)}
+              />
+            ) : areaFormArea !== undefined ? (
               <AdminAreaForm
                 mapId={mapId}
                 map={map}
@@ -621,27 +656,18 @@ export default function AdminDashboard({ mapId }: Props) {
                 onCancel={() => setAreaFormArea(undefined)}
               />
             ) : (
-              <>
-                <button type="button" onClick={() => setAreaFormArea(null)} className="mm-btn-primary rounded-xl px-4 py-2 text-sm font-bold">
-                  Create area
-                </button>
-                {areas.map((area) => (
-                  <div key={area.id} className="mm-card rounded-2xl p-4">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="font-bold">{area.name}</p>
-                      <span className="text-xs uppercase text-white/60">
-                        {area.is_active ? area.map_type : 'archived'}
-                      </span>
-                    </div>
-                    <p className="mm-muted mt-1 text-xs">{area.description}</p>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <button type="button" onClick={() => setAreaFormArea(area)} className="mm-btn-secondary rounded-lg px-3 py-1 text-xs font-bold">
-                        Edit
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </>
+              <AdminAreasPanel
+                mapId={mapId}
+                map={map}
+                areas={areas}
+                pins={pins}
+                stories={stories}
+                onCreateArea={() => setAreaFormArea(null)}
+                onDrawArea={() => setAreaDrawMode(true)}
+                onEditArea={(area) => setAreaFormArea(area)}
+                onNavigate={navigateToTab}
+                onEnsureComplete={() => void reload()}
+              />
             )}
           </div>
         ) : null}

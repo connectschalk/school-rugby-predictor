@@ -59,9 +59,12 @@ export default function PoolInformationModal({
 
   if (!open) return null
 
-  const joinPolicy = pool.is_public
-    ? 'Public pool — request to join; the pool admin approves new members.'
-    : 'Private pool — join via invite link or pool code; the pool admin approves requests.'
+  const joinPolicy =
+    pool.invite_join_mode === 'auto'
+      ? 'Invite link access — people with the link can join immediately after signing in.'
+      : pool.is_public
+        ? 'Public pool — request to join; the pool admin approves new members.'
+        : 'Private pool — join via invite link or pool code; the pool admin approves requests.'
 
   return (
     <div

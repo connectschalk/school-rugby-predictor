@@ -3,7 +3,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { User } from '@supabase/supabase-js'
 import LetterAvatar from '@/components/LetterAvatar'
 import PoolLogo from '@/components/pools/PoolLogo'
@@ -57,6 +57,7 @@ export default function PoolInviteLanding({ inviteToken, routeCompetitionSlug }:
   const [requestBusy, setRequestBusy] = useState(false)
   const [successMsg, setSuccessMsg] = useState('')
   const [requestErr, setRequestErr] = useState('')
+  const autoJoinAttempted = useRef(false)
 
   const token = inviteToken.trim()
   const canonicalSlug = pool ? normalizePoolInviteCompetitionSlug(pool.competition_slug) : null
@@ -135,15 +136,50 @@ export default function PoolInviteLanding({ inviteToken, routeCompetitionSlug }:
     setRequestBusy(true)
     setRequestErr('')
     setSuccessMsg('')
-    const { error } = await requestJoinPool(supabase, pool.id, { inviteToken: token })
+    const { row, error } = await requestJoinPool(supabase, pool.id, { inviteToken: token })
     setRequestBusy(false)
     if (error) {
       setRequestErr(error.message)
       return
     }
-    setSuccessMsg('Request sent. The pool admin will approve your access.')
+    if (row?.status === 'approved') {
+      setSuccessMsg("You've joined the pool.")
+    } else {
+      setSuccessMsg('Request sent. The pool admin will approve your access.')
+    }
     void loadViewerState()
   }
+
+  useEffect(() => {
+    autoJoinAttempted.current = false
+  }, [pool?.id, token])
+
+  useEffect(() => {
+    if (!user || !pool || pool.is_closed || loadingState || pool.invite_join_mode !== 'auto') return
+    if (viewerState?.is_member || viewerState?.has_pending_request) return
+    if (autoJoinAttempted.current) return
+
+    autoJoinAttempted.current = true
+    setRequestBusy(true)
+    setRequestErr('')
+    void requestJoinPool(supabase, pool.id, { inviteToken: token })
+      .then(({ row, error }) => {
+        setRequestBusy(false)
+        if (error) {
+          autoJoinAttempted.current = false
+          setRequestErr(error.message)
+          return
+        }
+        if (row?.status === 'approved') {
+          setSuccessMsg("You've joined the pool.")
+        }
+        void loadViewerState()
+      })
+      .catch(() => {
+        setRequestBusy(false)
+        autoJoinAttempted.current = false
+      })
+  }, [user, pool, loadingState, viewerState, token, loadViewerState])
 
   if (!authReady) {
     return (
@@ -216,6 +252,20 @@ export default function PoolInviteLanding({ inviteToken, routeCompetitionSlug }:
     pool.inviter_avatar_url != null ||
     pool.inviter_avatar_letter != null ||
     pool.inviter_avatar_colour != null
+  const inviteAccessMessage =
+    pool.invite_join_mode === 'auto'
+      ? 'People with this invite link can join immediately after signing in.'
+      : !pool.is_public
+        ? 'This pool is private. Your request will be sent to the pool admin for approval.'
+        : 'Request to join — the pool admin approves new members.'
+  const joinActionLabel =
+    pool.invite_join_mode === 'auto'
+      ? requestBusy
+        ? 'Joining pool…'
+        : 'Join pool'
+      : requestBusy
+        ? 'Sending…'
+        : 'Request to join pool'
 
   return (
     <main className="mx-auto max-w-lg px-4 py-10 md:px-6 md:py-14">
@@ -256,14 +306,14 @@ export default function PoolInviteLanding({ inviteToken, routeCompetitionSlug }:
 
         <p
           className={`mt-5 rounded-xl px-3 py-2.5 text-sm ${
-            !pool.is_public
-              ? 'border border-amber-200 bg-amber-50 text-amber-950'
-              : 'border border-gray-200 bg-gray-50 text-gray-800'
+            pool.invite_join_mode === 'auto'
+              ? 'border border-emerald-200 bg-emerald-50 text-emerald-950'
+              : !pool.is_public
+                ? 'border border-amber-200 bg-amber-50 text-amber-950'
+                : 'border border-gray-200 bg-gray-50 text-gray-800'
           }`}
         >
-          {!pool.is_public
-            ? 'This pool is private. Your request will be sent to the pool admin for approval.'
-            : 'Request to join — the pool admin approves new members.'}
+          {inviteAccessMessage}
         </p>
 
         <div className="mt-8 border-t border-gray-100 pt-6">
@@ -313,7 +363,7 @@ export default function PoolInviteLanding({ inviteToken, routeCompetitionSlug }:
                 onClick={() => void onRequestJoin()}
                 className="w-full rounded-xl bg-gray-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-black disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
               >
-                {requestBusy ? 'Sending…' : 'Request to join pool'}
+                {joinActionLabel}
               </button>
               {requestErr ? <p className="text-center text-sm text-red-800">{requestErr}</p> : null}
             </div>

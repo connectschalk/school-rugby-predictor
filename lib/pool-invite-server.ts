@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { SCHOOLS_COMPETITION_SLUG } from '@/lib/competitions'
 import { isUuid } from '@/lib/pool-invite-path'
+import { normalizePoolInviteJoinMode, type PoolInviteJoinMode } from '@/lib/pool-invite-join-mode'
 
 /** Invite-safe pool preview (RPC; no private pool data beyond name + inviter display). */
 export type PoolInvitePreview = {
@@ -8,6 +9,7 @@ export type PoolInvitePreview = {
   name: string
   is_public: boolean
   is_closed: boolean
+  invite_join_mode: PoolInviteJoinMode
   competition_id: string | null
   competition_slug: string
   competition_name: string
@@ -42,6 +44,7 @@ export function parsePoolInviteRow(raw: Record<string, unknown>): PoolInvitePrev
     name: String(raw.pool_name ?? raw.name ?? ''),
     is_public: Boolean(raw.is_public),
     is_closed: Boolean(raw.is_closed),
+    invite_join_mode: normalizePoolInviteJoinMode(raw.invite_join_mode),
     competition_id: raw.competition_id != null ? String(raw.competition_id) : null,
     competition_slug: String(raw.competition_slug ?? SCHOOLS_COMPETITION_SLUG),
     competition_name: String(raw.competition_name ?? 'NextPlay Schools'),
