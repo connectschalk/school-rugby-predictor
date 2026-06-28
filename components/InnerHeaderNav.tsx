@@ -3,10 +3,10 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import {
-  ADMIN_AVATAR_SRC,
   PLATFORM_HOME_HREF,
   PLATFORM_LOGO_ALT,
   PLATFORM_LOGO_SRC,
+  resolveProfileAvatarUrl,
 } from '@/lib/platform-branding'
 import {
   COMPETITION_SWITCHER_OPTIONS,
@@ -432,7 +432,7 @@ export default function InnerHeaderNav() {
                 <LetterAvatar
                   letter={profile?.avatar_letter}
                   colour={profile?.avatar_colour}
-                  avatarUrl={isAdmin ? ADMIN_AVATAR_SRC : profile?.avatar_url}
+                  avatarUrl={resolveProfileAvatarUrl(profile?.avatar_url, isAdmin)}
                   firstName={profile?.first_name}
                   displayName={profile?.display_name}
                   name={displayName}

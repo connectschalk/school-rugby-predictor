@@ -17,7 +17,7 @@ import {
   validateDisplayName,
 } from '@/lib/display-name-filter'
 import { fetchUserIsAdmin } from '@/lib/admin-access'
-import { ADMIN_AVATAR_SRC } from '@/lib/platform-branding'
+import { resolveProfileAvatarUrl } from '@/lib/platform-branding'
 import { supabase } from '@/lib/supabase'
 import { trackEvent } from '@/lib/trackEvent'
 import { repairUserProfileFromMetadataIfNeeded, type UserProfileRow } from '@/lib/user-profile-metadata'
@@ -322,14 +322,14 @@ export default function ProfilePage() {
               <LetterAvatar
                 letter={chosenLetter}
                 colour={chosenColourHex}
-                avatarUrl={isAdmin ? ADMIN_AVATAR_SRC : storedAvatarUrl}
+                avatarUrl={resolveProfileAvatarUrl(storedAvatarUrl, isAdmin)}
                 firstName={firstName}
                 displayName={displayName}
                 name={displayName.trim() || firstName.trim() || 'You'}
                 size={96}
               />
             </div>
-            {isAdmin ? (
+            {isAdmin && !storedAvatarUrl?.trim() ? (
               <p className="mt-2 text-center text-xs text-gray-600">
                 Admin accounts use the NextPlay Predictor mark as their profile icon.
               </p>

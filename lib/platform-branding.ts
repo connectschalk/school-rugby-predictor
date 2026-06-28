@@ -16,6 +16,16 @@ export const PLATFORM_OG_IMAGE_HEIGHT = 630
 /** P mark for admin avatars and predictor position on community voting charts. */
 export const ADMIN_AVATAR_SRC = '/admin-avatar.png'
 
+/** Custom profile image wins; otherwise admins get the platform mark. */
+export function resolveProfileAvatarUrl(
+  avatarUrl: string | null | undefined,
+  isAdmin: boolean
+): string | null {
+  const custom = avatarUrl?.trim()
+  if (custom) return custom
+  return isAdmin ? ADMIN_AVATAR_SRC : null
+}
+
 export const PLATFORM_PREDICTOR_MARK_SRC = '/nextplay-predictor-logo.png'
 
 /** White wordmark on dark — landing hero. */
