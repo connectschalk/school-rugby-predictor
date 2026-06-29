@@ -223,7 +223,7 @@ export default function AddStoryWizard({ bundle, dataSource, initialPinId, initi
     resolvedSource === 'demo'
       ? 'Preview mode: this map is using sample data. Memories can be submitted once the map is connected to the live database.'
       : !isUuid(selectedAreaId)
-        ? 'This area is not linked to the live database yet. Ask the school admin to set up map areas.'
+        ? 'This area is not linked to the live database yet. Ask an admin to set up map areas.'
         : null
 
   useEffect(() => {
@@ -698,14 +698,14 @@ export default function AddStoryWizard({ bundle, dataSource, initialPinId, initi
           <h1 className="text-2xl font-black">Add a memory</h1>
           {access.member?.status === 'pending' || requestSent ? (
             <MmEmptyState
-              title="Your contributor request is waiting for school admin approval"
-              description="We will notify you once a school admin approves your access."
+              title="Your contributor request is waiting for approval"
+              description="We will notify you once an admin approves your access."
               icon="⏳"
             />
           ) : access.member?.status === 'rejected' || access.member?.status === 'suspended' ? (
             <MmEmptyState
               title="Your contributor request was not approved"
-              description="Contact the school admin if this seems incorrect."
+              description="Contact an admin if this seems incorrect."
               icon="🔒"
             />
           ) : (
@@ -760,7 +760,7 @@ export default function AddStoryWizard({ bundle, dataSource, initialPinId, initi
 
           {usingGeneralOnly ? (
             <p className="mb-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-white/80">
-              Memories are saved to the General area. Your school admin can organise them into areas later.
+              Memories are saved to the General area. An admin can organise them into areas later.
             </p>
           ) : null}
 
@@ -1097,7 +1097,8 @@ function ContributorAddSheet(props: SheetProps) {
 
           {stage === 'success' ? (
             <div className="space-y-4 py-2 text-center">
-              <p className="text-lg font-black leading-snug">Your memory has been submitted for school admin approval.</p>
+              <p className="text-lg font-black leading-snug">Your memory has been submitted for approval.</p>
+              <p className="mm-muted text-sm">An admin will review it before it appears on the map.</p>
               <Link
                 href={`/memory-map/${mapSlug}/map${selectedAreaId ? `?area=${selectedAreaId}` : ''}`}
                 className="mm-btn-primary block rounded-2xl px-4 py-3 text-sm font-black"

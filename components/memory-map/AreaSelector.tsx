@@ -40,7 +40,7 @@ export default function AreaSelector({ areas, pins, stories, map, selectedAreaId
     return (
       <MmEmptyState
         title="No areas have been published yet"
-        description="School admins can add campus, field and hostel areas from the admin dashboard."
+        description="An admin can add areas from the admin dashboard."
         icon="🗺️"
       />
     )

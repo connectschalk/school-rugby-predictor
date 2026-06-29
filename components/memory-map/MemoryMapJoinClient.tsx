@@ -70,7 +70,7 @@ export default function MemoryMapJoinClient({ map, mapSlug, inviteToken }: Props
           <p className="mm-muted mt-2">
             {autoApproved
               ? 'You can add memories now.'
-              : 'A school admin will review your contributor request soon.'}
+              : 'An admin will review your contributor request soon.'}
           </p>
           <Link href={`/memory-map/${mapSlug}/add`} className="mm-btn-primary mt-4 block rounded-xl py-3 text-center text-sm font-black">
             {autoApproved ? 'Add a memory' : 'View Memory Map'}

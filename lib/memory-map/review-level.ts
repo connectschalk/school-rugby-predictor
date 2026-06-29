@@ -29,7 +29,7 @@ export const REVIEW_LEVEL_OPTIONS: { value: RiskLevel; label: string }[] = [
   { value: 'low', label: 'Low review — normal public school/event moment' },
   { value: 'medium', label: 'Medium review — students visible, names mentioned, or context needs checking' },
   { value: 'high', label: 'High review — injury, sensitive, private, or potentially controversial content' },
-  { value: 'admin_review', label: 'Admin review — I am unsure; let the school admin decide' },
+  { value: 'admin_review', label: 'Admin review — I am unsure; let an admin decide' },
 ]
 
 export function reviewLevelAdminLabel(level: RiskLevel): string {

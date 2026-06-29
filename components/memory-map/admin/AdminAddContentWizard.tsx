@@ -88,7 +88,7 @@ export default function AdminAddContentWizard({ bundle, mapId, onNavigate, onSav
   const [photoFiles, setPhotoFiles] = useState<File[]>([])
   const [videoFile, setVideoFile] = useState<File | null>(null)
   const [isOfficial, setIsOfficial] = useState(true)
-  const [displayName, setDisplayName] = useState('School Admin')
+  const [displayName, setDisplayName] = useState('Admin')
   const [publishOption, setPublishOption] = useState<AdminPublishOption>('approved')
   const [showExtraDetails, setShowExtraDetails] = useState(false)
   const [showDateDetails, setShowDateDetails] = useState(false)
@@ -372,7 +372,7 @@ export default function AdminAddContentWizard({ bundle, mapId, onNavigate, onSav
         eventDate: eventDate || null,
         uploadMode,
         riskLevel,
-        loggedByDisplayName: displayName.trim() || 'School Admin',
+        loggedByDisplayName: displayName.trim() || 'Admin',
         isOfficial,
         pinIsOfficial: creatingNewPin ? pinTarget.pinIsOfficial : Boolean(pinTarget.pin.is_official),
         status,

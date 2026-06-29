@@ -10,10 +10,35 @@ type Props = {
   onChange: (bounds: AreaRectangleBounds | null) => void
 }
 
+type LeafletMap = import('leaflet').Map
+type LeafletRectangle = import('leaflet').Rectangle
+
+/** Stop map pan/zoom while the user is dragging out a rectangle. */
+function setMapDrawInteraction(map: LeafletMap, locked: boolean) {
+  const tap = (map as LeafletMap & { tap?: { disable: () => void; enable: () => void } }).tap
+  if (locked) {
+    map.dragging.disable()
+    map.touchZoom.disable()
+    map.doubleClickZoom.disable()
+    map.boxZoom.disable()
+    tap?.disable()
+  } else {
+    map.dragging.enable()
+    map.touchZoom.enable()
+    map.doubleClickZoom.enable()
+    map.boxZoom.enable()
+    tap?.enable()
+  }
+}
+
+function latLngFromPointerEvent(map: LeafletMap, event: PointerEvent) {
+  return map.mouseEventToLatLng(event as unknown as MouseEvent)
+}
+
 export default function AdminAreaBoundsPicker({ defaultCentre, bounds, onChange }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const mapRef = useRef<import('leaflet').Map | null>(null)
-  const rectRef = useRef<import('leaflet').Rectangle | null>(null)
+  const mapRef = useRef<LeafletMap | null>(null)
+  const rectRef = useRef<LeafletRectangle | null>(null)
   const onChangeRef = useRef(onChange)
   const dragStartRef = useRef<{ lat: number; lng: number } | null>(null)
   const [ready, setReady] = useState(false)
@@ -24,6 +49,7 @@ export default function AdminAreaBoundsPicker({ defaultCentre, bounds, onChange 
   useEffect(() => {
     if (!containerRef.current) return
     let cancelled = false
+    let cleanupListeners: (() => void) | null = null
 
     void import('leaflet').then((L) => {
       if (cancelled || !containerRef.current) return
@@ -36,18 +62,11 @@ export default function AdminAreaBoundsPicker({ defaultCentre, bounds, onChange 
         maxZoom: 19,
       }).addTo(map)
 
-      map.on('mousedown', (e) => {
-        dragStartRef.current = { lat: e.latlng.lat, lng: e.latlng.lng }
-        setDrawing(true)
-        if (rectRef.current) {
-          rectRef.current.remove()
-          rectRef.current = null
-        }
-      })
+      const container = map.getContainer()
 
-      map.on('mousemove', (e) => {
+      function updatePreview(end: { lat: number; lng: number }) {
         if (!dragStartRef.current) return
-        const next = buildRectangleBounds(dragStartRef.current, { lat: e.latlng.lat, lng: e.latlng.lng })
+        const next = buildRectangleBounds(dragStartRef.current, end)
         if (rectRef.current) rectRef.current.remove()
         rectRef.current = L.rectangle(
           [
@@ -56,19 +75,99 @@ export default function AdminAreaBoundsPicker({ defaultCentre, bounds, onChange 
           ],
           { color: '#FFD400', weight: 2, fillOpacity: 0.15 }
         ).addTo(map)
-      })
+      }
 
-      map.on('mouseup', (e) => {
+      function finishDraw(end: { lat: number; lng: number }) {
         if (!dragStartRef.current) return
-        const next = buildRectangleBounds(dragStartRef.current, { lat: e.latlng.lat, lng: e.latlng.lng })
+        const start = dragStartRef.current
         dragStartRef.current = null
         setDrawing(false)
+        setMapDrawInteraction(map, false)
+
+        const next = buildRectangleBounds(start, end)
         if (Math.abs(next.north - next.south) < 0.00005 || Math.abs(next.east - next.west) < 0.00005) {
           onChangeRef.current(null)
           return
         }
         onChangeRef.current(next)
-      })
+      }
+
+      function cancelDraw() {
+        if (!dragStartRef.current) return
+        dragStartRef.current = null
+        setDrawing(false)
+        setMapDrawInteraction(map, false)
+      }
+
+      function onPointerDown(event: PointerEvent) {
+        if (event.pointerType === 'mouse' && event.button !== 0) return
+
+        setMapDrawInteraction(map, true)
+        const point = latLngFromPointerEvent(map, event)
+        dragStartRef.current = { lat: point.lat, lng: point.lng }
+        setDrawing(true)
+
+        if (rectRef.current) {
+          rectRef.current.remove()
+          rectRef.current = null
+        }
+
+        try {
+          container.setPointerCapture(event.pointerId)
+        } catch {
+          // Pointer capture unsupported — document listeners still handle release.
+        }
+      }
+
+      function onPointerMove(event: PointerEvent) {
+        if (!dragStartRef.current) return
+        event.preventDefault()
+        const point = latLngFromPointerEvent(map, event)
+        updatePreview({ lat: point.lat, lng: point.lng })
+      }
+
+      function onPointerUp(event: PointerEvent) {
+        if (!dragStartRef.current) return
+        event.preventDefault()
+        try {
+          container.releasePointerCapture(event.pointerId)
+        } catch {
+          // ignore
+        }
+        const point = latLngFromPointerEvent(map, event)
+        finishDraw({ lat: point.lat, lng: point.lng })
+      }
+
+      function onPointerCancel(event: PointerEvent) {
+        if (!dragStartRef.current) return
+        try {
+          container.releasePointerCapture(event.pointerId)
+        } catch {
+          // ignore
+        }
+        cancelDraw()
+      }
+
+      /** Block touch scrolling/panning while a rectangle drag is in progress. */
+      function onTouchMove(event: TouchEvent) {
+        if (!dragStartRef.current) return
+        event.preventDefault()
+      }
+
+      container.addEventListener('pointerdown', onPointerDown)
+      container.addEventListener('pointermove', onPointerMove)
+      container.addEventListener('pointerup', onPointerUp)
+      container.addEventListener('pointercancel', onPointerCancel)
+      container.addEventListener('touchmove', onTouchMove, { passive: false })
+
+      cleanupListeners = () => {
+        container.removeEventListener('pointerdown', onPointerDown)
+        container.removeEventListener('pointermove', onPointerMove)
+        container.removeEventListener('pointerup', onPointerUp)
+        container.removeEventListener('pointercancel', onPointerCancel)
+        container.removeEventListener('touchmove', onTouchMove)
+        setMapDrawInteraction(map, false)
+      }
 
       mapRef.current = map
       setReady(true)
@@ -77,6 +176,7 @@ export default function AdminAreaBoundsPicker({ defaultCentre, bounds, onChange 
 
     return () => {
       cancelled = true
+      cleanupListeners?.()
       rectRef.current = null
       mapRef.current?.remove()
       mapRef.current = null
