@@ -8,6 +8,7 @@ import {
   isDisplayNamePolicyDbError,
   validateDisplayName,
 } from '@/lib/display-name-filter'
+import { ensureMemoryMapProfileExists } from '@/lib/memory-map/user-profile'
 import {
   buildMemoryMapSignInHref,
   resolveMemoryMapPostAuthRedirect,
@@ -78,6 +79,8 @@ function SignUpFormInner() {
         data: {
           display_name: name,
           full_name: name,
+          memory_map_display_name: name,
+          memory_map_contributor_name: name,
         },
       },
     })
@@ -89,17 +92,13 @@ function SignUpFormInner() {
     }
 
     if (data.session && data.user) {
-      const { error: profErr } = await supabase.from('user_profiles').upsert(
-        {
-          id: data.user.id,
-          display_name: name,
-          avatar_url: null,
-        },
-        { onConflict: 'id' }
-      )
+      const { error: profErr } = await ensureMemoryMapProfileExists(supabase, data.user, {
+        displayName: name,
+        contributorName: name,
+      })
       if (profErr) {
         setError(
-          profErr.code === '23514' || isDisplayNamePolicyDbError(profErr.message)
+          isDisplayNamePolicyDbError(profErr.message)
             ? DISPLAY_NAME_NOT_ALLOWED_MESSAGE
             : profErr.message
         )

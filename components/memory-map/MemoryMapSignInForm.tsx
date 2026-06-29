@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense, useEffect, useState } from 'react'
-import { ensureUserProfileExists } from '@/lib/user-profile-metadata'
+import { ensureMemoryMapProfileExists } from '@/lib/memory-map/user-profile'
 import {
   buildMemoryMapSignUpHref,
   resolveMemoryMapPostAuthRedirect,
@@ -46,7 +46,7 @@ function SignInFormInner() {
     }
 
     if (data.user) {
-      await ensureUserProfileExists(supabase, data.user)
+      await ensureMemoryMapProfileExists(supabase, data.user)
     }
 
     router.push(resolveMemoryMapPostAuthRedirect(nextAfterLogin))

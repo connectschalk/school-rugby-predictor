@@ -16,7 +16,7 @@ import {
   isDisplayNamePolicyDbError,
   validateDisplayName,
 } from '@/lib/display-name-filter'
-import { fetchUserIsAdmin } from '@/lib/admin-access'
+import { fetchPredictorPlatformAdmin } from '@/lib/admin-access'
 import { resolveProfileAvatarUrl } from '@/lib/platform-branding'
 import { supabase } from '@/lib/supabase'
 import { trackEvent } from '@/lib/trackEvent'
@@ -52,9 +52,9 @@ export default function ProfilePage() {
     }
 
     const { data, error: qErr } = await supabase
-      .from('user_profiles')
+      .from('predictor_profiles')
       .select('first_name, surname, display_name, avatar_letter, avatar_colour, avatar_url')
-      .eq('id', uid)
+      .eq('user_id', uid)
       .maybeSingle()
 
     if (qErr) {
@@ -147,7 +147,7 @@ export default function ProfilePage() {
       return
     }
     let cancelled = false
-    void fetchUserIsAdmin(supabase, user.id).then(({ isAdmin: nextIsAdmin }) => {
+    void fetchPredictorPlatformAdmin(supabase, user.id).then(({ isAdmin: nextIsAdmin }) => {
       if (!cancelled) setIsAdmin(nextIsAdmin)
     })
     return () => {
@@ -198,9 +198,9 @@ export default function ProfilePage() {
     setError('')
 
     const colourNorm = `#${chosenColourHex.trim().slice(1).toLowerCase()}`
-    const { error: upsertErr } = await supabase.from('user_profiles').upsert(
+    const { error: upsertErr } = await supabase.from('predictor_profiles').upsert(
       {
-        id: user.id,
+        user_id: user.id,
         first_name: first,
         surname: last,
         display_name: name,
@@ -208,7 +208,7 @@ export default function ProfilePage() {
         avatar_colour: colourNorm,
         avatar_url: storedAvatarUrl,
       },
-      { onConflict: 'id' }
+      { onConflict: 'user_id' }
     )
 
     if (upsertErr) {

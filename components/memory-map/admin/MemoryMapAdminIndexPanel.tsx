@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import { fetchUserIsAdmin } from '@/lib/admin-access'
+import { fetchMemoryMapPlatformAdmin } from '@/lib/admin-access'
 import { DEMO_MAP_ID } from '@/lib/memory-map/constants'
 import MemoryMapSignInGate from '@/components/memory-map/MemoryMapSignInGate'
 import {
@@ -56,7 +56,7 @@ export default function MemoryMapAdminIndexPanel() {
       }
 
       setSignedIn(true)
-      const adminCheck = await fetchUserIsAdmin(supabase, userId)
+      const adminCheck = await fetchMemoryMapPlatformAdmin(supabase, userId)
       setIsAppAdmin(adminCheck.isAdmin)
 
       const { data, error: rpcError } = await supabase.rpc('list_accessible_memory_maps')

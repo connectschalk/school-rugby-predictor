@@ -3,6 +3,8 @@ import {
   buildMemoryMapSignInHref,
   buildMemoryMapSignUpHref,
   isMemoryMapAuthEntryPath,
+  MEMORY_MAP_ACCOUNT_PATH,
+  parseMemoryMapSlugFromPath,
   resolveMemoryMapPostAuthRedirect,
   safeMemoryMapReturnPath,
 } from './auth-routes'
@@ -53,5 +55,19 @@ describe('isMemoryMapAuthEntryPath', () => {
   it('detects memory map auth routes', () => {
     expect(isMemoryMapAuthEntryPath('/memory-map/auth/sign-in')).toBe(true)
     expect(isMemoryMapAuthEntryPath('/memory-map/boishaai')).toBe(false)
+  })
+})
+
+describe('MEMORY_MAP_ACCOUNT_PATH', () => {
+  it('points to the memory map account route', () => {
+    expect(MEMORY_MAP_ACCOUNT_PATH).toBe('/memory-map/account')
+    expect(safeMemoryMapReturnPath(MEMORY_MAP_ACCOUNT_PATH)).toBe('/memory-map/account')
+  })
+})
+
+describe('parseMemoryMapSlugFromPath', () => {
+  it('does not treat account as a map slug', () => {
+    expect(parseMemoryMapSlugFromPath('/memory-map/account')).toBeNull()
+    expect(parseMemoryMapSlugFromPath('/memory-map/boishaai/map')).toBe('boishaai')
   })
 })

@@ -1,6 +1,7 @@
 import { safeInternalReturnPath } from '@/lib/auth-return-path'
 
 export const MEMORY_MAP_AUTH_DEFAULT = '/memory-map' as const
+export const MEMORY_MAP_ACCOUNT_PATH = '/memory-map/account' as const
 
 const MEMORY_MAP_AUTH_PREFIX = '/memory-map/auth/'
 
@@ -42,7 +43,7 @@ export function parseMemoryMapSlugFromPath(pathname: string): string | null {
   const parts = pathname.split('/').filter(Boolean)
   if (parts[0] !== 'memory-map' || !parts[1]) return null
   const segment = parts[1]
-  if (['admin', 'find', 'my', 'auth'].includes(segment)) return null
+  if (['admin', 'account', 'find', 'my', 'auth'].includes(segment)) return null
   return segment
 }
 

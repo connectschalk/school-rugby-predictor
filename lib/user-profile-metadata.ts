@@ -1,6 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { User } from '@supabase/supabase-js'
 import { normalizeAvatarLetter } from '@/lib/letter-avatar'
+import { ensurePredictorProfileExists } from '@/lib/predictor-profile'
+
+const PREDICTOR_PROFILE_TABLE = 'predictor_profiles'
 
 export type UserProfileRow = {
   first_name: string | null
@@ -119,9 +122,9 @@ export async function upsertProfileFromSignupMetadata(
   user: User
 ): Promise<{ error: Error | null }> {
   const { data: existing, error: readErr } = await client
-    .from('user_profiles')
-    .select('id')
-    .eq('id', user.id)
+    .from(PREDICTOR_PROFILE_TABLE)
+    .select('user_id')
+    .eq('user_id', user.id)
     .maybeSingle()
 
   if (readErr) return { error: new Error(readErr.message) }
@@ -129,16 +132,16 @@ export async function upsertProfileFromSignupMetadata(
 
   const parsed = parseSignupProfileMetadata(user)
   if (!parsed) {
-    const { error } = await client.from('user_profiles').insert({
-      id: user.id,
+    const { error } = await client.from(PREDICTOR_PROFILE_TABLE).insert({
+      user_id: user.id,
       display_name: emailUsernameFallback(user),
     })
     if (error && error.code !== '23505') return { error: new Error(error.message) }
     return { error: null }
   }
 
-  const { error } = await client.from('user_profiles').insert({
-    id: user.id,
+  const { error } = await client.from(PREDICTOR_PROFILE_TABLE).insert({
+    user_id: user.id,
     first_name: parsed.first_name,
     surname: parsed.surname,
     display_name: parsed.display_name,
@@ -159,35 +162,13 @@ function emailUsernameFallback(user: User): string {
 }
 
 /**
- * Ensures a `user_profiles` row exists for predictions/comments.
- * Never overwrites an existing `display_name` (or any other profile field).
- * On first create only, sets `display_name` from the email username.
+ * Ensures a Predictor profile row exists. Does not create Memory Map profiles.
  */
 export async function ensureUserProfileExists(
   client: SupabaseClient,
   user: User
 ): Promise<{ error: Error | null; created: boolean }> {
-  const { data: existing, error: readErr } = await client
-    .from('user_profiles')
-    .select('id, display_name')
-    .eq('id', user.id)
-    .maybeSingle()
-
-  if (readErr) return { error: new Error(readErr.message), created: false }
-  if (existing) return { error: null, created: false }
-
-  const { error } = await client.from('user_profiles').insert({
-    id: user.id,
-    display_name: emailUsernameFallback(user),
-  })
-
-  if (error) {
-    // Another request may have created the row between read and insert.
-    if (error.code === '23505') return { error: null, created: false }
-    return { error: new Error(error.message), created: false }
-  }
-
-  return { error: null, created: true }
+  return ensurePredictorProfileExists(client, user)
 }
 
 /**
@@ -205,8 +186,8 @@ export async function repairUserProfileFromMetadataIfNeeded(
 
   if (!existing) {
     const display_name = m.display_name ?? emailUsernameFallback(user)
-    const { error } = await client.from('user_profiles').insert({
-      id: user.id,
+    const { error } = await client.from(PREDICTOR_PROFILE_TABLE).insert({
+      user_id: user.id,
       first_name: m.first_name,
       surname: m.surname,
       display_name,
@@ -248,9 +229,9 @@ export async function repairUserProfileFromMetadataIfNeeded(
 
   if (!changed) return { row: existing, repaired: false }
 
-  const { error } = await client.from('user_profiles').upsert(
+  const { error } = await client.from(PREDICTOR_PROFILE_TABLE).upsert(
     {
-      id: user.id,
+      user_id: user.id,
       first_name: next.first_name,
       surname: next.surname,
       display_name: next.display_name,
@@ -258,7 +239,7 @@ export async function repairUserProfileFromMetadataIfNeeded(
       avatar_colour: next.avatar_colour,
       avatar_url: next.avatar_url,
     },
-    { onConflict: 'id' }
+    { onConflict: 'user_id' }
   )
   if (error) return { row: existing, repaired: false }
   return { row: next, repaired: true }

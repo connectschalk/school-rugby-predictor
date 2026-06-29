@@ -37,6 +37,7 @@ import {
 } from '@/lib/memory-map/review-level'
 import type { MapPlacement, MemoryMapBundle, MemoryPin, RiskLevel, UploadMode } from '@/lib/memory-map/types'
 import { yearRangeForStories } from '@/lib/memory-map/utils'
+import { fetchMemoryMapProfile, resolveMemoryMapContributorName } from '@/lib/memory-map/user-profile'
 import { memoryMapThemeVars } from '@/lib/memory-map/theme'
 import MemoryMapHeader from '@/components/memory-map/MemoryMapHeader'
 import MapCanvas from '@/components/memory-map/MapCanvas'
@@ -204,11 +205,11 @@ export default function AddStoryWizard({ bundle, dataSource, initialPinId, initi
   }, [loadAccess])
 
   useEffect(() => {
-    void supabase.auth.getUser().then(({ data }) => {
-      const name =
-        (data.user?.user_metadata?.display_name as string | undefined) ??
-        (data.user?.user_metadata?.full_name as string | undefined) ??
-        data.user?.email?.split('@')[0]
+    void supabase.auth.getUser().then(async ({ data }) => {
+      const user = data.user
+      if (!user) return
+      const { profile } = await fetchMemoryMapProfile(supabase, user.id)
+      const name = resolveMemoryMapContributorName(profile, user)
       if (name?.trim()) {
         setDisplayName(name.trim())
         setHasAutoDisplayName(true)

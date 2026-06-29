@@ -28,7 +28,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import LetterAvatar from '@/components/LetterAvatar'
-import { fetchUserIsAdmin } from '@/lib/admin-access'
+import { fetchPredictorPlatformAdmin } from '@/lib/admin-access'
 import { supabase } from '@/lib/supabase'
 
 function NavIcon({ icon: Icon }: { icon: LucideIcon }) {
@@ -131,14 +131,14 @@ export default function InnerHeaderNav() {
       return
     }
     let cancelled = false
-    void fetchUserIsAdmin(supabase, user.id).then(({ isAdmin: nextIsAdmin }) => {
+    void fetchPredictorPlatformAdmin(supabase, user.id).then(({ isAdmin: nextIsAdmin }) => {
       if (cancelled) return
       setIsAdmin(nextIsAdmin)
     })
     void supabase
-      .from('user_profiles')
+      .from('predictor_profiles')
       .select('display_name, avatar_url, avatar_letter, avatar_colour, first_name, surname')
-      .eq('id', user.id)
+      .eq('user_id', user.id)
       .maybeSingle()
       .then(({ data, error }) => {
         if (cancelled || error) return

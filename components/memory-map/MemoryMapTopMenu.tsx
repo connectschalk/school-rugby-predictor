@@ -3,11 +3,12 @@
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { fetchUserIsAdmin } from '@/lib/admin-access'
+import { fetchMemoryMapPlatformAdmin } from '@/lib/admin-access'
 import {
   buildMemoryMapSignInHref,
   buildMemoryMapSignUpHref,
   currentPathWithSearch,
+  MEMORY_MAP_ACCOUNT_PATH,
   parseMemoryMapAdminIdFromPath,
   parseMemoryMapSlugFromPath,
 } from '@/lib/memory-map/auth-routes'
@@ -18,6 +19,7 @@ import {
   type MemoryMapRoleBadge,
 } from '@/lib/memory-map/menu-role'
 import { userHasAdminDashboardAccess } from '@/lib/memory-map/my-maps'
+import { fetchMemoryMapProfile } from '@/lib/memory-map/user-profile'
 import { supabase } from '@/lib/supabase'
 
 type MenuProfile = {
@@ -64,13 +66,14 @@ export default function MemoryMapTopMenu() {
       email: user.email ?? null,
     })
 
-    const [{ data: profileRow }, { isAdmin: isAppAdmin }] = await Promise.all([
-      supabase.from('user_profiles').select('display_name').eq('id', user.id).maybeSingle(),
-      fetchUserIsAdmin(supabase, user.id),
+    const [{ profile: mmProfile }, { isAdmin: isAppAdmin }] = await Promise.all([
+      fetchMemoryMapProfile(supabase, user.id),
+      fetchMemoryMapPlatformAdmin(supabase, user.id),
     ])
 
-    if (profileRow?.display_name) {
-      setProfile((prev) => ({ ...prev, displayName: String(profileRow.display_name) }))
+    const menuName = mmProfile?.display_name?.trim() || mmProfile?.contributor_name?.trim()
+    if (menuName) {
+      setProfile((prev) => ({ ...prev, displayName: menuName }))
     }
 
     let resolvedMapId = adminMapId
@@ -204,7 +207,7 @@ export default function MemoryMapTopMenu() {
                         Admin dashboard
                       </MenuLink>
                     ) : null}
-                    <MenuLink href="/profile" onClick={() => setOpen(false)}>
+                    <MenuLink href={MEMORY_MAP_ACCOUNT_PATH} onClick={() => setOpen(false)}>
                       Account
                     </MenuLink>
                     <button

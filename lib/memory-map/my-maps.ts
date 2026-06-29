@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { fetchUserIsAdmin } from '@/lib/admin-access'
+import { fetchMemoryMapPlatformAdmin } from '@/lib/admin-access'
 import type { MemberRole, MemberStatus } from '@/lib/memory-map/types'
 import type { MemoryMapAccessLevel } from '@/lib/memory-map/permissions'
 
@@ -29,7 +29,7 @@ export async function fetchMyMemoryMapEntries(
   client: SupabaseClient,
   userId: string
 ): Promise<MyMemoryMapEntry[]> {
-  const { isAdmin: isAppAdmin } = await fetchUserIsAdmin(client, userId)
+  const { isAdmin: isAppAdmin } = await fetchMemoryMapPlatformAdmin(client, userId)
   const byMapId = new Map<string, MyMemoryMapEntry>()
 
   const { data: rpcRows } = await client.rpc('list_accessible_memory_maps')
@@ -113,7 +113,7 @@ export async function userHasAdminDashboardAccess(client: SupabaseClient): Promi
   const userId = sessionData.session?.user?.id
   if (!userId) return false
 
-  const { isAdmin } = await fetchUserIsAdmin(client, userId)
+  const { isAdmin } = await fetchMemoryMapPlatformAdmin(client, userId)
   if (isAdmin) return true
 
   const { data } = await client.rpc('list_accessible_memory_maps')

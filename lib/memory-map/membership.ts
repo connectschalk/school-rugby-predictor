@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { fetchUserIsAdmin } from '@/lib/admin-access'
+import { fetchMemoryMapPlatformAdmin } from '@/lib/admin-access'
 import { resolveMemoryMapPermissions, type MemoryMapPermissions } from '@/lib/memory-map/permissions'
 import type { MemberRole, MemberStatus, MemoryMapMember } from '@/lib/memory-map/types'
 
@@ -84,7 +84,7 @@ export async function fetchContributorAccess(
   }
 
   const [{ isAdmin: isAppAdmin }, mapMeta, { data: memberRow }] = await Promise.all([
-    fetchUserIsAdmin(client, userId),
+    fetchMemoryMapPlatformAdmin(client, userId),
     fetchMapMeta(client, memoryMapId),
     client
       .from('memory_map_members')

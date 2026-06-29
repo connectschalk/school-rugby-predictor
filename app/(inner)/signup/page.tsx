@@ -225,9 +225,9 @@ function SignupPageContent() {
     }
 
     if (data.session && data.user) {
-      const { error: profErr } = await supabase.from('user_profiles').upsert(
+      const { error: profErr } = await supabase.from('predictor_profiles').upsert(
         {
-          id: data.user.id,
+          user_id: data.user.id,
           first_name: first,
           surname: last,
           display_name: name,
@@ -235,7 +235,7 @@ function SignupPageContent() {
           avatar_colour: colourNorm,
           avatar_url: null,
         },
-        { onConflict: 'id' }
+        { onConflict: 'user_id' }
       )
       if (profErr) {
         setError(

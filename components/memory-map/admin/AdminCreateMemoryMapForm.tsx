@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { fetchUserIsAdmin } from '@/lib/admin-access'
+import { fetchMemoryMapPlatformAdmin } from '@/lib/admin-access'
 import {
   CREATE_MAP_EXAMPLES,
   ORG_TYPE_LABELS,
@@ -84,7 +84,10 @@ export default function AdminCreateMemoryMapForm() {
     setError('')
     setBusy(true)
 
-    const { isAdmin } = await fetchUserIsAdmin(supabase, (await supabase.auth.getSession()).data.session?.user?.id ?? '')
+    const { isAdmin } = await fetchMemoryMapPlatformAdmin(
+      supabase,
+      (await supabase.auth.getSession()).data.session?.user?.id ?? ''
+    )
     if (!isAdmin) {
       setError('Only platform admins can create Memory Maps.')
       setBusy(false)
