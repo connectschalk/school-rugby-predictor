@@ -19,6 +19,14 @@ Under **Authentication → SMTP Settings** (or **Project Settings → Auth**), s
 
 Avoid legacy names such as **School Predictor** or **School Rugby Predictor**.
 
+## Shared email logo (public URL)
+
+Auth email templates can embed the NextPlay mark from:
+
+**https://www.thenextplay.co.za/nextplay-email-logo.png**
+
+File in repo: `public/nextplay-email-logo.png` (copied from `nextplay-predictor-logo.png`). Memory Map confirm-signup may use the product logo at `/memory-map/default-memory-map-logo.png` instead; Predictor and generic templates use the shared email logo above.
+
 ## Site URL and redirect URLs (required)
 
 Set in **Authentication → URL configuration**:

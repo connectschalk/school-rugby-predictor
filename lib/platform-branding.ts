@@ -28,6 +28,9 @@ export function resolveProfileAvatarUrl(
 
 export const PLATFORM_PREDICTOR_MARK_SRC = '/nextplay-predictor-logo.png'
 
+/** NextPlay mark for Supabase Auth emails (confirm signup, reset). Served from `/public`. */
+export const NEXTPLAY_EMAIL_LOGO_SRC = '/nextplay-email-logo.png'
+
 /** White wordmark on dark — landing hero. */
 export const PLATFORM_LOGO_LANDING_DARK_SRC = '/nextplay-predictor-landing-dark.png'
 

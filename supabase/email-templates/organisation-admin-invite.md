@@ -16,4 +16,6 @@ Click the link below to create your password and access the admin area.
 
 **Link:** use `buildOrganisationAdminInviteUrl(token)` from `lib/memory-map/organisations.ts`.
 
+**Logo (optional in email body):** `https://www.thenextplay.co.za/nextplay-email-logo.png`
+
 Until automated email is enabled, platform admins can copy the invite link from the organisation admin screen.

@@ -30,6 +30,9 @@ node -e "const t=require('./lib/auth-email-templates.ts'); console.log(t.supabas
 
 Or paste the template below (logo URLs use production site `https://www.thenextplay.co.za` — update if your `NEXT_PUBLIC_SITE_URL` differs):
 
+- Shared NextPlay email logo: `https://www.thenextplay.co.za/nextplay-email-logo.png`
+- Memory Map product logo: `https://www.thenextplay.co.za/memory-map/default-memory-map-logo.png`
+
 ```html
 {{ if eq .Data.signup_product "memory_map" }}
 <h2 style="margin:0 0 12px;font-family:system-ui,sans-serif;font-size:20px;color:#f8fafc;text-align:center;">Welcome to NextPlay Memory Map</h2>
@@ -54,7 +57,7 @@ Or paste the template below (logo URLs use production site `https://www.thenextp
 {{ else }}
 <h2 style="margin:0 0 12px;font-family:system-ui,sans-serif;font-size:20px;color:#111318;text-align:center;">Welcome to NextPlay Predictor</h2>
 <p style="margin:0 0 16px;font-family:system-ui,sans-serif;font-size:15px;line-height:1.55;color:#374151;text-align:center;">
-  <img src="https://www.thenextplay.co.za/nextplay-predictor-logo.png" alt="NextPlay Predictor" width="120" height="120" style="display:block;margin:0 auto 20px;height:56px;width:auto;" />
+  <img src="https://www.thenextplay.co.za/nextplay-email-logo.png" alt="NextPlay Predictor" width="120" height="120" style="display:block;margin:0 auto 20px;height:56px;width:auto;" />
 </p>
 <p style="margin:0 0 16px;font-family:system-ui,sans-serif;font-size:15px;line-height:1.55;color:#374151;">
   Thanks for joining <strong>NextPlay Predictor</strong>. Your <strong>display name</strong> and <strong>letter avatar</strong> are shown publicly on leaderboards and match banter — not your email.

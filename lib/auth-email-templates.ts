@@ -1,5 +1,5 @@
 import { DEFAULT_MEMORY_MAP_LOGO_SRC } from '@/lib/memory-map/branding'
-import { PLATFORM_PREDICTOR_MARK_SRC } from '@/lib/platform-branding'
+import { NEXTPLAY_EMAIL_LOGO_SRC } from '@/lib/platform-branding'
 import { getPublicSiteUrl } from '@/lib/site-url'
 
 export const MEMORY_MAP_CONFIRM_SIGNUP_SUBJECT = 'Confirm your Memory Map account'
@@ -50,7 +50,7 @@ export function memoryMapConfirmSignupHtml(confirmationUrlPlaceholder = '{{ .Con
 
 /** Reference HTML for Predictor confirm-signup (Supabase uses `{{ .ConfirmationURL }}`). */
 export function predictorConfirmSignupHtml(confirmationUrlPlaceholder = '{{ .ConfirmationURL }}'): string {
-  const logoUrl = absoluteAsset(PLATFORM_PREDICTOR_MARK_SRC)
+  const logoUrl = absoluteAsset(NEXTPLAY_EMAIL_LOGO_SRC)
   return `<!DOCTYPE html>
 <html lang="en">
 <body style="margin:0;padding:0;background:#f8fafc;font-family:system-ui,-apple-system,sans-serif;">
@@ -83,7 +83,7 @@ export function predictorConfirmSignupHtml(confirmationUrlPlaceholder = '{{ .Con
  */
 export function supabaseConfirmSignupHtmlTemplate(): string {
   const mmLogo = absoluteAsset(DEFAULT_MEMORY_MAP_LOGO_SRC)
-  const predictorLogo = absoluteAsset(PLATFORM_PREDICTOR_MARK_SRC)
+  const predictorLogo = absoluteAsset(NEXTPLAY_EMAIL_LOGO_SRC)
   return `{{ if eq .Data.signup_product "memory_map" }}
 <h2 style="margin:0 0 12px;font-family:system-ui,sans-serif;font-size:20px;color:#f8fafc;text-align:center;">Welcome to NextPlay Memory Map</h2>
 <p style="margin:0 0 16px;font-family:system-ui,sans-serif;font-size:15px;line-height:1.55;color:#cbd5e1;text-align:center;">
