@@ -12,6 +12,7 @@ import {
   parseMemoryMapAdminIdFromPath,
   parseMemoryMapSlugFromPath,
 } from '@/lib/memory-map/auth-routes'
+import { fetchAdminOrganisationsForUser, organisationDashboardPath } from '@/lib/memory-map/organisations'
 import { fetchContributorAccess } from '@/lib/memory-map/membership'
 import {
   roleBadgeForGlobalAccess,
@@ -45,6 +46,7 @@ export default function MemoryMapTopMenu() {
   const [profile, setProfile] = useState<MenuProfile>({ displayName: null, email: null })
   const [roleBadge, setRoleBadge] = useState<MemoryMapRoleBadge | null>(null)
   const [showAdminLink, setShowAdminLink] = useState(false)
+  const [organisationDashboardHref, setOrganisationDashboardHref] = useState<string | null>(null)
 
   const loadMenuState = useCallback(async () => {
     setLoading(true)
@@ -56,6 +58,7 @@ export default function MemoryMapTopMenu() {
       setProfile({ displayName: null, email: null })
       setRoleBadge(null)
       setShowAdminLink(false)
+      setOrganisationDashboardHref(null)
       setLoading(false)
       return
     }
@@ -66,9 +69,10 @@ export default function MemoryMapTopMenu() {
       email: user.email ?? null,
     })
 
-    const [{ profile: mmProfile }, { isAdmin: isAppAdmin }] = await Promise.all([
+    const [{ profile: mmProfile }, { isAdmin: isAppAdmin }, adminOrgsRes] = await Promise.all([
       fetchMemoryMapProfile(supabase, user.id),
       fetchMemoryMapPlatformAdmin(supabase, user.id),
+      fetchAdminOrganisationsForUser(supabase, user.id),
     ])
 
     const menuName = mmProfile?.display_name?.trim() || mmProfile?.contributor_name?.trim()
@@ -87,17 +91,7 @@ export default function MemoryMapTopMenu() {
       setRoleBadge(roleBadgeForMapAccess(access))
     } else {
       const hasAdminMaps = await userHasAdminDashboardAccess(supabase)
-      let isOrgAdmin = false
-      if (!isAppAdmin) {
-        const { data: orgRows } = await supabase
-          .from('organisation_members')
-          .select('id')
-          .eq('user_id', user.id)
-          .eq('status', 'approved')
-          .eq('role', 'admin')
-          .limit(1)
-        isOrgAdmin = (orgRows?.length ?? 0) > 0
-      }
+      const isOrgAdmin = !isAppAdmin && (adminOrgsRes.organisations.length > 0)
       setRoleBadge(
         roleBadgeForGlobalAccess({
           isAppAdmin,
@@ -107,7 +101,11 @@ export default function MemoryMapTopMenu() {
       )
     }
 
-    setShowAdminLink(await userHasAdminDashboardAccess(supabase))
+    setShowAdminLink(isAppAdmin)
+    const primaryOrg = adminOrgsRes.organisations[0]
+    setOrganisationDashboardHref(
+      !isAppAdmin && primaryOrg ? organisationDashboardPath(primaryOrg.slug) : null
+    )
     setLoading(false)
   }, [adminMapId, mapSlug])
 
@@ -200,6 +198,11 @@ export default function MemoryMapTopMenu() {
                     {addMemoryHref ? (
                       <MenuLink href={addMemoryHref} onClick={() => setOpen(false)}>
                         Add a memory
+                      </MenuLink>
+                    ) : null}
+                    {organisationDashboardHref ? (
+                      <MenuLink href={organisationDashboardHref} onClick={() => setOpen(false)}>
+                        Organisation dashboard
                       </MenuLink>
                     ) : null}
                     {showAdminLink ? (

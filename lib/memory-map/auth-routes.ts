@@ -43,7 +43,7 @@ export function parseMemoryMapSlugFromPath(pathname: string): string | null {
   const parts = pathname.split('/').filter(Boolean)
   if (parts[0] !== 'memory-map' || !parts[1]) return null
   const segment = parts[1]
-  if (['admin', 'account', 'find', 'my', 'auth'].includes(segment)) return null
+  if (['admin', 'account', 'find', 'invite', 'my', 'auth', 'orgs'].includes(segment)) return null
   return segment
 }
 

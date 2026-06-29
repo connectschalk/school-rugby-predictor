@@ -17,6 +17,7 @@ import {
   isDisplayNamePolicyDbError,
   validateDisplayName,
 } from '@/lib/display-name-filter'
+import { signupProductMetadata } from '@/lib/auth-email'
 import { supabase } from '@/lib/supabase'
 
 const DISPLAY_MAX = 60
@@ -208,6 +209,7 @@ function SignupPageContent() {
          */
         emailRedirectTo: `${origin}/auth/callback?next=${encodeURIComponent('/login?confirmed=1')}`,
         data: {
+          ...signupProductMetadata('predictor'),
           first_name: first,
           surname: last,
           display_name: name,

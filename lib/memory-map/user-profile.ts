@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { User } from '@supabase/supabase-js'
+import { isMemoryMapSignup } from '@/lib/auth-email'
 
 export type MemoryMapProfileRow = {
   user_id: string
@@ -102,6 +103,48 @@ export async function ensureMemoryMapProfileExists(
   }
 
   return { error: null, created: true }
+}
+
+function metaString(meta: Record<string, unknown>, key: string): string | null {
+  const v = meta[key]
+  if (typeof v !== 'string') return null
+  const t = v.trim()
+  return t.length ? t : null
+}
+
+/** After email confirmation for Memory Map signups — writes `memory_map_profiles` only. */
+export async function upsertMemoryMapProfileFromSignupMetadata(
+  client: SupabaseClient,
+  user: User
+): Promise<{ error: Error | null }> {
+  if (!isMemoryMapSignup(user)) return { error: null }
+
+  const { data: existing, error: readErr } = await client
+    .from(TABLE)
+    .select('user_id')
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  if (readErr) return { error: new Error(readErr.message) }
+  if (existing) return { error: null }
+
+  const meta = (user.user_metadata ?? {}) as Record<string, unknown>
+  const displayName =
+    metaString(meta, 'memory_map_display_name') ??
+    metaString(meta, 'display_name') ??
+    emailUsernameFallback(user)
+  const contributorName =
+    metaString(meta, 'memory_map_contributor_name') ?? displayName
+
+  const { error } = await client.from(TABLE).insert({
+    user_id: user.id,
+    display_name: displayName,
+    contributor_name: contributorName,
+    avatar_url: null,
+  })
+
+  if (error && error.code !== '23505') return { error: new Error(error.message) }
+  return { error: null }
 }
 
 export type MemoryMapProfileUpdate = {

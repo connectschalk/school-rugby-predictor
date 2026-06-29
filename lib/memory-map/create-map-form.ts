@@ -19,7 +19,23 @@ export const ORG_TYPE_LABELS: Record<string, string> = {
   venue: 'Venue',
   club: 'Club',
   community: 'Community',
+  place: 'Place',
+  family: 'Family',
+  organisation: 'Organisation',
+  other: 'Other',
 }
+
+export const ORG_TYPE_OPTIONS = [
+  'school',
+  'event',
+  'place',
+  'family',
+  'organisation',
+  'venue',
+  'club',
+  'community',
+  'other',
+] as const
 
 export const CREATE_MAP_EXAMPLES = [
   { organisation: 'Boishaai', memoryMap: 'Boishaai Memory Map' },

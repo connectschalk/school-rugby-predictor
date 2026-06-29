@@ -96,12 +96,20 @@ export default function MemoryMapAdminIndexPanel() {
           ) : null}
 
           {isAppAdmin ? (
-            <Link
-              href="/memory-map/admin/create"
-              className="mm-btn-primary mt-8 inline-block rounded-2xl px-5 py-4 text-center text-sm font-black"
-            >
-              Create new Memory Map
-            </Link>
+            <div className="mt-8 flex flex-col gap-2 sm:flex-row">
+              <Link
+                href="/memory-map/admin/create"
+                className="mm-btn-primary inline-block rounded-2xl px-5 py-4 text-center text-sm font-black"
+              >
+                Create new Memory Map
+              </Link>
+              <Link
+                href="/memory-map/admin/organisations"
+                className="mm-btn-secondary inline-block rounded-2xl px-5 py-4 text-center text-sm font-bold"
+              >
+                Manage organisations
+              </Link>
+            </div>
           ) : (
             <p className="mm-muted mt-8 text-xs">
               Creating new organisations and Memory Maps is limited to platform admins.

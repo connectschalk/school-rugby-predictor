@@ -8,6 +8,7 @@ import {
   isDisplayNamePolicyDbError,
   validateDisplayName,
 } from '@/lib/display-name-filter'
+import { signupProductMetadata } from '@/lib/auth-email'
 import { ensureMemoryMapProfileExists } from '@/lib/memory-map/user-profile'
 import {
   buildMemoryMapSignInHref,
@@ -77,6 +78,7 @@ function SignUpFormInner() {
       options: {
         emailRedirectTo: `${origin}/auth/callback?next=${encodeURIComponent(`/memory-map/auth/sign-in?next=${encodeURIComponent(returnPath)}`)}`,
         data: {
+          ...signupProductMetadata('memory_map'),
           display_name: name,
           full_name: name,
           memory_map_display_name: name,
@@ -120,7 +122,8 @@ function SignUpFormInner() {
       <>
         <h1 className="text-xl font-black">Check your email</h1>
         <p className="mm-muted mt-3 text-sm leading-relaxed">
-          We sent a confirmation link to <span className="text-white">{email.trim()}</span>. Confirm your account, then sign in to continue.
+          We sent a confirmation link to <span className="text-white">{email.trim()}</span>. Open it to verify your
+          Memory Map account, then sign in to continue.
         </p>
         <Link
           href={buildMemoryMapSignInHref(returnPath)}

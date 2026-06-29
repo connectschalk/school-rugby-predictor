@@ -4,17 +4,14 @@
  * Email confirmation landing (PKCE `?code=` or implicit hash session).
  *
  * Supabase "Confirm signup" email must keep the built-in link as {{ .ConfirmationURL }}.
- * signUp `options.emailRedirectTo` should point here, e.g.:
- *   `${origin}/auth/callback?next=${encodeURIComponent('/login?confirmed=1')}`
- * so after verify, Supabase redirects to this route with a session/code, we sync `user_profiles`
- * from `auth.users.raw_user_meta_data` (set via signUp `options.data`), then sign out so the user
- * signs in with password on /login.
- *
- * Dashboard: Authentication → URL configuration → add this path to Redirect URLs allow list.
+ * Product-specific copy/branding is set in Supabase email templates using `.Data.signup_product`
+ * (see `supabase/email-templates/confirm-signup.md`).
  */
 
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { isMemoryMapSignup } from '@/lib/auth-email'
+import { upsertMemoryMapProfileFromSignupMetadata } from '@/lib/memory-map/user-profile'
 import { supabase } from '@/lib/supabase'
 import { stashPostConfirmProfilePreview, upsertProfileFromSignupMetadata } from '@/lib/user-profile-metadata'
 
@@ -28,6 +25,15 @@ function safeLoginConfirmedPath(nextParam: string | null): string {
     /* ignore */
   }
   return fallback
+}
+
+async function syncProfileAfterEmailConfirm(user: import('@supabase/supabase-js').User): Promise<Error | null> {
+  if (isMemoryMapSignup(user)) {
+    const { error } = await upsertMemoryMapProfileFromSignupMetadata(supabase, user)
+    return error
+  }
+  const { error } = await upsertProfileFromSignupMetadata(supabase, user)
+  return error
 }
 
 function AuthCallbackInner() {
@@ -55,11 +61,13 @@ function AuthCallbackInner() {
           router.replace('/login')
           return
         }
-        const { error: upErr } = await upsertProfileFromSignupMetadata(supabase, data.session.user)
+        const upErr = await syncProfileAfterEmailConfirm(data.session.user)
         if (upErr) {
           console.error('[auth/callback] profile upsert:', upErr.message)
         }
-        stashPostConfirmProfilePreview(data.session.user)
+        if (!isMemoryMapSignup(data.session.user)) {
+          stashPostConfirmProfilePreview(data.session.user)
+        }
         await supabase.auth.signOut()
         router.replace(dest)
         return
@@ -70,11 +78,13 @@ function AuthCallbackInner() {
       } = await supabase.auth.getSession()
       if (session?.user) {
         setHint('Saving your profile…')
-        const { error: upErr } = await upsertProfileFromSignupMetadata(supabase, session.user)
+        const upErr = await syncProfileAfterEmailConfirm(session.user)
         if (upErr) {
           console.error('[auth/callback] profile upsert:', upErr.message)
         }
-        stashPostConfirmProfilePreview(session.user)
+        if (!isMemoryMapSignup(session.user)) {
+          stashPostConfirmProfilePreview(session.user)
+        }
         await supabase.auth.signOut()
         router.replace(dest)
         return
