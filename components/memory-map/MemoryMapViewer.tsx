@@ -9,7 +9,7 @@ import { ensureDefaultMemoryArea } from '@/lib/memory-map/mutations'
 import { shouldShowAreaSelector } from '@/lib/memory-map/default-area'
 import { useMemoryMapGeolocation } from '@/lib/memory-map/use-memory-map-geolocation'
 import type { MemoryMapBundle, MemoryPin } from '@/lib/memory-map/types'
-import { memoryMapThemeVars } from '@/lib/memory-map/theme'
+import { memoryMapThemeVars, mmSelectedAreaStyle, resolvePublicMemoryMapTheme } from '@/lib/memory-map/theme'
 import { areaMapTypeLabel, matchesYearFilter, type YearFilterKey } from '@/lib/memory-map/utils'
 import { getImageMapInitialFocus, getMapInitialView } from '@/lib/memory-map/map-starting-point'
 import MemoryMapHeader from '@/components/memory-map/MemoryMapHeader'
@@ -34,6 +34,7 @@ export default function MemoryMapViewer({ bundle, initialAreaId, initialPinId }:
   const [resolvedBundle, setResolvedBundle] = useState(bundle)
   const [ensuringAreas, setEnsuringAreas] = useState(false)
   const { map, areas, categories, pins, stories } = resolvedBundle
+  const theme = useMemo(() => resolvePublicMemoryMapTheme(map), [map])
   const activeAreas = areas.filter((a) => a.is_active)
   const showAreaSelector = shouldShowAreaSelector(areas)
   const defaultAreaId =
@@ -141,7 +142,7 @@ export default function MemoryMapViewer({ bundle, initialAreaId, initialPinId }:
   }, [geo.status, geo.location])
 
   return (
-    <div style={memoryMapThemeVars(map)}>
+    <div className="mm-root" style={memoryMapThemeVars(map)}>
       <MemoryMapHeader
         map={map}
         mapSlug={map.slug}
@@ -180,8 +181,9 @@ export default function MemoryMapViewer({ bundle, initialAreaId, initialPinId }:
                   type="button"
                   onClick={() => selectArea(area.id)}
                   className={`min-h-[44px] shrink-0 rounded-2xl border px-4 py-2.5 text-left text-sm ${
-                    selected ? 'mm-border-accent mm-bg-accent-10' : 'border-white/10 bg-white/5'
+                    selected ? 'mm-bg-accent-10' : 'border-white/10 bg-white/5'
                   }`}
+                  style={selected ? mmSelectedAreaStyle(theme) : undefined}
                 >
                   <p className="font-bold leading-tight">{area.name}</p>
                   <p className="mm-muted mt-0.5 text-[11px]">{areaMapTypeLabel(area)} · {count} pins</p>
@@ -209,7 +211,9 @@ export default function MemoryMapViewer({ bundle, initialAreaId, initialPinId }:
                       type="button"
                       onClick={() => geo.locate()}
                       disabled={geo.status === 'loading'}
-                      className="mm-btn-secondary rounded-full px-2.5 py-1 text-[10px] font-bold"
+                      className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                        geo.status === 'success' ? 'mm-btn-primary' : 'mm-btn-secondary'
+                      }`}
                     >
                       {geo.status === 'loading' ? 'Finding location…' : 'Show my location'}
                     </button>
