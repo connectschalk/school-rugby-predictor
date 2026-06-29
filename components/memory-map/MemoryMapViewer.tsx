@@ -297,7 +297,7 @@ export default function MemoryMapViewer({ bundle, initialAreaId, initialPinId }:
         onClose={() => setActivePin(null)}
       />
 
-      <MapOnboardingOverlay mapSlug={map.slug} />
+      <MapOnboardingOverlay mapSlug={map.slug} map={map} />
     </div>
   )
 }
