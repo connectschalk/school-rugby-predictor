@@ -1,6 +1,8 @@
-# Organisation admin invite email (manual / future automation)
+# Organisation admin invite email (not automated)
 
-When email automation is wired, use this copy for organisation admin invites.
+**The app does not send organisation admin invite emails.** Platform admins create an invite link in the UI (`create_organisation_admin_invite` RPC) and copy it manually.
+
+When email automation is wired (e.g. Resend API — see `app/api/admin/notify-new-games/route.ts` for a stub), use this copy:
 
 **Subject:** You've been invited to manage a Memory Map
 

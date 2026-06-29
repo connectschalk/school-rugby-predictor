@@ -394,6 +394,7 @@ export async function createMemoryMapOrganisation(
   return { organisationId: data == null ? null : String(data), error: null }
 }
 
+/** Creates invite row + token via RPC. Does not send email — use `buildOrganisationAdminInviteUrl(token)` to share the link. */
 export async function inviteOrganisationAdmin(
   client: SupabaseClient,
   organisationId: string,

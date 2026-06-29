@@ -26,7 +26,7 @@ export default function MemoryMapAdminOrganisationsPanel() {
       <p className="mm-text-accent text-xs font-bold uppercase tracking-[0.25em]">Platform admin</p>
       <h1 className="mt-3 text-2xl font-black">Organisations</h1>
       <p className="mm-muted mt-2 text-sm">
-        Create schools, events and places, then invite organisation admins by email.
+        Create schools, events and places, then create invite links for organisation admins.
       </p>
 
       <Link

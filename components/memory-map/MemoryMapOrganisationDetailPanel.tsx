@@ -80,7 +80,7 @@ export default function MemoryMapOrganisationDetailPanel({
     void load()
   }, [load])
 
-  async function onSendInvite(e: React.FormEvent) {
+  async function onCreateInviteLink(e: React.FormEvent) {
     e.preventDefault()
     setInviteBusy(true)
     setError('')
@@ -92,7 +92,7 @@ export default function MemoryMapOrganisationDetailPanel({
     })
     setInviteBusy(false)
     if (inviteErr || !token) {
-      setError(inviteErr ?? 'Could not create invite.')
+      setError(inviteErr ?? 'Could not create invite link.')
       return
     }
     setLastInviteLink(buildOrganisationAdminInviteUrl(token))
@@ -237,9 +237,10 @@ export default function MemoryMapOrganisationDetailPanel({
         <section className="mt-10">
           <h2 className="text-lg font-black">Invite organisation admin</h2>
           <p className="mm-muted mt-1 text-sm">
-            They will receive organisation admin access only — not platform admin or Predictor access.
+            Create an invite link for the email address below. No email is sent automatically — copy the link and
+            share it with them. They receive organisation admin access only (not platform admin or Predictor).
           </p>
-          <form onSubmit={(e) => void onSendInvite(e)} className="mt-4 space-y-3">
+          <form onSubmit={(e) => void onCreateInviteLink(e)} className="mt-4 space-y-3">
             <input
               type="email"
               required
@@ -262,14 +263,17 @@ export default function MemoryMapOrganisationDetailPanel({
               className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-3 text-sm"
             />
             <button type="submit" disabled={inviteBusy} className="mm-btn-primary w-full rounded-xl py-3 text-sm font-black disabled:opacity-50">
-              {inviteBusy ? 'Sending…' : 'Send invite'}
+              {inviteBusy ? 'Creating…' : 'Create invite link'}
             </button>
           </form>
 
           {lastInviteLink ? (
             <div className="mm-card mt-4 rounded-xl p-4 text-sm">
               <p className="font-bold">Invite link created</p>
-              <p className="mm-muted mt-1 break-all text-xs">{lastInviteLink}</p>
+              <p className="mm-muted mt-1 text-xs leading-relaxed">
+                Copy and send this link to the admin.
+              </p>
+              <p className="mm-muted mt-2 break-all font-mono text-[11px] leading-snug">{lastInviteLink}</p>
               <button type="button" onClick={() => void onCopyLink(lastInviteLink)} className="mm-btn-secondary mt-3 rounded-lg px-3 py-1.5 text-xs font-bold">
                 {copied ? 'Copied!' : 'Copy invite link'}
               </button>
@@ -296,9 +300,12 @@ export default function MemoryMapOrganisationDetailPanel({
                     ) : null}
                   </div>
                   {invite.status === 'pending' ? (
-                    <button type="button" onClick={() => void onCopyLink(link)} className="mm-btn-secondary mt-2 rounded-lg px-3 py-1 text-xs font-bold">
-                      Copy link
-                    </button>
+                    <>
+                      <p className="mm-muted mt-2 break-all font-mono text-[11px] leading-snug">{link}</p>
+                      <button type="button" onClick={() => void onCopyLink(link)} className="mm-btn-secondary mt-2 rounded-lg px-3 py-1 text-xs font-bold">
+                        Copy invite link
+                      </button>
+                    </>
                   ) : null}
                 </li>
               )
