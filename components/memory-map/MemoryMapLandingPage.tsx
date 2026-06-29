@@ -8,6 +8,7 @@ import type { MemoryMap, MemoryMapBundle } from '@/lib/memory-map/types'
 import { memoryMapThemeVars } from '@/lib/memory-map/theme'
 import { bundleStats } from '@/lib/memory-map/utils'
 import { logMemoryMapPublicLink, memoryMapPublicPath } from '@/lib/memory-map/public-links'
+import MemoryMapLogo from '@/components/memory-map/MemoryMapLogo'
 import MemoryMapSponsorStrip from '@/components/memory-map/MemoryMapSponsorStrip'
 
 type Props = {
@@ -51,13 +52,8 @@ export default function MemoryMapLandingPage({ map, mapSlug, bundle, fromQr }: P
       <div className="mm-safe-top relative mx-auto flex min-h-dvh max-w-lg flex-col px-5 pb-8">
         <section className="flex min-h-[58dvh] flex-col justify-end">
           <div className="flex items-center gap-4">
-            <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border-2 border-white/20 bg-white/10 shadow-lg backdrop-blur-sm">
-              {map.profile_image_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={map.profile_image_url} alt="" className="h-full w-full object-cover" />
-              ) : (
-                <span className="text-2xl font-black mm-text-accent">NP</span>
-              )}
+            <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border-2 border-white/20 bg-white/10 p-2 shadow-lg backdrop-blur-sm">
+              <MemoryMapLogo map={map} className="h-full w-full" />
             </div>
             <div className="min-w-0">
               <p className="text-[11px] font-bold uppercase tracking-[0.2em] mm-text-accent">Memory Map</p>

@@ -1,15 +1,33 @@
 import type { Metadata } from 'next'
+import {
+  absoluteMemoryMapShareImageUrl,
+  DEFAULT_MEMORY_MAP_LOGO_HEIGHT,
+  DEFAULT_MEMORY_MAP_LOGO_WIDTH,
+  DEFAULT_MEMORY_MAP_SHARE_DESCRIPTION,
+  hasCustomMemoryMapLogo,
+} from '@/lib/memory-map/branding'
 import type { MemoryMap } from '@/lib/memory-map/types'
 import { getPublicSiteUrl } from '@/lib/site-url'
 
 export function buildMemoryMapMetadata(map: MemoryMap): Metadata {
   const title = `${map.title} · NextPlay Memory Map`
   const description =
-    map.description?.trim() ||
-    map.tagline?.trim() ||
-    'Explore the stories that happened here on the NextPlay Memory Map.'
-  const ogImage = map.landing_background_url ?? map.profile_image_url ?? undefined
+    map.description?.trim() || map.tagline?.trim() || DEFAULT_MEMORY_MAP_SHARE_DESCRIPTION
+  const shareImage = absoluteMemoryMapShareImageUrl(map)
+  const customLogo = hasCustomMemoryMapLogo(map)
   const url = `${getPublicSiteUrl()}/memory-map/${map.slug}`
+
+  const ogImage = {
+    url: shareImage,
+    alt: `${map.title} Memory Map`,
+    ...(customLogo
+      ? {}
+      : {
+          width: DEFAULT_MEMORY_MAP_LOGO_WIDTH,
+          height: DEFAULT_MEMORY_MAP_LOGO_HEIGHT,
+          type: 'image/png' as const,
+        }),
+  }
 
   return {
     title,
@@ -20,13 +38,13 @@ export function buildMemoryMapMetadata(map: MemoryMap): Metadata {
       url,
       type: 'website',
       siteName: 'NextPlay Memory Map',
-      ...(ogImage ? { images: [{ url: ogImage, alt: map.title }] } : {}),
+      images: [ogImage],
     },
     twitter: {
-      card: ogImage ? 'summary_large_image' : 'summary',
+      card: 'summary_large_image',
       title,
       description,
-      ...(ogImage ? { images: [ogImage] } : {}),
+      images: [shareImage],
     },
     robots: map.visibility === 'public' ? { index: true, follow: true } : { index: false, follow: false },
   }

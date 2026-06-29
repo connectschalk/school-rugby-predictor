@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
+import { DEFAULT_MEMORY_MAP_LOGO_SRC } from '@/lib/memory-map/branding'
 import {
   filterDirectoryEntries,
   organisationTypeLabel,
@@ -49,17 +50,15 @@ function DirectoryCard({ entry }: { entry: MemoryMapDirectoryEntry }) {
           </span>
         ) : null}
         <div className="absolute bottom-3 left-3 flex items-center gap-2">
-          <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl border border-white/20 bg-black/40">
-            {entry.profileImageUrl || entry.organisationLogoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={entry.profileImageUrl ?? entry.organisationLogoUrl ?? ''}
-                alt=""
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              <span className="mm-text-accent text-xs font-black">NP</span>
-            )}
+          <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl border border-white/20 bg-black/40 p-1">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={entry.profileImageUrl ?? entry.organisationLogoUrl ?? DEFAULT_MEMORY_MAP_LOGO_SRC}
+              alt=""
+              className={`h-full w-full ${
+                entry.profileImageUrl || entry.organisationLogoUrl ? 'object-cover' : 'object-contain'
+              }`}
+            />
           </div>
         </div>
       </div>

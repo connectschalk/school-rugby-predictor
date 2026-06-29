@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import QRCode from 'qrcode'
 import { absoluteMemoryMapUrl } from '@/lib/site-url'
 import { logMemoryMapPublicLink } from '@/lib/memory-map/public-links'
+import MemoryMapLogo from '@/components/memory-map/MemoryMapLogo'
 import type { MemoryMap } from '@/lib/memory-map/types'
 
 type Props = {
@@ -101,12 +102,7 @@ export default function ShareQrPanel({ map }: Props) {
         <div className="mm-poster mm-share-a4 mm-card overflow-hidden rounded-2xl">
           <div className="bg-gradient-to-b from-[#1a2332] to-[#05080d] p-8 text-center print:bg-white print:text-black">
             <div className="flex flex-col items-center gap-4">
-              {map.profile_image_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={map.profile_image_url} alt="" className="h-16 w-16 rounded-2xl object-cover border border-white/20" />
-              ) : (
-                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/10 text-xl font-black mm-text-accent">NP</div>
-              )}
+              <MemoryMapLogo map={map} className="h-16 w-16 rounded-2xl border border-white/20 bg-white p-1" />
               <div>
                 <p className="text-xs font-bold uppercase tracking-wider mm-text-accent print:text-gray-600">NextPlay Memory Map</p>
                 <h2 className="text-2xl font-black">{map.title}</h2>
@@ -142,10 +138,7 @@ export default function ShareQrPanel({ map }: Props) {
             <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
             <div className="relative z-10">
               <div className="flex items-center gap-3">
-                {map.profile_image_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={map.profile_image_url} alt="" className="h-12 w-12 rounded-xl object-cover border border-white/20" />
-                ) : null}
+                <MemoryMapLogo map={map} className="h-12 w-12 rounded-xl border border-white/20 bg-white p-1" />
                 <div>
                   <p className="text-[10px] font-bold uppercase mm-text-accent">Memory Map</p>
                   <p className="text-lg font-black leading-tight">{map.title}</p>

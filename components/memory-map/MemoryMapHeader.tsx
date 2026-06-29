@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import MemoryMapLogo from '@/components/memory-map/MemoryMapLogo'
 import type { MemoryMap } from '@/lib/memory-map/types'
 
 type Props = {
@@ -24,10 +25,7 @@ export default function MemoryMapHeader({ map, mapSlug, areaName, backHref, righ
         <p className="truncate text-sm font-black">{map.title}</p>
         {areaName ? <p className="mm-muted truncate text-xs">{areaName}</p> : null}
       </div>
-      {map.profile_image_url ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={map.profile_image_url} alt="" className="h-8 w-8 rounded-lg object-cover" />
-      ) : null}
+      <MemoryMapLogo map={map} className="h-8 w-8 rounded-lg bg-white/10 p-0.5" />
       {rightSlot}
     </header>
   )

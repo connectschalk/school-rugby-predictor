@@ -1,6 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { DEFAULT_MEMORY_MAP_LOGO_SRC } from './branding'
 import { buildMemoryMapMetadata } from './metadata'
 import type { MemoryMap } from './types'
+
+vi.mock('@/lib/site-url', () => ({
+  getPublicSiteUrl: () => 'https://www.thenextplay.co.za',
+}))
 
 const baseMap: MemoryMap = {
   id: 'map-1',
@@ -28,15 +33,34 @@ const baseMap: MemoryMap = {
 }
 
 describe('buildMemoryMapMetadata', () => {
-  it('sets title and open graph fields', () => {
+  it('sets title and open graph fields with custom logo', () => {
     const meta = buildMemoryMapMetadata(baseMap)
     expect(meta.title).toContain('Boishaai Memory Map')
     expect(meta.openGraph?.title).toContain('Boishaai Memory Map')
-    expect(meta.openGraph?.images?.[0]).toMatchObject({ url: baseMap.landing_background_url })
+    expect(meta.openGraph?.images?.[0]).toMatchObject({
+      url: 'https://example.com/profile.jpg',
+      alt: 'Boishaai Memory Map Memory Map',
+    })
+    expect(meta.twitter?.card).toBe('summary_large_image')
   })
 
-  it('uses profile image when no background', () => {
-    const meta = buildMemoryMapMetadata({ ...baseMap, landing_background_url: null })
-    expect(meta.openGraph?.images?.[0]).toMatchObject({ url: baseMap.profile_image_url })
+  it('uses default Memory Map logo when no custom logo is set', () => {
+    const meta = buildMemoryMapMetadata({
+      ...baseMap,
+      profile_image_url: null,
+      landing_background_url: 'https://example.com/bg.jpg',
+    })
+    expect(meta.openGraph?.images?.[0]).toMatchObject({
+      url: `https://www.thenextplay.co.za${DEFAULT_MEMORY_MAP_LOGO_SRC}`,
+      type: 'image/png',
+    })
+  })
+
+  it('prefers profile image over landing background for share image', () => {
+    const meta = buildMemoryMapMetadata(baseMap)
+    const imageUrl = Array.isArray(meta.openGraph?.images)
+      ? meta.openGraph.images[0]
+      : meta.openGraph?.images
+    expect(imageUrl).toMatchObject({ url: baseMap.profile_image_url })
   })
 })
