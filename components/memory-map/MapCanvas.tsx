@@ -8,6 +8,7 @@ import {
   imagePercentToStylePosition,
 } from '@/lib/memory-map/map-placement'
 import MemoryPinMarker from '@/components/memory-map/MemoryPinMarker'
+import type { GeoBaseLayer } from '@/lib/memory-map/geo-tile-layers'
 import GeoMapCanvas from '@/components/memory-map/GeoMapCanvas'
 
 type Props = {
@@ -25,6 +26,7 @@ type Props = {
   imageFocus?: ImageFocus | null
   embedded?: boolean
   highlightedPinId?: string | null
+  baseLayer?: GeoBaseLayer
 }
 
 export default function MapCanvas({
@@ -42,6 +44,7 @@ export default function MapCanvas({
   imageFocus,
   embedded = false,
   highlightedPinId,
+  baseLayer = 'map',
 }: Props) {
   const isImage = mode === 'image' || area.map_type === 'image'
   const wrapperClass = embedded ? '' : 'mx-4 mb-4'
@@ -69,6 +72,7 @@ export default function MapCanvas({
           userLocation={userLocation}
           initialView={initialView}
           highlightedPinId={highlightedPinId}
+          baseLayer={baseLayer}
         />
       </div>
     )

@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { MemoryArea, MemoryPin, MapPlacement } from '@/lib/memory-map/types'
 import type { GeoView } from '@/lib/memory-map/map-starting-point'
+import type { GeoBaseLayer } from '@/lib/memory-map/geo-tile-layers'
+import { geoTileLayerConfig } from '@/lib/memory-map/geo-tile-layers'
 import MockGeoMapCanvas from '@/components/memory-map/MockGeoMapCanvas'
 
 type Props = {
@@ -17,6 +19,7 @@ type Props = {
   userLocation?: { lat: number; lng: number } | null
   initialView?: GeoView | null
   highlightedPinId?: string | null
+  baseLayer?: GeoBaseLayer
 }
 
 function pinIconHtml(colour: string, label: string, highlighted = false): string {
@@ -42,9 +45,11 @@ export default function GeoMapCanvas({
   userLocation,
   initialView,
   highlightedPinId,
+  baseLayer = 'map',
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<import('leaflet').Map | null>(null)
+  const tileLayerRef = useRef<import('leaflet').TileLayer | null>(null)
   const markersLayerRef = useRef<import('leaflet').LayerGroup | null>(null)
   const previewMarkerRef = useRef<import('leaflet').Marker | null>(null)
   const userLocationMarkerRef = useRef<import('leaflet').Marker | null>(null)
@@ -72,11 +77,6 @@ export default function GeoMapCanvas({
           attributionControl: true,
         }).setView([centreLat, centreLng], centreZoom)
 
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-          maxZoom: 19,
-        }).addTo(map)
-
         markersLayerRef.current = L.layerGroup().addTo(map)
         mapRef.current = map
 
@@ -98,6 +98,7 @@ export default function GeoMapCanvas({
 
     return () => {
       cancelled = true
+      tileLayerRef.current = null
       previewMarkerRef.current = null
       userLocationMarkerRef.current = null
       markersLayerRef.current = null
@@ -106,6 +107,23 @@ export default function GeoMapCanvas({
       setReady(false)
     }
   }, [area.id, centreLat, centreLng, centreZoom, useFallback, placementMode])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready) return
+
+    void import('leaflet').then((L) => {
+      if (tileLayerRef.current) {
+        map.removeLayer(tileLayerRef.current)
+        tileLayerRef.current = null
+      }
+      const config = geoTileLayerConfig(baseLayer)
+      tileLayerRef.current = L.tileLayer(config.url, {
+        attribution: config.attribution,
+        maxZoom: config.maxZoom,
+      }).addTo(map)
+    })
+  }, [baseLayer, ready])
 
   useEffect(() => {
     if (!containerRef.current || !mapRef.current || !ready) return

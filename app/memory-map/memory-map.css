@@ -211,6 +211,11 @@
   max-width: 480px;
 }
 
+/* Bottom sheet / modal safe-area spacing (plain CSS — no Tailwind arbitrary values). */
+.mm-modal-bottom-pad {
+  padding-bottom: calc(1rem + var(--mm-env-safe-bottom, 0px));
+}
+
 @media print {
   .mm-share-a4.mm-poster {
     width: 210mm;

@@ -1,7 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { MemoryMap, MemoryPin, MemoryStory } from '@/lib/memory-map/types'
 import { uniqueContributors, yearRangeForStories } from '@/lib/memory-map/utils'
 import StoryCard from '@/components/memory-map/StoryCard'
@@ -22,6 +23,11 @@ type Tab = 'stories' | 'about'
 export default function PinPreviewSheet({ open, pin, stories, mapSlug, map, areaName, onClose }: Props) {
   const [tab, setTab] = useState<Tab>('stories')
   const [expanded, setExpanded] = useState(false)
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   const sorted = useMemo(
     () => [...stories].sort((a, b) => b.event_year - a.event_year || a.title.localeCompare(b.title)),
@@ -42,16 +48,18 @@ export default function PinPreviewSheet({ open, pin, stories, mapSlug, map, area
   const yearRange = yearRangeForStories(stories)
   const contributors = uniqueContributors(stories)
 
-  if (!open || !pin) return null
+  if (!open || !pin || !mounted) return null
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60">
+  return createPortal(
+    <div className="fixed inset-0 z-50">
+      <div className="absolute inset-0 bg-black/60" aria-hidden />
       <button type="button" className="absolute inset-0" aria-label="Close" onClick={onClose} />
-      <div
-        className={`mm-card relative flex w-full max-w-lg flex-col rounded-t-3xl transition-all ${
-          expanded ? 'max-h-[92dvh]' : 'max-h-[70dvh]'
-        }`}
-      >
+      <div className="fixed inset-x-0 bottom-0 z-[51] box-border px-4 mm-modal-bottom-pad pointer-events-none md:px-6 md:pb-6">
+        <div
+          className={`mm-card pointer-events-auto relative mx-auto flex w-full max-w-md flex-col rounded-t-3xl shadow-xl transition-all md:max-w-lg ${
+            expanded ? 'max-h-[92dvh]' : 'max-h-[70dvh]'
+          }`}
+        >
         <div className="shrink-0 border-b border-white/10 p-5 pb-3">
           <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/25" />
           <div className="flex items-start justify-between gap-3">
@@ -142,7 +150,9 @@ export default function PinPreviewSheet({ open, pin, stories, mapSlug, map, area
             Add story to this pin
           </Link>
         </div>
+        </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

@@ -16,7 +16,9 @@ import MemoryMapHeader from '@/components/memory-map/MemoryMapHeader'
 import CategoryFilterPills from '@/components/memory-map/CategoryFilterPills'
 import YearFilterPills from '@/components/memory-map/YearFilterPills'
 import MapTypeToggle from '@/components/memory-map/MapTypeToggle'
+import type { GeoBaseLayer } from '@/lib/memory-map/geo-tile-layers'
 import MapCanvas from '@/components/memory-map/MapCanvas'
+import GeoBaseLayerToggle from '@/components/memory-map/GeoBaseLayerToggle'
 import PinPreviewSheet from '@/components/memory-map/PinPreviewSheet'
 import MemoryMapShell from '@/components/memory-map/MemoryMapShell'
 import MapOnboardingOverlay from '@/components/memory-map/MapOnboardingOverlay'
@@ -48,6 +50,7 @@ export default function MemoryMapViewer({ bundle, initialAreaId, initialPinId }:
   const [mapMode, setMapMode] = useState<'geo' | 'image'>(
     activeAreas.find((a) => a.id === defaultAreaId)?.map_type === 'image' ? 'image' : 'geo'
   )
+  const [geoBaseLayer, setGeoBaseLayer] = useState<GeoBaseLayer>('map')
   const [activePin, setActivePin] = useState<MemoryPin | null>(null)
   const geo = useMemoryMapGeolocation()
   const [locateTarget, setLocateTarget] = useState<{ lat: number; lng: number; zoom?: number } | null>(null)
@@ -197,6 +200,9 @@ export default function MemoryMapViewer({ bundle, initialAreaId, initialPinId }:
                   showGeo={selectedArea.map_type === 'geo'}
                   showImage={selectedArea.map_type === 'image'}
                 />
+                {mapMode === 'geo' ? (
+                  <GeoBaseLayerToggle layer={geoBaseLayer} onChange={setGeoBaseLayer} />
+                ) : null}
                 <div className="ml-auto flex gap-1.5">
                   {mapMode === 'geo' ? (
                     <button
@@ -261,6 +267,7 @@ export default function MemoryMapViewer({ bundle, initialAreaId, initialPinId }:
                 area={selectedArea}
                 pins={visiblePins}
                 mode={mapMode}
+                baseLayer={geoBaseLayer}
                 locateTarget={locateTarget}
                 userLocation={geo.status === 'success' ? geo.location : null}
                 initialView={geoInitialView}

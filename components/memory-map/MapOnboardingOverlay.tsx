@@ -40,7 +40,7 @@ export default function MapOnboardingOverlay({ mapSlug }: Props) {
 
   return createPortal(
     <div className="fixed inset-0 z-[60] bg-black/70">
-      <div className="fixed inset-x-0 bottom-0 z-[61] box-border px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] md:inset-0 md:flex md:items-center md:justify-center md:p-6 md:pb-6">
+      <div className="fixed inset-x-0 bottom-0 z-[61] box-border px-4 mm-modal-bottom-pad md:inset-0 md:flex md:items-center md:justify-center md:p-6 md:pb-6">
         <div className="mm-card mx-auto w-full max-w-md rounded-2xl p-6 shadow-xl">
           <h2 className="text-lg font-black">Welcome to the Memory Map</h2>
           <p className="mm-muted mt-2 text-sm leading-relaxed">
