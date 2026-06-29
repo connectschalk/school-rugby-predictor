@@ -98,12 +98,36 @@ function TeamCell({
   name,
   competitionSlug,
   align = 'left',
+  compact = false,
 }: {
   label: string
   name: string
   competitionSlug?: string
   align?: 'left' | 'right'
+  /** Narrow mobile matchup row: flag + name only, vertically centered with score. */
+  compact?: boolean
 }) {
+  if (compact) {
+    return (
+      <div
+        className={`flex min-w-0 items-center gap-1.5 ${
+          align === 'right' ? 'flex-row-reverse justify-end text-right' : 'justify-start text-left'
+        }`}
+      >
+        <CompetitionTeamLogo
+          competitionSlug={competitionSlug}
+          teamName={name}
+          size={28}
+          variant="badge"
+          className="shrink-0 border-0"
+        />
+        <span className="min-w-0 truncate text-[11px] font-bold leading-tight text-slate-900" title={name}>
+          {name}
+        </span>
+      </div>
+    )
+  }
+
   return (
     <div
       className={`flex min-w-0 items-center gap-2 ${align === 'right' ? 'flex-row-reverse text-right' : 'text-left'}`}
@@ -121,6 +145,62 @@ function TeamCell({
           {name}
         </span>
       </span>
+    </div>
+  )
+}
+
+function ScoreRow({
+  homeTeam,
+  awayTeam,
+  homeGoalsInput,
+  awayGoalsInput,
+  disablePickers,
+  matchId,
+  signedIn,
+  onHomeGoalsChange,
+  onAwayGoalsChange,
+  onRequireAuth,
+  showBlankScores,
+}: {
+  homeTeam: string
+  awayTeam: string
+  homeGoalsInput: string
+  awayGoalsInput: string
+  disablePickers: boolean
+  matchId: string
+  signedIn: boolean
+  onHomeGoalsChange: (value: string) => void
+  onAwayGoalsChange: (value: string) => void
+  onRequireAuth?: () => void
+  showBlankScores: boolean
+}) {
+  return (
+    <div className="flex shrink-0 flex-row items-center justify-center gap-1.5">
+      <ScoreInput
+        value={homeGoalsInput}
+        disabled={disablePickers}
+        inputId={`home-goals-${matchId}`}
+        signedIn={signedIn}
+        onChange={onHomeGoalsChange}
+        onRequireAuth={onRequireAuth}
+        ariaLabel={`${homeTeam} predicted score`}
+        compact
+        allowBlank={showBlankScores}
+      />
+      <span className="text-sm font-black text-slate-400" aria-hidden>
+        -
+      </span>
+      <ScoreInput
+        value={awayGoalsInput}
+        disabled={disablePickers}
+        inputId={`away-goals-${matchId}`}
+        signedIn={signedIn}
+        onChange={onAwayGoalsChange}
+        onRequireAuth={onRequireAuth}
+        ariaLabel={`${awayTeam} predicted score`}
+        compact
+        allowBlank={showBlankScores}
+      />
     </div>
   )
 }
@@ -267,40 +347,46 @@ export default function SoccerMatchCard({
             <div className="mt-0.5 break-words font-medium text-slate-700">{formatKickoffShort(kickoffTime)}</div>
           </div>
 
-          <div className="min-w-0">
-            <TeamCell label="Home" name={homeTeam} competitionSlug={competitionSlug} />
-          </div>
+          <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5 md:contents">
+            <div className="min-w-0 justify-self-start">
+              <div className="md:hidden">
+                <TeamCell label="Home" name={homeTeam} competitionSlug={competitionSlug} compact />
+              </div>
+              <div className="hidden md:block">
+                <TeamCell label="Home" name={homeTeam} competitionSlug={competitionSlug} />
+              </div>
+            </div>
 
-          <div className="flex min-w-0 flex-row items-center justify-center gap-1.5">
-            <ScoreInput
-              value={homeGoalsInput}
-              disabled={disablePickers}
-              inputId={`home-goals-${matchId}`}
-              signedIn={signedIn}
-              onChange={onHomeGoalsChange}
-              onRequireAuth={onRequireAuth}
-              ariaLabel={`${homeTeam} predicted score`}
-              compact
-              allowBlank={showBlankScores}
-            />
-            <span className="text-sm font-black text-slate-400" aria-hidden>
-              -
-            </span>
-            <ScoreInput
-              value={awayGoalsInput}
-              disabled={disablePickers}
-              inputId={`away-goals-${matchId}`}
-              signedIn={signedIn}
-              onChange={onAwayGoalsChange}
-              onRequireAuth={onRequireAuth}
-              ariaLabel={`${awayTeam} predicted score`}
-              compact
-              allowBlank={showBlankScores}
-            />
-          </div>
+            <div className="flex min-w-0 justify-center md:min-w-0">
+              <ScoreRow
+                homeTeam={homeTeam}
+                awayTeam={awayTeam}
+                homeGoalsInput={homeGoalsInput}
+                awayGoalsInput={awayGoalsInput}
+                disablePickers={disablePickers}
+                matchId={matchId}
+                signedIn={signedIn}
+                onHomeGoalsChange={onHomeGoalsChange}
+                onAwayGoalsChange={onAwayGoalsChange}
+                onRequireAuth={onRequireAuth}
+                showBlankScores={showBlankScores}
+              />
+            </div>
 
-          <div className="min-w-0">
-            <TeamCell label="Away" name={awayTeam} competitionSlug={competitionSlug} align="right" />
+            <div className="min-w-0 justify-self-end">
+              <div className="md:hidden">
+                <TeamCell
+                  label="Away"
+                  name={awayTeam}
+                  competitionSlug={competitionSlug}
+                  align="right"
+                  compact
+                />
+              </div>
+              <div className="hidden md:block">
+                <TeamCell label="Away" name={awayTeam} competitionSlug={competitionSlug} align="right" />
+              </div>
+            </div>
           </div>
 
           <div className="flex w-full min-w-0 flex-col items-stretch gap-2 md:gap-1">{saveColumn}</div>
