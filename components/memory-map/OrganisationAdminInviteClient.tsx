@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { signupProductMetadata } from '@/lib/auth-email'
+import { buildMemoryMapEmailConfirmCallbackUrl } from '@/lib/auth-redirect'
 import {
   buildMemoryMapSignInHref,
 } from '@/lib/memory-map/auth-routes'
@@ -78,14 +79,11 @@ export default function OrganisationAdminInviteClient({ token, invite }: Props) 
     }
 
     setBusy(true)
-    const origin = typeof window !== 'undefined' ? window.location.origin : ''
     const { data, error: signErr } = await supabase.auth.signUp({
       email: invite.email,
       password,
       options: {
-        emailRedirectTo: `${origin}/auth/callback?next=${encodeURIComponent(
-          `/memory-map/auth/sign-in?next=${encodeURIComponent(returnPath)}`
-        )}`,
+        emailRedirectTo: buildMemoryMapEmailConfirmCallbackUrl(returnPath),
         data: {
           ...signupProductMetadata('memory_map'),
           memory_map_display_name: invite.invitedDisplayName ?? invite.email.split('@')[0],

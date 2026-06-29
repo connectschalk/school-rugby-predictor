@@ -9,6 +9,7 @@ import {
   validateDisplayName,
 } from '@/lib/display-name-filter'
 import { signupProductMetadata } from '@/lib/auth-email'
+import { buildMemoryMapEmailConfirmCallbackUrl } from '@/lib/auth-redirect'
 import { ensureMemoryMapProfileExists } from '@/lib/memory-map/user-profile'
 import {
   buildMemoryMapSignInHref,
@@ -69,14 +70,13 @@ function SignUpFormInner() {
     }
 
     setLoading(true)
-    const origin = typeof window !== 'undefined' ? window.location.origin : ''
     const returnPath = nextAfterSignup ?? '/memory-map'
 
     const { data, error: signErr } = await supabase.auth.signUp({
       email: email.trim(),
       password,
       options: {
-        emailRedirectTo: `${origin}/auth/callback?next=${encodeURIComponent(`/memory-map/auth/sign-in?next=${encodeURIComponent(returnPath)}`)}`,
+        emailRedirectTo: buildMemoryMapEmailConfirmCallbackUrl(returnPath),
         data: {
           ...signupProductMetadata('memory_map'),
           display_name: name,

@@ -9,8 +9,9 @@ See also: [README.md](./README.md)
 ## Redirect / link behaviour
 
 - The email body must keep **`{{ .ConfirmationURL }}`** on the button link.
-- Memory Map sign-up sets `emailRedirectTo` to `/auth/callback?next=.../memory-map/auth/sign-in...`
+- Memory Map sign-up sets `emailRedirectTo` via `buildMemoryMapEmailConfirmCallbackUrl()` → `${NEXT_PUBLIC_APP_URL}/auth/callback?next=/memory-map/auth/sign-in...`
 - Predictor sign-up sets `emailRedirectTo` to `/auth/callback?next=/login?confirmed=1`
+- Set **Site URL** in Supabase to the same value as `NEXT_PUBLIC_APP_URL` (see `.env.example`).
 - Add those full URLs under **Authentication → URL configuration → Redirect URLs**.
 
 ## Subject (paste into Supabase subject field)

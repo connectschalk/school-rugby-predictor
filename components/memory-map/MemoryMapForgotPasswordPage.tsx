@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { Suspense, useState } from 'react'
+import { buildPasswordUpdateRedirectUrl } from '@/lib/auth-redirect'
 import { safeMemoryMapReturnPath } from '@/lib/memory-map/auth-routes'
 import { supabase } from '@/lib/supabase'
 import MemoryMapAuthShell from '@/components/memory-map/MemoryMapAuthShell'
@@ -19,9 +20,8 @@ function ForgotPasswordFormInner() {
     e.preventDefault()
     setError('')
     setLoading(true)
-    const origin = typeof window !== 'undefined' ? window.location.origin : ''
     const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: `${origin}/auth/update-password?next=${encodeURIComponent(returnPath)}`,
+      redirectTo: buildPasswordUpdateRedirectUrl(returnPath),
     })
     setLoading(false)
     if (resetErr) {

@@ -6,6 +6,9 @@ export const DEFAULT_PUBLIC_SITE_URL = 'https://www.thenextplay.co.za'
 /**
  * Base URL for share links and emails (no trailing slash).
  * Uses `NEXT_PUBLIC_SITE_URL` when set; otherwise `DEFAULT_PUBLIC_SITE_URL`.
+ *
+ * For Supabase auth redirects (`emailRedirectTo`, password reset), prefer `NEXT_PUBLIC_APP_URL`
+ * via `lib/auth-redirect.ts`.
  */
 export function getPublicSiteUrl(): string {
   let raw = (process.env.NEXT_PUBLIC_SITE_URL ?? '').trim()

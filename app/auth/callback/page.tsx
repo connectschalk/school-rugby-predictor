@@ -11,21 +11,13 @@
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { isMemoryMapSignup } from '@/lib/auth-email'
+import {
+  resolveEmailConfirmErrorRedirect,
+  resolveEmailConfirmRedirect,
+} from '@/lib/auth-redirect'
 import { upsertMemoryMapProfileFromSignupMetadata } from '@/lib/memory-map/user-profile'
 import { supabase } from '@/lib/supabase'
 import { stashPostConfirmProfilePreview, upsertProfileFromSignupMetadata } from '@/lib/user-profile-metadata'
-
-function safeLoginConfirmedPath(nextParam: string | null): string {
-  const fallback = '/login?confirmed=1'
-  if (!nextParam) return fallback
-  try {
-    const decoded = decodeURIComponent(nextParam)
-    if (decoded.startsWith('/login')) return decoded.includes('confirmed=') ? decoded : `${decoded}${decoded.includes('?') ? '&' : '?'}confirmed=1`
-  } catch {
-    /* ignore */
-  }
-  return fallback
-}
 
 async function syncProfileAfterEmailConfirm(user: import('@supabase/supabase-js').User): Promise<Error | null> {
   if (isMemoryMapSignup(user)) {
@@ -46,11 +38,12 @@ function AuthCallbackInner() {
     if (ran.current) return
     ran.current = true
 
-    const dest = safeLoginConfirmedPath(searchParams.get('next'))
+    const nextParam = searchParams.get('next')
+    const errorRedirect = resolveEmailConfirmErrorRedirect(nextParam)
 
     const finish = async () => {
       if (searchParams.get('error')) {
-        router.replace('/login')
+        router.replace(errorRedirect)
         return
       }
 
@@ -58,7 +51,7 @@ function AuthCallbackInner() {
       if (code) {
         const { data, error } = await supabase.auth.exchangeCodeForSession(code)
         if (error || !data.session?.user) {
-          router.replace('/login')
+          router.replace(errorRedirect)
           return
         }
         const upErr = await syncProfileAfterEmailConfirm(data.session.user)
@@ -68,6 +61,7 @@ function AuthCallbackInner() {
         if (!isMemoryMapSignup(data.session.user)) {
           stashPostConfirmProfilePreview(data.session.user)
         }
+        const dest = resolveEmailConfirmRedirect(nextParam, data.session.user)
         await supabase.auth.signOut()
         router.replace(dest)
         return
@@ -85,12 +79,13 @@ function AuthCallbackInner() {
         if (!isMemoryMapSignup(session.user)) {
           stashPostConfirmProfilePreview(session.user)
         }
+        const dest = resolveEmailConfirmRedirect(nextParam, session.user)
         await supabase.auth.signOut()
         router.replace(dest)
         return
       }
 
-      router.replace('/login')
+      router.replace(errorRedirect)
     }
 
     void finish()

@@ -2,20 +2,37 @@
 
 Confirmation and reset emails are sent by **Supabase Auth** (not the Next.js app). Configure in the Supabase Dashboard under **Authentication → Email Templates**.
 
+> **Dashboard changes required:** Subject, HTML body, logo, and sender display name are **not** deployed from this repo. You must paste the template below and update SMTP/sender settings manually in Supabase.
+
 The app tags signups with `signup_product` in `signUp({ options: { data } })`:
 
 | Product | `signup_product` value | Sign-up UI |
 |---------|------------------------|------------|
 | Predictor | `predictor` | `/signup` |
-| Memory Map | `memory_map` | `/memory-map/auth/sign-up` |
+| Memory Map | `memory_map` | `/memory-map/auth/sign-up`, organisation admin invites |
 
-Templates read this via **`.Data.signup_product`** (Go template syntax).
+Templates read this via **`.Data.signup_product`** (Go template syntax). Without the branching template, all users receive the default **Confirm signup** copy (often legacy “School Rugby Predictor” / Predictor logo).
 
 ## Sender display name
 
 Under **Authentication → SMTP Settings** (or **Project Settings → Auth**), set the sender name to **`NextPlay`** so it is not product-specific. Per-product sender names require a custom Auth Hook or SMTP integration.
 
 Avoid legacy names such as **School Predictor** or **School Rugby Predictor**.
+
+## Site URL and redirect URLs (required)
+
+Set in **Authentication → URL configuration**:
+
+| Setting | Value |
+|---------|--------|
+| **Site URL** | Your deployed app URL — same as `NEXT_PUBLIC_APP_URL` in Vercel (e.g. `https://www.thenextplay.co.za`) |
+| **Redirect URLs** | `https://your-domain/auth/callback`, `https://your-domain/auth/callback?**`, `https://your-domain/auth/update-password`, `https://your-domain/auth/update-password?**` |
+
+Memory Map sign-ups set `emailRedirectTo` via `buildMemoryMapEmailConfirmCallbackUrl()` in `lib/auth-redirect.ts`, which resolves to:
+
+`${NEXT_PUBLIC_APP_URL}/auth/callback?next=/memory-map/auth/sign-in?next=...`
+
+After the user confirms, `/auth/callback` routes Memory Map users back into `/memory-map/*` (not Predictor `/login`).
 
 ## Confirm signup (required)
 
@@ -24,7 +41,7 @@ See **[confirm-signup.md](./confirm-signup.md)** for the combined subject + HTML
 After pasting the template:
 
 1. Keep **`{{ .ConfirmationURL }}`** on the primary button link.
-2. Add all `emailRedirectTo` URLs under **Authentication → URL configuration → Redirect URLs** (including `/auth/callback?...` for both products).
+2. Verify **Redirect URLs** include all `emailRedirectTo` patterns above.
 
 Reference HTML generators (for review/tests): `lib/auth-email-templates.ts`
 
