@@ -27,24 +27,16 @@ export function soccerPredictionWinnerCorrect(
   actual: SoccerActualForWinnerCheck
 ): boolean {
   const actualResult = predictedResultFromScores(actual.home_score, actual.away_score)
-  const scoredActualWinner =
-    actualResult === 'draw' && actual.penalty_winner != null
-      ? actual.penalty_winner
-      : actualResult
 
   if (actualResult === 'draw' && actual.penalty_winner != null) {
-    if (
-      prediction.predicted_penalty_winner != null &&
-      prediction.predicted_penalty_winner === actual.penalty_winner
-    ) {
-      return true
+    if (prediction.predicted_penalty_winner != null) {
+      return prediction.predicted_penalty_winner === actual.penalty_winner
     }
-    if (
-      prediction.predicted_penalty_winner == null &&
-      (prediction.predicted_winner === 'home' || prediction.predicted_winner === 'away') &&
-      prediction.predicted_winner === actual.penalty_winner
-    ) {
-      return true
+    if (prediction.predicted_winner != null) {
+      return (
+        (prediction.predicted_winner === 'home' || prediction.predicted_winner === 'away') &&
+        prediction.predicted_winner === actual.penalty_winner
+      )
     }
     return false
   }
@@ -53,7 +45,7 @@ export function soccerPredictionWinnerCorrect(
     prediction.predicted_home_score,
     prediction.predicted_away_score
   )
-  return predictedResult === scoredActualWinner
+  return predictedResult === actualResult
 }
 
 export function soccerScoredActualWinner(actual: SoccerActualForWinnerCheck): 'home' | 'away' | 'draw' {

@@ -102,17 +102,31 @@ describe('soccer penalty admin scoring parity', () => {
     ).toBe(true)
   })
 
-  it('winner_correct is always boolean for legacy exact draw on penalty match', () => {
-    const result = soccerPredictionWinnerCorrect(
-      {
+  it('Germany / Netherlands style penalty draws: legacy 1–1 never yields null winner_correct', () => {
+    for (const penaltyWinner of ['away', 'home'] as const) {
+      const actual = { home_score: 1, away_score: 1, penalty_winner: penaltyWinner }
+      const legacy = {
         predicted_home_score: 1,
         predicted_away_score: 1,
         predicted_penalty_winner: null,
         predicted_winner: null,
-      },
-      awayPens
-    )
-    expect(typeof result).toBe('boolean')
-    expect(result).toBe(false)
+      }
+      const result = soccerPredictionWinnerCorrect(legacy, actual)
+      expect(result).toBe(false)
+      expect(typeof result).toBe('boolean')
+    }
+  })
+
+  it('exact 1–1 with correct penalty winner is winner_correct', () => {
+    expect(
+      soccerPredictionWinnerCorrect(
+        {
+          predicted_home_score: 1,
+          predicted_away_score: 1,
+          predicted_penalty_winner: 'away',
+        },
+        { home_score: 1, away_score: 1, penalty_winner: 'away' }
+      )
+    ).toBe(true)
   })
 })
