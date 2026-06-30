@@ -1083,9 +1083,13 @@ function PoolsPageContent({
                               <th className="whitespace-nowrap px-3 py-2">Player</th>
                               <th className="whitespace-nowrap px-3 py-2">Total pts</th>
                               <th className="whitespace-nowrap px-3 py-2">Correct winners</th>
-                              <th className="whitespace-nowrap px-3 py-2">Margin pts</th>
+                              {soccerMode ? null : (
+                                <th className="whitespace-nowrap px-3 py-2">Margin pts</th>
+                              )}
                               <th className="whitespace-nowrap px-3 py-2">Games</th>
-                              <th className="whitespace-nowrap px-3 py-2">Avg margin diff</th>
+                              <th className="whitespace-nowrap px-3 py-2">
+                                {soccerMode ? 'Avg goal diff' : 'Avg margin diff'}
+                              </th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1150,9 +1154,11 @@ function PoolsPageContent({
                                   <td className="whitespace-nowrap px-3 py-2 tabular-nums text-gray-800">
                                     {r.correct_winners}
                                   </td>
-                                  <td className="whitespace-nowrap px-3 py-2 tabular-nums text-gray-800">
-                                    {r.margin_points_total.toFixed(1)}
-                                  </td>
+                                  {soccerMode ? null : (
+                                    <td className="whitespace-nowrap px-3 py-2 tabular-nums text-gray-800">
+                                      {r.margin_points_total.toFixed(1)}
+                                    </td>
+                                  )}
                                   <td className="whitespace-nowrap px-3 py-2 tabular-nums text-gray-800">
                                     {r.games_predicted}
                                   </td>

@@ -208,6 +208,12 @@ export default function SoccerScoringBreakdownModal({
                             <dt className="text-xs text-gray-500">Actual</dt>
                             <dd className="font-medium tabular-nums text-gray-900">{row.actualLabel}</dd>
                           </div>
+                          {row.penaltyWinnerLabel ? (
+                            <div className="sm:col-span-2">
+                              <dt className="text-xs text-gray-500">Penalty winner</dt>
+                              <dd className="font-medium text-gray-900">{row.penaltyWinnerLabel}</dd>
+                            </div>
+                          ) : null}
                           <div>
                             <dt className="text-xs text-gray-500">Points</dt>
                             <dd className="font-bold tabular-nums text-gray-900">{row.points}</dd>
@@ -215,6 +221,10 @@ export default function SoccerScoringBreakdownModal({
                           <div>
                             <dt className="text-xs text-gray-500">Outcome</dt>
                             <dd className="font-medium text-gray-900">{row.outcomeLabel}</dd>
+                          </div>
+                          <div className="sm:col-span-2">
+                            <dt className="text-xs text-gray-500">Reason</dt>
+                            <dd className="font-medium text-gray-800">{row.reasonLabel}</dd>
                           </div>
                         </dl>
                       </li>

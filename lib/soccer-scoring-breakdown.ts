@@ -1,6 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { SCHOOLS_COMPETITION_SLUG } from './competitions'
-import { SOCCER_EXACT_SCORE_POINTS } from './soccer-exact-score-scoring'
+import { SOCCER_EXACT_SCORE_POINTS, type SoccerPenaltySide } from './soccer-exact-score-scoring'
+import {
+  soccerScoringReasonLabel,
+  type SoccerActualForWinnerCheck,
+  type SoccerPredictionForWinnerCheck,
+} from './soccer-penalty-scoring-parity'
 import type { UserPredictionRow, UserPredictionScoreRow } from './public-prediction-game'
 
 export type SoccerScoringBreakdownRow = {
@@ -8,8 +13,10 @@ export type SoccerScoringBreakdownRow = {
   matchLabel: string
   predictionLabel: string
   actualLabel: string
+  penaltyWinnerLabel: string | null
   points: number
   outcomeLabel: string
+  reasonLabel: string
   kickoffTime: string
 }
 
@@ -46,6 +53,35 @@ export function soccerOutcomeLabelFromPoints(totalPoints: number): string {
 
 function scoreline(home: number, away: number): string {
   return `${home}-${away}`
+}
+
+function penaltySideLabel(side: SoccerPenaltySide | null | undefined, homeTeam: string, awayTeam: string): string | null {
+  if (side == null) return null
+  return side === 'home' ? homeTeam : awayTeam
+}
+
+function formatPredictionLabel(
+  home: number,
+  away: number,
+  penaltySide: SoccerPenaltySide | null | undefined,
+  homeTeam: string,
+  awayTeam: string
+): string {
+  const base = scoreline(home, away)
+  const team = penaltySideLabel(penaltySide, homeTeam, awayTeam)
+  return team ? `${base} (${team} on pens)` : base
+}
+
+function formatActualLabel(
+  home: number,
+  away: number,
+  penaltySide: SoccerPenaltySide | null | undefined,
+  homeTeam: string,
+  awayTeam: string
+): string {
+  if (home !== away) return scoreline(home, away)
+  const team = penaltySideLabel(penaltySide, homeTeam, awayTeam)
+  return team ? `${scoreline(home, away)} (${team} on pens)` : scoreline(home, away)
 }
 
 function matchBelongsToCompetition(
@@ -112,13 +148,19 @@ type BreakdownMatch = {
   kickoff_time: string
   home_score: number | null
   away_score: number | null
+  penalty_winner: SoccerPenaltySide | null
   competition_id: string | null
   status: string
 }
 
+type BreakdownPrediction = Pick<
+  UserPredictionRow,
+  'predicted_home_score' | 'predicted_away_score' | 'predicted_penalty_winner' | 'predicted_winner'
+>
+
 function toBreakdownRow(
   match: BreakdownMatch,
-  prediction: Pick<UserPredictionRow, 'predicted_home_score' | 'predicted_away_score'>,
+  prediction: BreakdownPrediction,
   score: UserPredictionScoreRow
 ): SoccerScoringBreakdownRow | null {
   if (
@@ -135,14 +177,45 @@ function toBreakdownRow(
   const actualHome = Math.trunc(match.home_score)
   const actualAway = Math.trunc(match.away_score)
   const points = score.total_points ?? 0
+  const predictedPenalty = prediction.predicted_penalty_winner ?? null
+  const actualPenalty = match.penalty_winner ?? null
+
+  const predictionForReason: SoccerPredictionForWinnerCheck = {
+    predicted_home_score: predHome,
+    predicted_away_score: predAway,
+    predicted_penalty_winner: predictedPenalty,
+    predicted_winner: prediction.predicted_winner ?? null,
+  }
+  const actualForReason: SoccerActualForWinnerCheck = {
+    home_score: actualHome,
+    away_score: actualAway,
+    penalty_winner: actualPenalty,
+  }
+
+  const predictionLabel = formatPredictionLabel(
+    predHome,
+    predAway,
+    predictedPenalty,
+    match.home_team,
+    match.away_team
+  )
+  const actualLabel = formatActualLabel(
+    actualHome,
+    actualAway,
+    actualPenalty,
+    match.home_team,
+    match.away_team
+  )
 
   return {
     matchId: match.id,
-    matchLabel: `${match.home_team} ${scoreline(predHome, predAway)} ${match.away_team}`,
-    predictionLabel: scoreline(predHome, predAway),
-    actualLabel: scoreline(actualHome, actualAway),
+    matchLabel: `${match.home_team} vs ${match.away_team}`,
+    predictionLabel,
+    actualLabel,
+    penaltyWinnerLabel: penaltySideLabel(actualPenalty, match.home_team, match.away_team),
     points,
     outcomeLabel: soccerOutcomeLabelFromPoints(points),
+    reasonLabel: soccerScoringReasonLabel(predictionForReason, actualForReason),
     kickoffTime: match.kickoff_time,
   }
 }
@@ -226,11 +299,13 @@ export async function fetchSoccerScoringBreakdown(
     await Promise.all([
       client
         .from('user_predictions')
-        .select('id, predicted_home_score, predicted_away_score')
+        .select('id, predicted_home_score, predicted_away_score, predicted_penalty_winner, predicted_winner')
         .in('id', predictionIds),
       client
         .from('game_matches')
-        .select('id, home_team, away_team, kickoff_time, home_score, away_score, competition_id, status')
+        .select(
+          'id, home_team, away_team, kickoff_time, home_score, away_score, penalty_winner, competition_id, status'
+        )
         .in('id', matchIds),
     ])
 
