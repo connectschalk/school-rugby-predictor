@@ -36,12 +36,11 @@ import {
   type PoolRow,
 } from '@/lib/pools'
 import { supabase } from '@/lib/supabase'
+import { SOCCER_SCORING_TOOLTIP_SUMMARY } from '@/lib/soccer-scoring-rules'
 
 const DEFAULT_SEASON = new Date().getFullYear()
 const TOOLTIP_POINTS_RUGBY =
   'Total points = correct winner (1) + margin accuracy (up to 1.0) + closest margin bonus (0.5). Max 2.5 per game.'
-const TOOLTIP_POINTS_SOCCER =
-  'Max 3 points per match: 3 exact score, 2 correct result + close score, 1 correct result only.'
 const TOOLTIP_MARGIN_AVG = 'Lower is better. Your average distance from the actual margin.'
 const TOOLTIP_DELTA =
   'Season average minus your average margin error on your last 5 scored games (this season). Positive means recent games were closer to the actual margin than your season average.'
@@ -176,7 +175,7 @@ export default function CompetitionLeaderboardPanel({
   const soccerMode = isSoccerExactScoreMode(scoringMode)
   const showQualificationFilter = leaderboardShowsQualificationFilter(scoringMode)
   const filterControls = globalLeaderboardFilterControls(scoringMode)
-  const tooltipPoints = soccerMode ? TOOLTIP_POINTS_SOCCER : TOOLTIP_POINTS_RUGBY
+  const tooltipPoints = soccerMode ? SOCCER_SCORING_TOOLTIP_SUMMARY : TOOLTIP_POINTS_RUGBY
   const poolsPath = `/competitions/${competitionSlug}/pools`
   const [user, setUser] = useState<User | null>(null)
   const [section, setSection] = useState<RankingSection>('global')

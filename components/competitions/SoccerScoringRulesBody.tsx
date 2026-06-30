@@ -1,28 +1,30 @@
 import {
+  SOCCER_PENALTY_KNOCKOUT_NOTE,
   SOCCER_SCORING_LEADERBOARD_NOTE,
-  SOCCER_SCORING_RULES,
 } from '@/lib/soccer-scoring-rules'
+import { SoccerScoringRulesList } from '@/components/competitions/SoccerScoringRulesList'
 
-export default function SoccerScoringRulesBody() {
+type Props = {
+  showTitle?: boolean
+  showLeaderboardNote?: boolean
+}
+
+export default function SoccerScoringRulesBody({
+  showTitle = true,
+  showLeaderboardNote = true,
+}: Props) {
   return (
     <div className="space-y-4 text-sm leading-relaxed text-gray-800">
-      <p className="font-semibold text-gray-900">Soccer scoring:</p>
-      <ul className="space-y-4">
-        {SOCCER_SCORING_RULES.map((rule) => (
-          <li key={rule.points}>
-            <p className="font-semibold text-gray-900">
-              {rule.points} {rule.points === 1 ? 'point' : 'points'}: {rule.title}
-            </p>
-            <p className="mt-1 text-gray-700">{rule.description}</p>
-            {rule.example ? (
-              <p className="mt-1 text-xs text-gray-600">Example: {rule.example}</p>
-            ) : null}
-          </li>
-        ))}
-      </ul>
-      <p className="rounded-xl bg-gray-50 px-4 py-3 text-sm text-gray-700">
-        {SOCCER_SCORING_LEADERBOARD_NOTE}
+      {showTitle ? <p className="font-semibold text-gray-900">Soccer scoring:</p> : null}
+      <SoccerScoringRulesList />
+      <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-950 ring-1 ring-amber-100">
+        {SOCCER_PENALTY_KNOCKOUT_NOTE}
       </p>
+      {showLeaderboardNote ? (
+        <p className="rounded-xl bg-gray-50 px-4 py-3 text-sm text-gray-700">
+          {SOCCER_SCORING_LEADERBOARD_NOTE}
+        </p>
+      ) : null}
     </div>
   )
 }

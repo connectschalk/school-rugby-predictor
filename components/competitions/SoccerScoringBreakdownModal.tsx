@@ -6,7 +6,7 @@ import {
   fetchSoccerScoringBreakdown,
   type SoccerScoringBreakdownResult,
 } from '@/lib/soccer-scoring-breakdown'
-import { SOCCER_SCORING_RULES } from '@/lib/soccer-scoring-rules'
+import SoccerScoringRulesBody from '@/components/competitions/SoccerScoringRulesBody'
 import { fetchEffectivePoolMatches } from '@/lib/pools'
 
 export type SoccerScoringBreakdownTarget = {
@@ -225,19 +225,9 @@ export default function SoccerScoringBreakdownModal({
 
               <div className="border-t border-gray-200 pt-4">
                 <h3 className="text-sm font-bold text-gray-900">Soccer scoring</h3>
-                <ul className="mt-3 space-y-3">
-                  {SOCCER_SCORING_RULES.map((rule) => (
-                    <li key={rule.points}>
-                      <p className="font-semibold text-gray-900">
-                        {rule.points} {rule.points === 1 ? 'point' : 'points'}: {rule.title}
-                      </p>
-                      <p className="mt-0.5 text-gray-700">{rule.description}</p>
-                      {rule.example ? (
-                        <p className="mt-0.5 text-xs text-gray-600">Example: {rule.example}</p>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
+                <div className="mt-3">
+                  <SoccerScoringRulesBody showTitle={false} showLeaderboardNote={false} />
+                </div>
               </div>
             </div>
           ) : null}
