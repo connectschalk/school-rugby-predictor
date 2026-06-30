@@ -6,6 +6,10 @@ import {
 } from '@/lib/admin-competition-fixture-api'
 import { rpcScorePredictionsForMatch } from '@/lib/score-predictions-for-match'
 import {
+  logScorePredictionsFailure,
+  scorePredictionsErrorFields,
+} from '@/lib/score-predictions-error'
+import {
   parseSoccerPenaltyWinner,
   validateAdminMatchPenaltyResult,
 } from '@/lib/soccer-prediction-mutation'
@@ -91,14 +95,26 @@ export async function POST(request: Request, { params }: RouteParams) {
   )
 
   if (scoreErr) {
+    logScorePredictionsFailure(
+      {
+        match_id: resolved.match.id,
+        competition_slug: competitionSlug,
+        home_score: homeScore,
+        away_score: awayScore,
+        penalty_winner: penaltyWinner,
+        home_team: resolved.match.home_team,
+        away_team: resolved.match.away_team,
+      },
+      scoreErr
+    )
     return NextResponse.json({
       ok: true,
       result_saved: true,
       scored: false,
       scored_count: 0,
-      scoring_error: scoreErr.message,
       message: 'Result saved, but scoring failed. Please retry scoring.',
       match_id: resolved.match.id,
+      ...scorePredictionsErrorFields(scoreErr),
     })
   }
 

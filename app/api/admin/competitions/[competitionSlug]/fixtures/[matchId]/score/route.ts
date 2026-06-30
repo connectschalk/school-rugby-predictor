@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server'
 import { requireAdminApi } from '@/lib/admin-api-auth'
 import { resolveCompetitionAdminMatch } from '@/lib/admin-competition-fixture-api'
 import { rpcScorePredictionsForMatch } from '@/lib/score-predictions-for-match'
+import {
+  logScorePredictionsFailure,
+  scorePredictionsErrorFields,
+} from '@/lib/score-predictions-error'
 
 type RouteParams = { params: Promise<{ competitionSlug: string; matchId: string }> }
 
@@ -34,12 +38,24 @@ export async function POST(request: Request, { params }: RouteParams) {
   )
 
   if (scoreErr) {
+    logScorePredictionsFailure(
+      {
+        match_id: resolved.match.id,
+        competition_slug: competitionSlug,
+        home_score: resolved.match.home_score,
+        away_score: resolved.match.away_score,
+        penalty_winner: resolved.match.penalty_winner,
+        home_team: resolved.match.home_team,
+        away_team: resolved.match.away_team,
+      },
+      scoreErr
+    )
     return NextResponse.json({
       ok: false,
       scored: false,
-      scoring_error: scoreErr.message,
       message: 'Scoring failed. Please try again.',
       match_id: resolved.match.id,
+      ...scorePredictionsErrorFields(scoreErr),
     })
   }
 

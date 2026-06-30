@@ -13,6 +13,7 @@ export type AdminFixtureRecord = {
   status: GameMatchStatus
   home_score: number | null
   away_score: number | null
+  penalty_winner: string | null
   external_id: string | null
   fixture_round: string | null
   league_group: string | null
@@ -80,7 +81,7 @@ export async function resolveCompetitionAdminMatch(
   const { data, error: matchErr } = await client
     .from('game_matches')
     .select(
-      'id, competition_id, kickoff_time, home_team, away_team, status, home_score, away_score, external_id, fixture_round, league_group, admin_notes'
+      'id, competition_id, kickoff_time, home_team, away_team, status, home_score, away_score, penalty_winner, external_id, fixture_round, league_group, admin_notes'
     )
     .eq('id', id)
     .maybeSingle()
@@ -113,6 +114,10 @@ export async function resolveCompetitionAdminMatch(
       status: statusVal,
       home_score: data.home_score != null ? Number(data.home_score) : null,
       away_score: data.away_score != null ? Number(data.away_score) : null,
+      penalty_winner:
+        data.penalty_winner === 'home' || data.penalty_winner === 'away'
+          ? data.penalty_winner
+          : null,
       external_id: data.external_id != null ? String(data.external_id) : null,
       fixture_round: data.fixture_round != null ? String(data.fixture_round) : null,
       league_group: data.league_group != null ? String(data.league_group) : null,
