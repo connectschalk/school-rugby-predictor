@@ -3,6 +3,7 @@ import { SOCCER_GOALS_MAX } from '@/lib/predict-score-common'
 import { isKnockoutSoccerFixture, type SoccerKnockoutFixtureContext } from '@/lib/soccer-knockout-fixture'
 import type { SoccerPenaltySide } from '@/lib/soccer-exact-score-scoring'
 import { PREDICTION_KICKOFF_LOCK_MESSAGE } from '@/lib/prediction-cutoff'
+import { SUPABASE_PUBLIC } from '@/lib/supabase-public-access'
 
 export type SoccerPredictionInput = {
   matchId: string
@@ -116,7 +117,7 @@ export async function assertMatchOpenForUserSoccerPrediction(
   matchId: string
 ): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
   const { data, error } = await client
-    .from('game_matches')
+    .from(SUPABASE_PUBLIC.gameMatches)
     .select('id, status, kickoff_time')
     .eq('id', matchId)
     .maybeSingle()
@@ -134,7 +135,7 @@ export async function assertMatchOpenForUserSoccerPrediction(
   }
 
   const { data: openRows, error: openErr } = await client
-    .from('game_matches')
+    .from(SUPABASE_PUBLIC.gameMatches)
     .select('id')
     .eq('id', matchId)
     .eq('status', 'upcoming')

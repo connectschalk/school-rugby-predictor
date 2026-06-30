@@ -20,6 +20,7 @@ import {
 import HowItWorksModal from '@/components/HowItWorksModal'
 import InfoTooltip from '@/components/InfoTooltip'
 import LetterAvatar from '@/components/LetterAvatar'
+import { SUPABASE_PUBLIC } from '@/lib/supabase-public-access'
 import { supabase } from '@/lib/supabase'
 import { trackEvent } from '@/lib/trackEvent'
 
@@ -344,7 +345,7 @@ export default function UserRankingsPage() {
         return
       }
       const { data } = await supabase
-        .from('user_prediction_scores')
+        .from(SUPABASE_PUBLIC.userPredictionScores)
         .select('user_id')
         .in('match_id', matchIds)
       const counts: Record<string, number> = {}
@@ -383,7 +384,7 @@ export default function UserRankingsPage() {
       }
 
       const { data: scores } = await supabase
-        .from('user_prediction_scores')
+        .from(SUPABASE_PUBLIC.userPredictionScores)
         .select('user_id, margin_difference')
         .in('match_id', weekMatchIds)
 
@@ -408,7 +409,7 @@ export default function UserRankingsPage() {
       }
 
       const { data: profiles } = await supabase
-        .from('user_profiles')
+        .from(SUPABASE_PUBLIC.userProfiles)
         .select('id, display_name, avatar_url, avatar_letter, avatar_colour')
         .in('id', base.map((b) => b.user_id))
       const pm = new Map(

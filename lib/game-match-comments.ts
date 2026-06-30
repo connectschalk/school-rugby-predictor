@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { SUPABASE_PUBLIC } from '@/lib/supabase-public-access'
 
 /** Rows in `public.game_match_comments` (see migration 007_game_match_comments.sql). */
 
@@ -53,8 +54,8 @@ export async function fetchMatchCommentsWithAuthors(
 
   const ids = [...new Set(list.map((c) => c.user_id))]
   const { data: profiles, error: pErr } = await client
-    .from('user_profiles')
-    .select('id, display_name, first_name, avatar_url, avatar_letter, avatar_colour')
+    .from(SUPABASE_PUBLIC.userProfiles)
+    .select('id, display_name, avatar_url, avatar_letter, avatar_colour')
     .in('id', ids)
 
   if (pErr) {
@@ -79,7 +80,7 @@ export async function fetchMatchCommentsWithAuthors(
     return {
       ...c,
       display_name: p?.display_name?.trim() || 'Player',
-      first_name: p?.first_name ?? null,
+      first_name: null,
       avatar_url: p?.avatar_url ?? null,
       avatar_letter: p?.avatar_letter ?? null,
       avatar_colour: p?.avatar_colour ?? null,
@@ -134,10 +135,10 @@ export async function fetchDiscussionComments(
 
   const [{ data: profiles, error: pErr }, { data: matches, error: mErr }] = await Promise.all([
     client
-      .from('user_profiles')
-      .select('id, display_name, first_name, avatar_url, avatar_letter, avatar_colour')
+      .from(SUPABASE_PUBLIC.userProfiles)
+      .select('id, display_name, avatar_url, avatar_letter, avatar_colour')
       .in('id', profileIds),
-    client.from('game_matches').select('id, home_team, away_team, kickoff_time').in('id', matchIds),
+    client.from(SUPABASE_PUBLIC.gameMatches).select('id, home_team, away_team, kickoff_time').in('id', matchIds),
   ])
 
   if (pErr) return { rows: [], error: new Error(pErr.message) }
@@ -175,7 +176,7 @@ export async function fetchDiscussionComments(
     rows.push({
       ...c,
       display_name: p?.display_name?.trim() || 'Player',
-      first_name: p?.first_name ?? null,
+      first_name: null,
       avatar_url: p?.avatar_url ?? null,
       avatar_letter: p?.avatar_letter ?? null,
       avatar_colour: p?.avatar_colour ?? null,

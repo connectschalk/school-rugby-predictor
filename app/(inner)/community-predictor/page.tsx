@@ -21,6 +21,7 @@ import {
   type GameMatch,
   type UserPredictionRow,
 } from '@/lib/public-prediction-game'
+import { SUPABASE_PUBLIC } from '@/lib/supabase-public-access'
 import { matchGameAgainstTeamSearch } from '@/lib/team-aliases-db'
 import type { TeamRow } from '@/lib/team-name-match'
 import {
@@ -320,7 +321,7 @@ export default function CommunityPicksPage() {
       const competitionId = competition?.id
 
       let matchQuery = supabase
-        .from('game_matches')
+        .from(SUPABASE_PUBLIC.gameMatches)
         .select(
           'id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at, is_featured, featured_order'
         )
@@ -400,7 +401,7 @@ export default function CommunityPicksPage() {
     }
     let cancelled = false
     void supabase
-      .from('user_profiles')
+      .from(SUPABASE_PUBLIC.userProfiles)
       .select('display_name, avatar_url, avatar_letter, avatar_colour')
       .eq('id', user.id)
       .maybeSingle()

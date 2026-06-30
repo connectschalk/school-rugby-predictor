@@ -19,6 +19,7 @@ import {
   fetchSeasonRecentMarginAverages,
   type SeasonLeaderboardRow,
 } from '@/lib/public-prediction-game'
+import { SUPABASE_PUBLIC } from '@/lib/supabase-public-access'
 import { isSoccerExactScoreMode, type CompetitionScoringMode } from '@/lib/competitions'
 import {
   defaultLeaderboardQualificationFilter,
@@ -363,7 +364,7 @@ export default function CompetitionLeaderboardPanel({
         return
       }
       const { data } = await supabase
-        .from('user_prediction_scores')
+        .from(SUPABASE_PUBLIC.userPredictionScores)
         .select('user_id')
         .in('match_id', matchIds)
       const counts: Record<string, number> = {}

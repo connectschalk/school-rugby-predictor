@@ -11,6 +11,7 @@ import {
   isOfficialCompetition,
 } from '@/lib/competition-branding'
 import { requireCompetition, supabaseServer } from '@/lib/competition-page-server'
+import { SUPABASE_PUBLIC } from '@/lib/supabase-public-access'
 
 type Props = {
   params: Promise<{ competitionSlug: string }>
@@ -30,7 +31,7 @@ export default async function CompetitionHomePage({ params }: Props) {
   const base = `/competitions/${competition.slug}`
 
   const { count: fixtureCount } = await client
-    .from('game_matches')
+    .from(SUPABASE_PUBLIC.gameMatches)
     .select('id', { count: 'exact', head: true })
     .eq('competition_id', competition.id)
 

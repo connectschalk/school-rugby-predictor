@@ -5,6 +5,7 @@ import {
   SCHOOLS_COMPETITION_SLUG,
   type CompetitionScoringMode,
 } from '@/lib/competitions'
+import { SUPABASE_PUBLIC } from '@/lib/supabase-public-access'
 
 export type GameMatchStatus = 'upcoming' | 'locked' | 'completed' | 'cancelled'
 
@@ -156,7 +157,7 @@ export type MatchLeaderboardEntry = {
 
 export async function fetchPlayableGameMatches(client: SupabaseClient) {
   const { data, error } = await client
-    .from('game_matches')
+    .from(SUPABASE_PUBLIC.gameMatches)
     .select(
       'id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at, is_featured, featured_order, verification_status'
     )
@@ -176,7 +177,7 @@ export async function fetchUpcomingPredictScoreMatches(
   competitionId?: string
 ) {
   let query = client
-    .from('game_matches')
+    .from(SUPABASE_PUBLIC.gameMatches)
     .select(PREDICT_SCORE_MATCH_SELECT)
     .eq('status', 'upcoming')
     .order('kickoff_time', { ascending: true })
@@ -197,7 +198,7 @@ export async function fetchCompetitionUpcomingMatches(client: SupabaseClient, co
 /** Read-only fixture list for a competition (upcoming, locked, completed). */
 export async function fetchCompetitionFixtures(client: SupabaseClient, competitionId: string, limit = 500) {
   const { data, error } = await client
-    .from('game_matches')
+    .from(SUPABASE_PUBLIC.gameMatches)
     .select(PREDICT_SCORE_MATCH_SELECT)
     .eq('competition_id', competitionId)
     .in('status', ['upcoming', 'locked', 'completed'])
@@ -234,7 +235,7 @@ export async function fetchGameMatchesForCommunityHub(
   competitionId?: string
 ) {
   let query = client
-    .from('game_matches')
+    .from(SUPABASE_PUBLIC.gameMatches)
     .select(
       'id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at, is_featured, featured_order, home_team_province, away_team_province, prediction_cutoff_time'
     )
@@ -262,7 +263,7 @@ export async function fetchGameMatchesForPoolPreview(
   const since = new Date()
   since.setDate(since.getDate() - 2)
   let query = client
-    .from('game_matches')
+    .from(SUPABASE_PUBLIC.gameMatches)
     .select(
       'id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at, home_team_province, away_team_province, province_group, league_group, is_prestige_match, is_prestige, is_interprovincial, is_featured, featured_order'
     )
@@ -281,7 +282,7 @@ export async function fetchGameMatchesForPoolPreview(
 
 export async function fetchCompletedGameMatches(client: SupabaseClient, limit = 20) {
   const { data, error } = await client
-    .from('game_matches')
+    .from(SUPABASE_PUBLIC.gameMatches)
     .select(
       'id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at'
     )
@@ -307,7 +308,7 @@ export async function fetchMatchLeaderboardWithProfiles(
   matchId: string
 ) {
   const { data: scores, error } = await client
-    .from('user_prediction_scores')
+    .from(SUPABASE_PUBLIC.userPredictionScores)
     .select(
       'user_id, total_points, margin_difference, winner_correct, winner_points, margin_points'
     )
@@ -334,8 +335,8 @@ export async function fetchMatchLeaderboardWithProfiles(
 
   const ids = [...new Set(raw.map((s) => s.user_id))]
   const { data: profiles, error: pErr } = await client
-    .from('user_profiles')
-    .select('id, display_name, first_name, avatar_url, avatar_letter, avatar_colour')
+    .from(SUPABASE_PUBLIC.userProfiles)
+    .select('id, display_name, avatar_url, avatar_letter, avatar_colour')
     .in('id', ids)
 
   if (pErr) {
@@ -347,7 +348,6 @@ export async function fetchMatchLeaderboardWithProfiles(
       profiles as {
         id: string
         display_name: string
-        first_name: string | null
         avatar_url: string | null
         avatar_letter: string | null
         avatar_colour: string | null
@@ -364,7 +364,7 @@ export async function fetchMatchLeaderboardWithProfiles(
       avatar_url: p?.avatar_url ?? null,
       avatar_letter: p?.avatar_letter ?? null,
       avatar_colour: p?.avatar_colour ?? null,
-      first_name: p?.first_name ?? null,
+      first_name: null,
       total_points: num(s.total_points),
       margin_difference:
         s.margin_difference === null || s.margin_difference === undefined
@@ -432,7 +432,7 @@ export async function fetchSeasonRecentMarginAverages(
   recentCount = 5,
   competitionId?: string
 ): Promise<{ data: Record<string, number | null>; error: Error | null }> {
-  let matchQuery = client.from('game_matches').select('id, kickoff_time').eq('status', 'completed')
+  let matchQuery = client.from(SUPABASE_PUBLIC.gameMatches).select('id, kickoff_time').eq('status', 'completed')
   if (competitionId) {
     matchQuery = matchQuery.eq('competition_id', competitionId)
   }
@@ -465,7 +465,7 @@ export async function fetchSeasonRecentMarginAverages(
   for (let i = 0; i < seasonMatchIds.length; i += CHUNK) {
     const chunk = seasonMatchIds.slice(i, i + CHUNK)
     const { data: scores, error: sErr } = await client
-      .from('user_prediction_scores')
+      .from(SUPABASE_PUBLIC.userPredictionScores)
       .select('user_id, margin_difference, match_id')
       .in('match_id', chunk)
       .not('margin_difference', 'is', null)
@@ -590,7 +590,7 @@ export async function fetchCompetitionLeaderboardSeasons(
 
 export async function fetchGameMatchById(client: SupabaseClient, matchId: string) {
   const { data, error } = await client
-    .from('game_matches')
+    .from(SUPABASE_PUBLIC.gameMatches)
     .select(
       'id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at, is_featured, featured_order'
     )
@@ -665,7 +665,7 @@ export async function fetchMyPredictionsOverview(
 
   const matchIds = [...new Set(list.map((p) => p.match_id))]
   const { data: matches, error: me } = await client
-    .from('game_matches')
+    .from(SUPABASE_PUBLIC.gameMatches)
     .select(MY_PREDICTIONS_MATCH_SELECT)
     .in('id', matchIds)
 

@@ -456,17 +456,27 @@ export default function AdminPage() {
     setLoadingUsage(true)
     setUsageMessage('')
 
-    const { data, error } = await supabase
-      .from('usage_events')
-      .select('id, created_at, event_type, page, details, user_email, session_id')
-      .order('created_at', { ascending: false })
-      .limit(100)
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    const token = session?.access_token
+    if (!token) {
+      setUsageMessage('Could not load usage events: not signed in.')
+      setUsageEvents([])
+      setLoadingUsage(false)
+      return
+    }
 
-    if (error) {
-      setUsageMessage(`Could not load usage events: ${error.message}`)
+    const res = await fetch('/api/admin/usage-events', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const payload = (await res.json()) as { ok?: boolean; rows?: UsageEvent[]; error?: string }
+
+    if (!res.ok || !payload.ok) {
+      setUsageMessage(`Could not load usage events: ${payload.error ?? res.statusText}`)
       setUsageEvents([])
     } else {
-      setUsageEvents((data as UsageEvent[]) || [])
+      setUsageEvents(payload.rows ?? [])
     }
 
     setLoadingUsage(false)

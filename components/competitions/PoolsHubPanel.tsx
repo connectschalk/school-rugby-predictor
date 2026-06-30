@@ -56,6 +56,7 @@ import {
 } from '@/lib/pools'
 import { buildPoolJoinPath } from '@/lib/pool-invite-path'
 import { buildPoolSharePayload, sharePoolInvite } from '@/lib/pool-share'
+import { SUPABASE_PUBLIC } from '@/lib/supabase-public-access'
 import {
   formatPoolJoinCodeDisplay,
   validatePoolJoinCodeInput,
@@ -262,7 +263,7 @@ function PoolsPageContent({
     const unique = [...new Set(ids.filter(Boolean))]
     if (!unique.length) return
     const { data } = await supabase
-      .from('user_profiles')
+      .from(SUPABASE_PUBLIC.userProfiles)
       .select('id, display_name')
       .in('id', unique)
     const next: Record<string, UserProfileMini> = {}

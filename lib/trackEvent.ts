@@ -17,22 +17,28 @@ function getSessionId() {
 export async function trackEvent(
   eventType: string,
   page?: string,
-  details: Record<string, any> = {}
+  details: Record<string, unknown> = {}
 ) {
   try {
     const {
       data: { session },
     } = await supabase.auth.getSession()
 
-    await supabase.from('usage_events').insert([
-      {
+    const headers: HeadersInit = { 'Content-Type': 'application/json' }
+    if (session?.access_token) {
+      headers.Authorization = `Bearer ${session.access_token}`
+    }
+
+    await fetch('/api/usage-events', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
         event_type: eventType,
         page: page || null,
         details,
-        user_email: session?.user?.email || null,
         session_id: getSessionId(),
-      },
-    ])
+      }),
+    })
   } catch (err) {
     console.error('Tracking error:', err)
   }

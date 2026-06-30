@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { SUPABASE_PUBLIC } from '@/lib/supabase-public-access'
 import { SCHOOLS_COMPETITION_SLUG } from './competitions'
 import { SOCCER_EXACT_SCORE_POINTS, type SoccerPenaltySide } from './soccer-exact-score-scoring'
 import {
@@ -237,7 +238,7 @@ export async function fetchSoccerScoringBreakdown(
     scopedMatchIds = [...new Set(poolMatchIds)]
   } else {
     const { data: matchRows, error: matchErr } = await client
-      .from('game_matches')
+      .from(SUPABASE_PUBLIC.gameMatches)
       .select('id, competition_id, kickoff_time, status')
       .eq('status', 'completed')
 
@@ -302,7 +303,7 @@ export async function fetchSoccerScoringBreakdown(
         .select('id, predicted_home_score, predicted_away_score, predicted_penalty_winner, predicted_winner')
         .in('id', predictionIds),
       client
-        .from('game_matches')
+        .from(SUPABASE_PUBLIC.gameMatches)
         .select(
           'id, home_team, away_team, kickoff_time, home_score, away_score, penalty_winner, competition_id, status'
         )

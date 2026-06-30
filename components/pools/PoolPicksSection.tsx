@@ -18,6 +18,7 @@ import {
 } from '@/lib/pools'
 import { formatKickoffHm } from '@/lib/prediction-cutoff'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { SUPABASE_PUBLIC } from '@/lib/supabase-public-access'
 
 function mapRpcToStatRows(rows: PoolMatchPredictionViewerRpcRow[]): PoolMatchPredictionViewerRow[] {
   return rows.map((r) => ({
@@ -143,7 +144,7 @@ export default function PoolPicksSection({
   useEffect(() => {
     let cancelled = false
     void supabase
-      .from('user_profiles')
+      .from(SUPABASE_PUBLIC.userProfiles)
       .select('display_name, avatar_url, avatar_letter, avatar_colour')
       .eq('id', userId)
       .maybeSingle()
@@ -310,7 +311,7 @@ export default function PoolPicksSection({
     }
     let cancelled = false
     void supabase
-      .from('user_prediction_scores')
+      .from(SUPABASE_PUBLIC.userPredictionScores)
       .select('user_id, winner_points, margin_points')
       .eq('match_id', match.id)
       .then(({ data }) => {

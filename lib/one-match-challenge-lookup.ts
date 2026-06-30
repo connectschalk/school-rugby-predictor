@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { OneMatchChallengeRow, OneMatchMatchRow } from '@/lib/one-match-challenge'
+import { SUPABASE_PUBLIC } from '@/lib/supabase-public-access'
 
 export type OneMatchChallengeLookup = {
   challenge: OneMatchChallengeRow
@@ -80,7 +81,7 @@ async function lookupViaDirectQueries(
   }
 
   const { data: match, error: gmErr } = await supabase
-    .from('game_matches')
+    .from(SUPABASE_PUBLIC.gameMatches)
     .select('id, home_team, away_team, kickoff_time, status, home_score, away_score')
     .eq('id', challenge.match_id)
     .maybeSingle()

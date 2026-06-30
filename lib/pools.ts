@@ -18,6 +18,7 @@ import {
 } from '@/lib/pool-join-code'
 import { normalizePoolInviteJoinMode, type PoolInviteJoinMode } from '@/lib/pool-invite-join-mode'
 import type { GameMatch } from '@/lib/public-prediction-game'
+import { SUPABASE_PUBLIC } from '@/lib/supabase-public-access'
 
 export type GameMatchForPoolPicks = GameMatch & { prediction_cutoff_time?: string | null }
 
@@ -677,10 +678,7 @@ export async function previewPoolGroups(
 
   // Fallback path for environments where preview RPC is not yet migrated.
   const [linksRes, groupsRes, coreTeamsRes] = await Promise.all([
-    client
-      .from('game_match_groups')
-      .select('group_id, fixture_groups(name), game_matches(id, home_team, away_team, kickoff_time, status, competition_id)')
-      .in('group_id', uniqueIds),
+    client.from('game_match_groups').select('group_id, match_id').in('group_id', uniqueIds),
     client.from('fixture_groups').select('id, name').in('id', uniqueIds),
     client.from('fixture_group_teams').select('group_id, team_name').in('group_id', uniqueIds),
   ])
@@ -689,31 +687,42 @@ export async function previewPoolGroups(
     return { preview: null as PoolGroupsPreview | null, error: linksRes.error }
   }
 
+  const linkRows = (linksRes.data as { group_id: string; match_id: string }[] | null) ?? []
+  type PreviewMatchItem = {
+    id: string
+    home_team: string
+    away_team: string
+    kickoff_time: string
+    status: string
+  }
+  const linkedMatchIds = [...new Set(linkRows.map((r) => r.match_id))]
+  const { data: linkedMatches, error: linkedMatchErr } =
+    linkedMatchIds.length === 0
+      ? { data: [] as PreviewMatchItem[], error: null }
+      : await client
+          .from(SUPABASE_PUBLIC.gameMatches)
+          .select('id, home_team, away_team, kickoff_time, status, competition_id')
+          .in('id', linkedMatchIds)
+
+  if (linkedMatchErr) {
+    return { preview: null as PoolGroupsPreview | null, error: linkedMatchErr }
+  }
+
   const selectedGroupNameById = new Map<string, string>()
   for (const row of (groupsRes.data as { id: string; name: string }[] | null) ?? []) {
     selectedGroupNameById.set(row.id, row.name)
   }
 
-  type MatchItem = { id: string; home_team: string; away_team: string; kickoff_time: string; status: string }
+  type MatchItem = PreviewMatchItem
   const matchMap = new Map<string, MatchItem>()
   const groupNamesByMatch = new Map<string, Set<string>>()
+  const matchById = new Map(
+    ((linkedMatches as { id: string; home_team: string; away_team: string; kickoff_time: string; status: string; competition_id?: string | null }[]) ??
+      []).map((m) => [m.id, m])
+  )
 
-  for (const row of
-    ((linksRes.data as {
-      group_id: string
-      fixture_groups: { name?: string } | { name?: string }[] | null
-      game_matches:
-        | { id?: string; home_team?: string; away_team?: string; kickoff_time?: string; status?: string }
-        | {
-            id?: string
-            home_team?: string
-            away_team?: string
-            kickoff_time?: string
-            status?: string
-          }[]
-        | null
-    }[] | null) ?? [])) {
-    const gmRaw = Array.isArray(row.game_matches) ? row.game_matches[0] : row.game_matches
+  for (const row of linkRows) {
+    const gmRaw = matchById.get(row.match_id)
     if (!gmRaw?.id) continue
     if (
       competitionId &&
@@ -732,28 +741,14 @@ export async function previewPoolGroups(
       status: String(gmRaw.status ?? ''),
     })
     if (!groupNamesByMatch.has(matchId)) groupNamesByMatch.set(matchId, new Set<string>())
-    const fgRaw = Array.isArray(row.fixture_groups) ? row.fixture_groups[0] : row.fixture_groups
-    const groupName = fgRaw?.name ?? selectedGroupNameById.get(row.group_id) ?? ''
+    const groupName = selectedGroupNameById.get(row.group_id) ?? ''
     if (groupName) groupNamesByMatch.get(matchId)?.add(groupName)
   }
 
   const matches = [...matchMap.values()]
   const matchedTeamsByGroup = new Map<string, Set<string>>()
-  for (const row of
-    ((linksRes.data as {
-      group_id: string
-      game_matches:
-        | { id?: string; home_team?: string; away_team?: string; kickoff_time?: string; status?: string }
-        | {
-            id?: string
-            home_team?: string
-            away_team?: string
-            kickoff_time?: string
-            status?: string
-          }[]
-        | null
-    }[] | null) ?? [])) {
-    const gmRaw = Array.isArray(row.game_matches) ? row.game_matches[0] : row.game_matches
+  for (const row of linkRows) {
+    const gmRaw = matchById.get(row.match_id)
     if (!gmRaw?.id || (gmRaw.status ?? '') === 'cancelled') continue
     if (!matchedTeamsByGroup.has(row.group_id)) matchedTeamsByGroup.set(row.group_id, new Set<string>())
     if (gmRaw.home_team) matchedTeamsByGroup.get(row.group_id)?.add(String(gmRaw.home_team))
@@ -777,21 +772,8 @@ export async function previewPoolGroups(
   // If a selected group has core teams, only include fixtures where at least one side matches
   // a core team (after canonical normalization). Groups without core keep linked-match behavior.
   const allowedMatchIdsByCoreRule = new Set<string>()
-  for (const row of
-    ((linksRes.data as {
-      group_id: string
-      game_matches:
-        | { id?: string; home_team?: string; away_team?: string; kickoff_time?: string; status?: string }
-        | {
-            id?: string
-            home_team?: string
-            away_team?: string
-            kickoff_time?: string
-            status?: string
-          }[]
-        | null
-    }[] | null) ?? [])) {
-    const gmRaw = Array.isArray(row.game_matches) ? row.game_matches[0] : row.game_matches
+  for (const row of linkRows) {
+    const gmRaw = matchById.get(row.match_id)
     if (!gmRaw?.id || (gmRaw.status ?? '') === 'cancelled') continue
     const matchId = String(gmRaw.id)
     const homeNorm = normalizePreviewTeamName(String(gmRaw.home_team ?? ''))
@@ -925,7 +907,7 @@ export async function fetchGameMatchesByIdsForPool(
     return { data: [] as GameMatchForPoolPicks[], error: null }
   }
   const { data, error } = await client
-    .from('game_matches')
+    .from(SUPABASE_PUBLIC.gameMatches)
     .select(
       'id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at, prediction_cutoff_time'
     )
