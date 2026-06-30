@@ -188,6 +188,7 @@ export default function AdminCompetitionDashboardPage() {
       {!loading && tab === 'results' ? (
         <CompetitionResultsPanel
           competitionSlug={competitionSlug}
+          scoringMode={competition?.scoring_mode ?? 'rugby_margin'}
           fixtures={fixtures}
           onRefresh={refreshData}
         />

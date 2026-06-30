@@ -4,7 +4,9 @@ import type { ChangeEvent } from 'react'
 import Link from 'next/link'
 import CompetitionTeamLogo from '@/components/CompetitionTeamLogo'
 import { getMobileTeamName } from '@/lib/soccer-mobile-team-name'
-import { SOCCER_GOALS_MAX } from '@/lib/predict-score-common'
+import { formatSoccerLockedPredictionLabel } from '@/lib/soccer-penalty-display'
+import type { SoccerPenaltySide } from '@/lib/soccer-exact-score-scoring'
+import { parseSoccerGoalsFromInput, SOCCER_GOALS_MAX } from '@/lib/predict-score-common'
 import { PREDICTION_KICKOFF_LOCK_MESSAGE } from '@/lib/prediction-cutoff'
 
 /** Desktop predict table header row (matches SoccerMatchCard columns). */
@@ -228,6 +230,67 @@ function ScoreRow({
   )
 }
 
+function PenaltyWinnerPicker({
+  homeTeam,
+  awayTeam,
+  value,
+  disabled,
+  name,
+  signedIn,
+  onChange,
+  onRequireAuth,
+}: {
+  homeTeam: string
+  awayTeam: string
+  value: SoccerPenaltySide | null | undefined
+  disabled: boolean
+  name: string
+  signedIn: boolean
+  onChange: (side: SoccerPenaltySide) => void
+  onRequireAuth?: () => void
+}) {
+  function handlePick(side: SoccerPenaltySide) {
+    if (disabled) return
+    if (!signedIn) {
+      onRequireAuth?.()
+      return
+    }
+    onChange(side)
+  }
+
+  return (
+    <fieldset className="mt-2 w-full rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2.5 md:col-span-full">
+      <legend className="px-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+        Penalties
+      </legend>
+      <div className="flex flex-col gap-2">
+        <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-800">
+          <input
+            type="radio"
+            name={name}
+            value="home"
+            disabled={disabled}
+            checked={value === 'home'}
+            onChange={() => handlePick('home')}
+          />
+          {homeTeam} wins on penalties
+        </label>
+        <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-800">
+          <input
+            type="radio"
+            name={name}
+            value="away"
+            disabled={disabled}
+            checked={value === 'away'}
+            onChange={() => handlePick('away')}
+          />
+          {awayTeam} wins on penalties
+        </label>
+      </div>
+    </fieldset>
+  )
+}
+
 export type SoccerMatchCardProps = {
   homeTeam: string
   awayTeam: string
@@ -236,6 +299,10 @@ export type SoccerMatchCardProps = {
   awayGoalsInput: string
   onHomeGoalsChange: (value: string) => void
   onAwayGoalsChange: (value: string) => void
+  isKnockoutFixture?: boolean
+  penaltyWinner?: SoccerPenaltySide | null
+  onPenaltyWinnerChange?: (side: SoccerPenaltySide) => void
+  lockedPenaltyWinner?: SoccerPenaltySide | null
   matchId: string
   signedIn?: boolean
   predictionsClosed?: boolean
@@ -259,6 +326,10 @@ export default function SoccerMatchCard({
   awayGoalsInput,
   onHomeGoalsChange,
   onAwayGoalsChange,
+  isKnockoutFixture = false,
+  penaltyWinner = null,
+  onPenaltyWinnerChange,
+  lockedPenaltyWinner = null,
   matchId,
   signedIn = false,
   predictionsClosed = false,
@@ -282,9 +353,21 @@ export default function SoccerMatchCard({
     !predictionRowLocked &&
     !predictionsClosed
   const saveLabel = hasExistingSubmission ? 'UPDATE' : 'SAVE'
+  const drawScores =
+    parseSoccerGoalsFromInput(homeGoalsInput) === parseSoccerGoalsFromInput(awayGoalsInput) &&
+    parseSoccerGoalsFromInput(homeGoalsInput) !== null
+  const showPenaltyPicker =
+    isKnockoutFixture && drawScores && Boolean(onPenaltyWinnerChange) && !predictionsClosed
+  const displayPenaltyWinner = lockedPenaltyWinner ?? (predictionRowLocked ? penaltyWinner : null)
   const savedScoreLabel =
     hasExistingSubmission && (predictionsClosed || predictionRowLocked || !editable)
-      ? `${homeGoalsInput} - ${awayGoalsInput}`
+      ? formatSoccerLockedPredictionLabel(
+          homeGoalsInput,
+          awayGoalsInput,
+          displayPenaltyWinner,
+          homeTeam,
+          awayTeam
+        )
       : null
 
   const saveColumn = predictionsClosed ? (
@@ -309,7 +392,7 @@ export default function SoccerMatchCard({
       {predictionRowLocked && savedScoreLabel ? (
         <>
           <span className="block">Locked in</span>
-          <span className="mt-1 block text-xs font-black tabular-nums text-slate-900">{savedScoreLabel}</span>
+          <span className="mt-1 block text-xs font-black text-slate-900">{savedScoreLabel}</span>
         </>
       ) : predictionRowLocked ? (
         'Locked in'
@@ -413,6 +496,19 @@ export default function SoccerMatchCard({
           </div>
 
           <div className="flex w-full min-w-0 flex-col items-stretch gap-2 md:gap-1">{saveColumn}</div>
+
+          {showPenaltyPicker ? (
+            <PenaltyWinnerPicker
+              homeTeam={homeTeam}
+              awayTeam={awayTeam}
+              value={penaltyWinner}
+              disabled={disablePickers}
+              name={`penalty-winner-${matchId}`}
+              signedIn={signedIn}
+              onChange={(side) => onPenaltyWinnerChange?.(side)}
+              onRequireAuth={onRequireAuth}
+            />
+          ) : null}
 
           <div className="flex w-full min-w-0 flex-col gap-2 md:gap-1">
             <Link

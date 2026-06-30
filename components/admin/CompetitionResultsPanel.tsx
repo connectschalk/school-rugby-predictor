@@ -10,8 +10,13 @@ import {
 } from '@/lib/admin-competition-api-client'
 import type { AdminFixtureRow } from '@/lib/admin-competition-stats'
 
+import { isKnockoutSoccerFixture } from '@/lib/soccer-knockout-fixture'
+import { formatSoccerMatchResultWithPenalties } from '@/lib/soccer-penalty-display'
+import type { CompetitionScoringMode } from '@/lib/competitions'
+
 type Props = {
   competitionSlug: string
+  scoringMode: CompetitionScoringMode
   fixtures: AdminFixtureRow[]
   onRefresh: () => void | Promise<void>
 }
@@ -21,6 +26,7 @@ type ResultFilter = 'all' | 'needs' | 'completed' | 'today'
 type RowState = {
   home: string
   away: string
+  penaltyWinner: '' | 'home' | 'away'
   editing: boolean
   message: string
   messageType: 'ok' | 'warn' | 'error'
@@ -31,6 +37,8 @@ function initialRowState(f: AdminFixtureRow): RowState {
   return {
     home: f.home_score != null ? String(f.home_score) : '',
     away: f.away_score != null ? String(f.away_score) : '',
+    penaltyWinner:
+      f.penalty_winner === 'home' || f.penalty_winner === 'away' ? f.penalty_winner : '',
     editing: f.status !== 'completed',
     message: '',
     messageType: 'ok',
@@ -38,7 +46,19 @@ function initialRowState(f: AdminFixtureRow): RowState {
   }
 }
 
-export default function CompetitionResultsPanel({ competitionSlug, fixtures, onRefresh }: Props) {
+function rowScoresAreDraw(row: Pick<RowState, 'home' | 'away'>): boolean {
+  const home = Number(row.home)
+  const away = Number(row.away)
+  return Number.isFinite(home) && Number.isFinite(away) && home === away
+}
+
+export default function CompetitionResultsPanel({
+  competitionSlug,
+  scoringMode,
+  fixtures,
+  onRefresh,
+}: Props) {
+  const soccerMode = scoringMode === 'soccer_exact_score'
   const [filter, setFilter] = useState<ResultFilter>('needs')
   const [search, setSearch] = useState('')
   const [rowState, setRowState] = useState<Record<string, RowState>>({})
@@ -53,6 +73,10 @@ export default function CompetitionResultsPanel({ competitionSlug, fixtures, onR
             ...existing,
             home: f.home_score != null ? String(f.home_score) : existing.home,
             away: f.away_score != null ? String(f.away_score) : existing.away,
+            penaltyWinner:
+              f.penalty_winner === 'home' || f.penalty_winner === 'away'
+                ? f.penalty_winner
+                : existing.penaltyWinner,
             editing: f.status !== 'completed' ? true : existing.editing,
           }
         } else if (!existing || !existing.busy) {
@@ -90,7 +114,13 @@ export default function CompetitionResultsPanel({ competitionSlug, fixtures, onR
   function patchRow(id: string, patch: Partial<RowState>) {
     setRowState((prev) => {
       const base = prev[id] ?? initialRowState(fixtures.find((x) => x.id === id)!)
-      return { ...prev, [id]: { ...base, ...patch } }
+      const merged = { ...base, ...patch }
+      if (patch.home !== undefined || patch.away !== undefined) {
+        if (!rowScoresAreDraw(merged)) {
+          merged.penaltyWinner = ''
+        }
+      }
+      return { ...prev, [id]: merged }
     })
   }
 
@@ -103,11 +133,28 @@ export default function CompetitionResultsPanel({ competitionSlug, fixtures, onR
       return
     }
 
+    const knockoutDraw =
+      soccerMode && homeScore === awayScore && isKnockoutSoccerFixture(f.fixture_round)
+    if (knockoutDraw && row.penaltyWinner !== 'home' && row.penaltyWinner !== 'away') {
+      patchRow(f.id, {
+        message: 'Choose which team won on penalties for a drawn knockout result.',
+        messageType: 'error',
+      })
+      return
+    }
+
     patchRow(f.id, { busy: true, message: '' })
     try {
       const res = await adminCompetitionFetch(
         `/api/admin/competitions/${competitionSlug}/fixtures/${f.id}/result`,
-        { method: 'POST', body: JSON.stringify({ home_score: homeScore, away_score: awayScore }) }
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            home_score: homeScore,
+            away_score: awayScore,
+            penalty_winner: knockoutDraw ? row.penaltyWinner : null,
+          }),
+        }
       )
       const json = (await res.json()) as {
         ok?: boolean
@@ -238,6 +285,22 @@ export default function CompetitionResultsPanel({ competitionSlug, fixtures, onR
               const row = getRow(f)
               const completed = f.status === 'completed'
               const inputsDisabled = completed && !row.editing
+              const showPenaltyPicker =
+                soccerMode &&
+                rowScoresAreDraw(row) &&
+                isKnockoutSoccerFixture(f.fixture_round)
+              const currentResultLabel =
+                completed && f.home_score != null && f.away_score != null
+                  ? formatSoccerMatchResultWithPenalties(
+                      f.home_team,
+                      f.away_team,
+                      f.home_score,
+                      f.away_score,
+                      f.penalty_winner === 'home' || f.penalty_winner === 'away'
+                        ? f.penalty_winner
+                        : null
+                    )
+                  : null
 
               return (
                 <li
@@ -261,10 +324,10 @@ export default function CompetitionResultsPanel({ competitionSlug, fixtures, onR
                       <p className="mt-1 text-xs text-gray-500">
                         Status:{' '}
                         <span className="font-semibold text-gray-700">{f.status}</span>
-                        {completed && f.home_score != null && f.away_score != null ? (
+                        {completed && currentResultLabel ? (
                           <>
                             {' '}
-                            · Current: {f.home_score}–{f.away_score}
+                            · Current: {currentResultLabel}
                           </>
                         ) : null}
                       </p>
@@ -336,6 +399,38 @@ export default function CompetitionResultsPanel({ competitionSlug, fixtures, onR
                       ) : null}
                     </div>
                   </div>
+
+                  {showPenaltyPicker ? (
+                    <fieldset className="mt-2 space-y-2 rounded-lg border border-gray-200 bg-white px-3 py-2">
+                      <legend className="px-1 text-xs font-semibold text-gray-700">
+                        Winner on penalties
+                      </legend>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                        <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-gray-800">
+                          <input
+                            type="radio"
+                            name={`penalty-winner-${f.id}`}
+                            value="home"
+                            disabled={inputsDisabled || row.busy}
+                            checked={row.penaltyWinner === 'home'}
+                            onChange={() => patchRow(f.id, { penaltyWinner: 'home' })}
+                          />
+                          {f.home_team}
+                        </label>
+                        <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-gray-800">
+                          <input
+                            type="radio"
+                            name={`penalty-winner-${f.id}`}
+                            value="away"
+                            disabled={inputsDisabled || row.busy}
+                            checked={row.penaltyWinner === 'away'}
+                            onChange={() => patchRow(f.id, { penaltyWinner: 'away' })}
+                          />
+                          {f.away_team}
+                        </label>
+                      </div>
+                    </fieldset>
+                  ) : null}
 
                   {row.message ? (
                     <p

@@ -3,6 +3,7 @@ import { ensureUserProfileExists } from '@/lib/user-profile-metadata'
 import { requireAuthenticatedApi } from '@/lib/predictions-api-auth'
 import {
   assertMatchOpenForUserSoccerPrediction,
+  parseSoccerPenaltyWinner,
   parseSoccerPredictionScores,
   upsertSoccerPredictionRow,
 } from '@/lib/soccer-prediction-mutation'
@@ -11,6 +12,7 @@ type Body = {
   match_id?: string
   predicted_home_score?: number
   predicted_away_score?: number
+  predicted_penalty_winner?: string | null
 }
 
 export async function POST(request: Request) {
@@ -34,9 +36,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error }, { status: 400 })
   }
 
+  const parsedPenalty = parseSoccerPenaltyWinner(body.predicted_penalty_winner)
+  if ('error' in parsedPenalty) {
+    return NextResponse.json({ error: parsedPenalty.error }, { status: 400 })
+  }
+
   const gate = await assertMatchOpenForUserSoccerPrediction(auth.supabase, matchId)
   if (!gate.ok) {
     return NextResponse.json({ error: gate.error }, { status: gate.status })
+  }
+
+  const { data: matchRow, error: matchErr } = await auth.supabase
+    .from('game_matches')
+    .select('fixture_round')
+    .eq('id', matchId)
+    .maybeSingle()
+
+  if (matchErr) {
+    return NextResponse.json({ error: 'Could not verify match.' }, { status: 500 })
+  }
+  if (!matchRow) {
+    return NextResponse.json({ error: 'Match not found.' }, { status: 404 })
   }
 
   const { error: profileErr } = await ensureUserProfileExists(auth.supabase, auth.user)
@@ -49,6 +69,8 @@ export async function POST(request: Request) {
     userId: auth.user.id,
     predictedHomeScore: parsed.home,
     predictedAwayScore: parsed.away,
+    predictedPenaltyWinner: parsedPenalty.value,
+    fixtureRound: (matchRow as { fixture_round: string | null }).fixture_round,
   })
 
   if (error) {

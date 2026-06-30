@@ -14,6 +14,15 @@ export type SoccerMatchResult = {
   awayScore: number
 }
 
+export type SoccerPenaltySide = 'home' | 'away'
+
+export type ScoreSoccerPredictionOptions = {
+  predictedPenaltyWinner?: SoccerPenaltySide | null
+  actualPenaltyWinner?: SoccerPenaltySide | null
+  /** Legacy rugby-style winner on old soccer rows (home/away only). */
+  legacyPredictedWinner?: 'home' | 'away' | 'draw' | null
+}
+
 function resultFromScore(home: number, away: number): 'home' | 'away' | 'draw' {
   if (home > away) return 'home'
   if (away > home) return 'away'
@@ -62,14 +71,14 @@ function isCloseScore(
 }
 
 /**
- * Score a soccer exact-score prediction against the actual normal-time result.
+ * Standard soccer scoring (normal time only, no penalty shootout layer).
  *
  * - 3: exact scoreline
- * - 2: correct result + close (same goal difference or total absolute error ≤ 1)
+ * - 2: correct result + close
  * - 1: correct result only
  * - 0: wrong result
  */
-export function scoreSoccerPrediction(
+export function scoreSoccerPredictionNormalTime(
   predictedHomeScore: number,
   predictedAwayScore: number,
   actualHomeScore: number,
@@ -102,6 +111,91 @@ export function scoreSoccerPrediction(
   }
 
   return { points: 1, outcome: 'correct' }
+}
+
+function scoreSoccerPredictionWithPenaltyShootout(
+  predictedHomeScore: number,
+  predictedAwayScore: number,
+  actualHomeScore: number,
+  actualAwayScore: number,
+  options: Required<Pick<ScoreSoccerPredictionOptions, 'actualPenaltyWinner'>> &
+    ScoreSoccerPredictionOptions
+): SoccerPredictionScore {
+  const { predictedPenaltyWinner, actualPenaltyWinner, legacyPredictedWinner } = options
+  const exactScore =
+    predictedHomeScore === actualHomeScore && predictedAwayScore === actualAwayScore
+
+  if (
+    exactScore &&
+    predictedPenaltyWinner != null &&
+    predictedPenaltyWinner === actualPenaltyWinner
+  ) {
+    return { points: 3, outcome: 'exact' }
+  }
+
+  if (predictedPenaltyWinner != null && predictedPenaltyWinner === actualPenaltyWinner) {
+    return { points: 2, outcome: 'close' }
+  }
+
+  if (exactScore && predictedPenaltyWinner == null) {
+    return { points: 2, outcome: 'close' }
+  }
+
+  if (
+    predictedPenaltyWinner == null &&
+    (legacyPredictedWinner === 'home' || legacyPredictedWinner === 'away') &&
+    legacyPredictedWinner === actualPenaltyWinner
+  ) {
+    return { points: 2, outcome: 'close' }
+  }
+
+  if (
+    exactScore &&
+    predictedPenaltyWinner != null &&
+    predictedPenaltyWinner !== actualPenaltyWinner
+  ) {
+    return { points: 1, outcome: 'correct' }
+  }
+
+  return scoreSoccerPredictionNormalTime(
+    predictedHomeScore,
+    predictedAwayScore,
+    actualHomeScore,
+    actualAwayScore
+  )
+}
+
+/**
+ * Score a soccer exact-score prediction against the actual result.
+ * When the actual match was a knockout draw decided on penalties, applies the
+ * penalty-shootout scoring layer before falling back to normal-time rules.
+ */
+export function scoreSoccerPrediction(
+  predictedHomeScore: number,
+  predictedAwayScore: number,
+  actualHomeScore: number,
+  actualAwayScore: number,
+  options: ScoreSoccerPredictionOptions = {}
+): SoccerPredictionScore {
+  const actualIsDraw = actualHomeScore === actualAwayScore
+  const actualPenaltyWinner = options.actualPenaltyWinner ?? null
+
+  if (actualIsDraw && actualPenaltyWinner != null) {
+    return scoreSoccerPredictionWithPenaltyShootout(
+      predictedHomeScore,
+      predictedAwayScore,
+      actualHomeScore,
+      actualAwayScore,
+      { ...options, actualPenaltyWinner }
+    )
+  }
+
+  return scoreSoccerPredictionNormalTime(
+    predictedHomeScore,
+    predictedAwayScore,
+    actualHomeScore,
+    actualAwayScore
+  )
 }
 
 /** @deprecated Use {@link scoreSoccerPrediction} instead. */

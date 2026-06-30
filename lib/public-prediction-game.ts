@@ -16,6 +16,8 @@ export type GameMatch = {
   status: GameMatchStatus
   home_score: number | null
   away_score: number | null
+  penalty_winner?: 'home' | 'away' | null
+  fixture_round?: string | null
   created_at: string
   /** Highlight ordering on Predict a Score (max 10 live upcoming/locked). */
   is_featured?: boolean
@@ -42,6 +44,7 @@ export type UserPredictionRow = {
   predicted_margin: number | null
   predicted_home_score: number | null
   predicted_away_score: number | null
+  predicted_penalty_winner?: 'home' | 'away' | null
   submitted_at: string
   is_locked?: boolean
   locked_at?: string | null
@@ -165,7 +168,7 @@ export async function fetchPlayableGameMatches(client: SupabaseClient) {
 }
 
 const PREDICT_SCORE_MATCH_SELECT =
-  'id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at, home_team_province, away_team_province, prediction_cutoff_time, verification_status'
+  'id, home_team, away_team, kickoff_time, status, home_score, away_score, penalty_winner, fixture_round, created_at, home_team_province, away_team_province, prediction_cutoff_time, verification_status'
 
 /** Predict Score hub: upcoming only, kickoff order, provinces for grouping (no pool / group filters). */
 export async function fetchUpcomingPredictScoreMatches(
@@ -216,7 +219,7 @@ export async function fetchUserPredictionsForMatches(
   const { data, error } = await client
     .from('user_predictions')
     .select(
-      'id, match_id, user_id, predicted_winner, predicted_margin, predicted_home_score, predicted_away_score, submitted_at, is_locked, locked_at'
+      'id, match_id, user_id, predicted_winner, predicted_margin, predicted_home_score, predicted_away_score, predicted_penalty_winner, submitted_at, is_locked, locked_at'
     )
     .eq('user_id', userId)
     .in('match_id', matchIds)
@@ -646,7 +649,7 @@ export async function fetchMyPredictionsOverview(
   const { data: preds, error: pe } = await client
     .from('user_predictions')
     .select(
-      'id, match_id, user_id, predicted_winner, predicted_margin, predicted_home_score, predicted_away_score, submitted_at, is_locked, locked_at'
+      'id, match_id, user_id, predicted_winner, predicted_margin, predicted_home_score, predicted_away_score, predicted_penalty_winner, submitted_at, is_locked, locked_at'
     )
     .eq('user_id', userId)
     .order('submitted_at', { ascending: false })

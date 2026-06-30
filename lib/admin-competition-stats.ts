@@ -82,6 +82,7 @@ export type AdminFixtureRow = {
   status: string
   home_score: number | null
   away_score: number | null
+  penalty_winner: string | null
   external_id: string | null
   fixture_round: string | null
   league_group: string | null
@@ -100,7 +101,7 @@ export async function fetchCompetitionFixtures(
   let q = client
     .from('game_matches')
     .select(
-      'id, kickoff_time, home_team, away_team, status, home_score, away_score, external_id, fixture_round, league_group, admin_notes'
+      'id, kickoff_time, home_team, away_team, status, home_score, away_score, penalty_winner, external_id, fixture_round, league_group, admin_notes'
     )
     .eq('competition_id', competitionId)
     .order('kickoff_time', { ascending: true })

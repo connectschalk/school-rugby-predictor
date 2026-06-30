@@ -16,9 +16,12 @@ export type PickState = {
   margin: string
 }
 
+export type SoccerPenaltySide = 'home' | 'away'
+
 export type SoccerPickState = {
   homeGoals: string
   awayGoals: string
+  penaltyWinner?: SoccerPenaltySide | null
 }
 
 export function predictionMap(rows: UserPredictionRow[]) {
@@ -47,9 +50,17 @@ export function parseSoccerGoalsFromInput(s: string): number | null {
 
 export const defaultPick = (): PickState => ({ winner: null, margin: '' })
 
-export const defaultSoccerPick = (): SoccerPickState => ({ homeGoals: '0', awayGoals: '0' })
+export const defaultSoccerPick = (): SoccerPickState => ({
+  homeGoals: '0',
+  awayGoals: '0',
+  penaltyWinner: null,
+})
 
-export const blankSoccerPick = (): SoccerPickState => ({ homeGoals: '', awayGoals: '' })
+export const blankSoccerPick = (): SoccerPickState => ({
+  homeGoals: '',
+  awayGoals: '',
+  penaltyWinner: null,
+})
 
 export function hasSoccerPredictionSubmission(pred: UserPredictionRow | undefined): boolean {
   return pred?.predicted_home_score != null && pred?.predicted_away_score != null
@@ -63,9 +74,16 @@ export function soccerPickFromPrediction(
     return {
       homeGoals: String(pred!.predicted_home_score),
       awayGoals: String(pred!.predicted_away_score),
+      penaltyWinner: pred!.predicted_penalty_winner ?? null,
     }
   }
   return closed ? blankSoccerPick() : defaultSoccerPick()
+}
+
+export function soccerPickScoresAreDraw(pick: Pick<SoccerPickState, 'homeGoals' | 'awayGoals'>): boolean {
+  const home = parseSoccerGoalsFromInput(pick.homeGoals)
+  const away = parseSoccerGoalsFromInput(pick.awayGoals)
+  return home !== null && away !== null && home === away
 }
 
 export async function ensureUserProfile(client: SupabaseClient, user: User) {
@@ -166,6 +184,7 @@ export async function upsertUserPrediction(
       predicted_margin: input.predictedMargin,
       predicted_home_score: null,
       predicted_away_score: null,
+      predicted_penalty_winner: null,
       submitted_at: new Date().toISOString(),
     },
     { onConflict: 'user_id,match_id' }
@@ -176,7 +195,12 @@ export async function upsertUserPrediction(
 export async function upsertSoccerUserPrediction(
   client: SupabaseClient,
   user: User,
-  input: { matchId: string; predictedHomeScore: number; predictedAwayScore: number }
+  input: {
+    matchId: string
+    predictedHomeScore: number
+    predictedAwayScore: number
+    predictedPenaltyWinner?: SoccerPenaltySide | null
+  }
 ) {
   const {
     data: { session },
@@ -194,6 +218,7 @@ export async function upsertSoccerUserPrediction(
       match_id: input.matchId,
       predicted_home_score: input.predictedHomeScore,
       predicted_away_score: input.predictedAwayScore,
+      predicted_penalty_winner: input.predictedPenaltyWinner ?? null,
     }),
   })
 

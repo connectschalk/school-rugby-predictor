@@ -140,7 +140,14 @@ export function formatRugbyPrediction(pred: UserPredictionRow, match: GameMatch)
 export function formatSoccerPrediction(pred: UserPredictionRow, match: GameMatch): string {
   const home = pred.predicted_home_score ?? 0
   const away = pred.predicted_away_score ?? 0
-  return `${match.home_team} ${home} - ${away} ${match.away_team}`
+  const base = `${match.home_team} ${home} - ${away} ${match.away_team}`
+  if (pred.predicted_penalty_winner === 'home') {
+    return `${base} (${match.home_team} on penalties)`
+  }
+  if (pred.predicted_penalty_winner === 'away') {
+    return `${base} (${match.away_team} on penalties)`
+  }
+  return base
 }
 
 export function formatPredictionPick(row: MyPredictionOverviewRow): string {

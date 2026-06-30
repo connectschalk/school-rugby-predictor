@@ -23,6 +23,8 @@ import {
   type PickState,
   type SoccerPickState,
 } from '@/lib/predict-score-common'
+import { isKnockoutSoccerFixture } from '@/lib/soccer-knockout-fixture'
+import { validateSoccerPenaltyPrediction } from '@/lib/soccer-prediction-mutation'
 import { isSoccerExactScoreMode, resolveCompetitionScoringMode, type CompetitionScoringMode } from '@/lib/competitions'
 import { canEditPredictionOnMatch, filterOpenPredictionFixtures, PREDICTION_KICKOFF_LOCK_MESSAGE } from '@/lib/prediction-cutoff'
 import {
@@ -185,6 +187,11 @@ export default function PoolPredictTabSection({
       if (typeof patch.awayGoals === 'string') {
         merged.awayGoals = patch.awayGoals.replace(/\D/g, '').slice(0, 2)
       }
+      const home = parseSoccerGoalsFromInput(merged.homeGoals)
+      const away = parseSoccerGoalsFromInput(merged.awayGoals)
+      if (home !== null && away !== null && home !== away) {
+        merged.penaltyWinner = null
+      }
       return { ...prev, [matchId]: merged }
     })
   }, [])
@@ -209,12 +216,23 @@ export default function PoolPredictTabSection({
         setSubmitError('Enter home and away goals (0–20).')
         return
       }
+      const penaltyCheck = validateSoccerPenaltyPrediction(
+        homeGoals,
+        awayGoals,
+        slip.penaltyWinner ?? null,
+        rowMatch.fixture_round
+      )
+      if (!penaltyCheck.ok) {
+        setSubmitError(penaltyCheck.error)
+        return
+      }
       setSubmitError('')
       setSubmittingMatchId(matchId)
       const { error } = await upsertSoccerUserPrediction(supabase, user, {
         matchId,
         predictedHomeScore: homeGoals,
         predictedAwayScore: awayGoals,
+        predictedPenaltyWinner: penaltyCheck.penaltyWinner,
       })
       if (error) {
         setSubmitError(error.message)
@@ -301,6 +319,10 @@ export default function PoolPredictTabSection({
             awayGoalsInput={pick.awayGoals}
             onHomeGoalsChange={(value) => setSoccerPick(m.id, { homeGoals: value })}
             onAwayGoalsChange={(value) => setSoccerPick(m.id, { awayGoals: value })}
+            isKnockoutFixture={isKnockoutSoccerFixture(m.fixture_round)}
+            penaltyWinner={pick.penaltyWinner ?? null}
+            onPenaltyWinnerChange={(side) => setSoccerPick(m.id, { penaltyWinner: side })}
+            lockedPenaltyWinner={pred?.predicted_penalty_winner ?? null}
             matchId={m.id}
             signedIn
             predictionsClosed={closed}

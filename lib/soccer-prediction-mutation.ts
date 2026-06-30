@@ -1,11 +1,15 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { SOCCER_GOALS_MAX } from '@/lib/predict-score-common'
+import { isKnockoutSoccerFixture } from '@/lib/soccer-knockout-fixture'
+import type { SoccerPenaltySide } from '@/lib/soccer-exact-score-scoring'
 import { PREDICTION_KICKOFF_LOCK_MESSAGE } from '@/lib/prediction-cutoff'
 
 export type SoccerPredictionInput = {
   matchId: string
   predictedHomeScore: number
   predictedAwayScore: number
+  predictedPenaltyWinner?: SoccerPenaltySide | null
+  fixtureRound?: string | null
 }
 
 export type SoccerPredictionTarget = SoccerPredictionInput & {
@@ -32,7 +36,53 @@ export function parseSoccerPredictionScores(
   return { home: predictedHomeScore, away: predictedAwayScore }
 }
 
+export function parseSoccerPenaltyWinner(
+  value: unknown
+): { value: SoccerPenaltySide | null } | { error: string } {
+  if (value == null || value === '') return { value: null }
+  if (value === 'home' || value === 'away') return { value }
+  return { error: 'Penalty winner must be home or away.' }
+}
+
+export function validateSoccerPenaltyPrediction(
+  homeScore: number,
+  awayScore: number,
+  penaltyWinner: SoccerPenaltySide | null,
+  fixtureRound?: string | null
+): { ok: true; penaltyWinner: SoccerPenaltySide | null } | { ok: false; error: string } {
+  const isDraw = homeScore === awayScore
+  const knockout = isKnockoutSoccerFixture(fixtureRound)
+
+  if (!isDraw) {
+    if (penaltyWinner != null) {
+      return { ok: false, error: 'Clear the penalty winner when the predicted score is not a draw.' }
+    }
+    return { ok: true, penaltyWinner: null }
+  }
+
+  if (knockout) {
+    if (penaltyWinner == null) {
+      return { ok: false, error: 'Choose which team wins on penalties for a drawn knockout score.' }
+    }
+    return { ok: true, penaltyWinner }
+  }
+
+  if (penaltyWinner != null) {
+    return { ok: false, error: 'Penalty winner is only required for knockout draws.' }
+  }
+  return { ok: true, penaltyWinner: null }
+}
+
 /** Server-side gate: upcoming fixture with kickoff still in the future. */
+export function validateAdminMatchPenaltyResult(
+  homeScore: number,
+  awayScore: number,
+  penaltyWinner: SoccerPenaltySide | null,
+  fixtureRound?: string | null
+): { ok: true; penaltyWinner: SoccerPenaltySide | null } | { ok: false; error: string } {
+  return validateSoccerPenaltyPrediction(homeScore, awayScore, penaltyWinner, fixtureRound)
+}
+
 export async function assertMatchOpenForUserSoccerPrediction(
   client: SupabaseClient,
   matchId: string
@@ -77,12 +127,23 @@ export async function upsertSoccerPredictionRow(
   client: SupabaseClient,
   target: SoccerPredictionTarget
 ): Promise<{ error: string | null }> {
+  const penaltyCheck = validateSoccerPenaltyPrediction(
+    target.predictedHomeScore,
+    target.predictedAwayScore,
+    target.predictedPenaltyWinner ?? null,
+    target.fixtureRound
+  )
+  if (!penaltyCheck.ok) {
+    return { error: penaltyCheck.error }
+  }
+
   const { error } = await client.from('user_predictions').upsert(
     {
       match_id: target.matchId,
       user_id: target.userId,
       predicted_home_score: target.predictedHomeScore,
       predicted_away_score: target.predictedAwayScore,
+      predicted_penalty_winner: penaltyCheck.penaltyWinner,
       predicted_winner: null,
       predicted_margin: null,
       submitted_at: new Date().toISOString(),

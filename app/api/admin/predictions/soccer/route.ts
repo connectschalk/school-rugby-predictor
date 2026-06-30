@@ -1,12 +1,17 @@
 import { NextResponse } from 'next/server'
 import { requireAdminApi } from '@/lib/admin-api-auth'
-import { parseSoccerPredictionScores, upsertSoccerPredictionRow } from '@/lib/soccer-prediction-mutation'
+import {
+  parseSoccerPenaltyWinner,
+  parseSoccerPredictionScores,
+  upsertSoccerPredictionRow,
+} from '@/lib/soccer-prediction-mutation'
 
 type Body = {
   user_id?: string
   match_id?: string
   predicted_home_score?: number
   predicted_away_score?: number
+  predicted_penalty_winner?: string | null
 }
 
 export async function POST(request: Request) {
@@ -31,9 +36,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: parsed.error }, { status: 400 })
   }
 
+  const parsedPenalty = parseSoccerPenaltyWinner(body.predicted_penalty_winner)
+  if ('error' in parsedPenalty) {
+    return NextResponse.json({ ok: false, error: parsedPenalty.error }, { status: 400 })
+  }
+
   const { data: matchRow, error: matchErr } = await auth.supabase
     .from('game_matches')
-    .select('id')
+    .select('id, fixture_round')
     .eq('id', matchId)
     .maybeSingle()
 
@@ -49,6 +59,8 @@ export async function POST(request: Request) {
     userId,
     predictedHomeScore: parsed.home,
     predictedAwayScore: parsed.away,
+    predictedPenaltyWinner: parsedPenalty.value,
+    fixtureRound: (matchRow as { fixture_round: string | null }).fixture_round,
   })
 
   if (error) {

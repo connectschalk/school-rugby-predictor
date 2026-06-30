@@ -5,6 +5,10 @@ import {
   resolveCompetitionAdminMatch,
 } from '@/lib/admin-competition-fixture-api'
 import { rpcScorePredictionsForMatch } from '@/lib/score-predictions-for-match'
+import {
+  parseSoccerPenaltyWinner,
+  validateAdminMatchPenaltyResult,
+} from '@/lib/soccer-prediction-mutation'
 
 type RouteParams = { params: Promise<{ competitionSlug: string; matchId: string }> }
 
@@ -18,9 +22,13 @@ export async function POST(request: Request, { params }: RouteParams) {
     return NextResponse.json({ ok: false, error: resolved.error }, { status: resolved.status })
   }
 
-  let body: { home_score?: unknown; away_score?: unknown }
+  let body: { home_score?: unknown; away_score?: unknown; penalty_winner?: unknown }
   try {
-    body = (await request.json()) as { home_score?: unknown; away_score?: unknown }
+    body = (await request.json()) as {
+      home_score?: unknown
+      away_score?: unknown
+      penalty_winner?: unknown
+    }
   } catch {
     return NextResponse.json({ ok: false, error: 'Invalid JSON body' }, { status: 400 })
   }
@@ -34,11 +42,36 @@ export async function POST(request: Request, { params }: RouteParams) {
     )
   }
 
+  const parsedPenalty = parseSoccerPenaltyWinner(body.penalty_winner)
+  if ('error' in parsedPenalty) {
+    return NextResponse.json({ ok: false, error: parsedPenalty.error }, { status: 400 })
+  }
+
+  let penaltyWinner: 'home' | 'away' | null = null
+  if (resolved.competition.scoring_mode === 'soccer_exact_score') {
+    const penaltyCheck = validateAdminMatchPenaltyResult(
+      homeScore,
+      awayScore,
+      parsedPenalty.value,
+      resolved.match.fixture_round
+    )
+    if (!penaltyCheck.ok) {
+      return NextResponse.json({ ok: false, error: penaltyCheck.error }, { status: 400 })
+    }
+    penaltyWinner = penaltyCheck.penaltyWinner
+  } else if (parsedPenalty.value != null) {
+    return NextResponse.json(
+      { ok: false, error: 'Penalty winner is only used for soccer competitions.' },
+      { status: 400 }
+    )
+  }
+
   const { error: upErr } = await auth.supabase
     .from('game_matches')
     .update({
       home_score: homeScore,
       away_score: awayScore,
+      penalty_winner: penaltyWinner,
       status: 'completed',
     })
     .eq('id', resolved.match.id)
