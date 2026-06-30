@@ -17,7 +17,7 @@ where name ilike 'Die BUKSEM groepie';
 select pm.user_id,
        coalesce(nullif(trim(up.display_name), ''), 'Player') as player_name,
        pm.joined_at,
-       pm.role
+       (pm.user_id = p.admin_user_id) as is_pool_admin
 from public.pool_members pm
 join public.pools p on p.id = pm.pool_id
 left join public.user_profiles up on up.id = pm.user_id
