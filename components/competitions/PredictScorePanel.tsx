@@ -27,7 +27,7 @@ import {
   type PickState,
   type SoccerPickState,
 } from '@/lib/predict-score-common'
-import { isKnockoutSoccerFixture } from '@/lib/soccer-knockout-fixture'
+import { isKnockoutSoccerFixture, soccerKnockoutContextFromMatch } from '@/lib/soccer-knockout-fixture'
 import { validateSoccerPenaltyPrediction } from '@/lib/soccer-prediction-mutation'
 import {
   isSoccerExactScoreMode,
@@ -368,7 +368,7 @@ export default function PredictScorePanel({
         homeGoals,
         awayGoals,
         slip.penaltyWinner ?? null,
-        rowMatch.fixture_round
+        soccerKnockoutContextFromMatch(rowMatch, competitionSlug)
       )
       if (!penaltyCheck.ok) {
         setSubmitError(penaltyCheck.error)
@@ -467,7 +467,9 @@ export default function PredictScorePanel({
             awayGoalsInput={pick.awayGoals}
             onHomeGoalsChange={(value) => setSoccerPick(m.id, { homeGoals: value })}
             onAwayGoalsChange={(value) => setSoccerPick(m.id, { awayGoals: value })}
-            isKnockoutFixture={isKnockoutSoccerFixture(m.fixture_round)}
+            isKnockoutFixture={isKnockoutSoccerFixture(
+              soccerKnockoutContextFromMatch(m, competitionSlug)
+            )}
             penaltyWinner={pick.penaltyWinner ?? null}
             onPenaltyWinnerChange={(side) => setSoccerPick(m.id, { penaltyWinner: side })}
             lockedPenaltyWinner={pred?.predicted_penalty_winner ?? null}

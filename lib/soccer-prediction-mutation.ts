@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { SOCCER_GOALS_MAX } from '@/lib/predict-score-common'
-import { isKnockoutSoccerFixture } from '@/lib/soccer-knockout-fixture'
+import { isKnockoutSoccerFixture, type SoccerKnockoutFixtureContext } from '@/lib/soccer-knockout-fixture'
 import type { SoccerPenaltySide } from '@/lib/soccer-exact-score-scoring'
 import { PREDICTION_KICKOFF_LOCK_MESSAGE } from '@/lib/prediction-cutoff'
 
@@ -10,6 +10,8 @@ export type SoccerPredictionInput = {
   predictedAwayScore: number
   predictedPenaltyWinner?: SoccerPenaltySide | null
   fixtureRound?: string | null
+  leagueGroup?: string | null
+  competitionSlug?: string | null
 }
 
 export type SoccerPredictionTarget = SoccerPredictionInput & {
@@ -48,10 +50,10 @@ export function validateSoccerPenaltyPrediction(
   homeScore: number,
   awayScore: number,
   penaltyWinner: SoccerPenaltySide | null,
-  fixtureRound?: string | null
+  fixtureContext?: SoccerKnockoutFixtureContext | string | null
 ): { ok: true; penaltyWinner: SoccerPenaltySide | null } | { ok: false; error: string } {
   const isDraw = homeScore === awayScore
-  const knockout = isKnockoutSoccerFixture(fixtureRound)
+  const knockout = isKnockoutSoccerFixture(fixtureContext)
 
   if (!isDraw) {
     if (penaltyWinner != null) {
@@ -73,14 +75,40 @@ export function validateSoccerPenaltyPrediction(
   return { ok: true, penaltyWinner: null }
 }
 
+function fixtureContextFromTarget(target: SoccerPredictionTarget): SoccerKnockoutFixtureContext {
+  return {
+    fixtureRound: target.fixtureRound,
+    leagueGroup: target.leagueGroup,
+    competitionSlug: target.competitionSlug,
+  }
+}
+
 /** Server-side gate: upcoming fixture with kickoff still in the future. */
 export function validateAdminMatchPenaltyResult(
   homeScore: number,
   awayScore: number,
   penaltyWinner: SoccerPenaltySide | null,
-  fixtureRound?: string | null
+  fixtureContext?: SoccerKnockoutFixtureContext | string | null
 ): { ok: true; penaltyWinner: SoccerPenaltySide | null } | { ok: false; error: string } {
-  return validateSoccerPenaltyPrediction(homeScore, awayScore, penaltyWinner, fixtureRound)
+  const isDraw = homeScore === awayScore
+  const knockout = isKnockoutSoccerFixture(fixtureContext)
+
+  if (!isDraw) {
+    if (penaltyWinner != null) {
+      return { ok: false, error: 'Clear the penalty winner when the result is not a draw.' }
+    }
+    return { ok: true, penaltyWinner: null }
+  }
+
+  if (knockout && penaltyWinner == null) {
+    return { ok: false, error: 'Choose the winner on penalties.' }
+  }
+
+  if (!knockout && penaltyWinner != null) {
+    return { ok: false, error: 'Penalty winner is only required for knockout draws.' }
+  }
+
+  return { ok: true, penaltyWinner: knockout ? penaltyWinner : null }
 }
 
 export async function assertMatchOpenForUserSoccerPrediction(
@@ -131,7 +159,7 @@ export async function upsertSoccerPredictionRow(
     target.predictedHomeScore,
     target.predictedAwayScore,
     target.predictedPenaltyWinner ?? null,
-    target.fixtureRound
+    fixtureContextFromTarget(target)
   )
   if (!penaltyCheck.ok) {
     return { error: penaltyCheck.error }

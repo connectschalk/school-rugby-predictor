@@ -168,7 +168,7 @@ export async function fetchPlayableGameMatches(client: SupabaseClient) {
 }
 
 const PREDICT_SCORE_MATCH_SELECT =
-  'id, home_team, away_team, kickoff_time, status, home_score, away_score, penalty_winner, fixture_round, created_at, home_team_province, away_team_province, prediction_cutoff_time, verification_status'
+  'id, home_team, away_team, kickoff_time, status, home_score, away_score, penalty_winner, fixture_round, league_group, created_at, home_team_province, away_team_province, prediction_cutoff_time, verification_status'
 
 /** Predict Score hub: upcoming only, kickoff order, provinces for grouping (no pool / group filters). */
 export async function fetchUpcomingPredictScoreMatches(

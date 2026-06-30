@@ -10,7 +10,7 @@ import {
 } from '@/lib/admin-competition-api-client'
 import type { AdminFixtureRow } from '@/lib/admin-competition-stats'
 
-import { isKnockoutSoccerFixture } from '@/lib/soccer-knockout-fixture'
+import { isKnockoutSoccerFixture, soccerKnockoutContextFromMatch } from '@/lib/soccer-knockout-fixture'
 import { formatSoccerMatchResultWithPenalties } from '@/lib/soccer-penalty-display'
 import type { CompetitionScoringMode } from '@/lib/competitions'
 
@@ -134,10 +134,12 @@ export default function CompetitionResultsPanel({
     }
 
     const knockoutDraw =
-      soccerMode && homeScore === awayScore && isKnockoutSoccerFixture(f.fixture_round)
+      soccerMode &&
+      homeScore === awayScore &&
+      isKnockoutSoccerFixture(soccerKnockoutContextFromMatch(f, competitionSlug))
     if (knockoutDraw && row.penaltyWinner !== 'home' && row.penaltyWinner !== 'away') {
       patchRow(f.id, {
-        message: 'Choose which team won on penalties for a drawn knockout result.',
+        message: 'Choose the winner on penalties.',
         messageType: 'error',
       })
       return
@@ -285,10 +287,26 @@ export default function CompetitionResultsPanel({
               const row = getRow(f)
               const completed = f.status === 'completed'
               const inputsDisabled = completed && !row.editing
+              const knockoutContext = soccerKnockoutContextFromMatch(f, competitionSlug)
               const showPenaltyPicker =
+                soccerMode && rowScoresAreDraw(row) && isKnockoutSoccerFixture(knockoutContext)
+              if (
+                process.env.NODE_ENV === 'development' &&
                 soccerMode &&
                 rowScoresAreDraw(row) &&
-                isKnockoutSoccerFixture(f.fixture_round)
+                (f.home_team.toLowerCase().includes('netherlands') ||
+                  f.away_team.toLowerCase().includes('morocco'))
+              ) {
+                console.log('[penalty-debug]', {
+                  home: f.home_team,
+                  away: f.away_team,
+                  fixture_round: f.fixture_round,
+                  league_group: f.league_group,
+                  isKnockout: isKnockoutSoccerFixture(knockoutContext),
+                  isDraw: rowScoresAreDraw(row),
+                  showPenaltyPicker,
+                })
+              }
               const currentResultLabel =
                 completed && f.home_score != null && f.away_score != null
                   ? formatSoccerMatchResultWithPenalties(

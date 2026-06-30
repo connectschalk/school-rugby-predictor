@@ -48,7 +48,7 @@ export async function POST(request: Request) {
 
   const { data: matchRow, error: matchErr } = await auth.supabase
     .from('game_matches')
-    .select('fixture_round')
+    .select('fixture_round, league_group, competitions(slug)')
     .eq('id', matchId)
     .maybeSingle()
 
@@ -64,13 +64,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: profileErr.message }, { status: 400 })
   }
 
+  const match = matchRow as {
+    fixture_round: string | null
+    league_group: string | null
+    competitions: { slug: string } | { slug: string }[] | null
+  }
+  const competition = match.competitions
+  const competitionSlug = Array.isArray(competition) ? competition[0]?.slug : competition?.slug
+
   const { error } = await upsertSoccerPredictionRow(auth.supabase, {
     matchId,
     userId: auth.user.id,
     predictedHomeScore: parsed.home,
     predictedAwayScore: parsed.away,
     predictedPenaltyWinner: parsedPenalty.value,
-    fixtureRound: (matchRow as { fixture_round: string | null }).fixture_round,
+    fixtureRound: match.fixture_round,
+    leagueGroup: match.league_group,
+    competitionSlug: competitionSlug ?? null,
   })
 
   if (error) {

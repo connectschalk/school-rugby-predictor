@@ -53,7 +53,11 @@ export async function POST(request: Request, { params }: RouteParams) {
       homeScore,
       awayScore,
       parsedPenalty.value,
-      resolved.match.fixture_round
+      {
+        fixtureRound: resolved.match.fixture_round,
+        leagueGroup: resolved.match.league_group,
+        competitionSlug: resolved.competition.slug,
+      }
     )
     if (!penaltyCheck.ok) {
       return NextResponse.json({ ok: false, error: penaltyCheck.error }, { status: 400 })
