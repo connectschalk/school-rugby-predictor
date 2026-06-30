@@ -1,6 +1,10 @@
 import type { User } from '@supabase/supabase-js'
 import { isMemoryMapSignup } from '@/lib/auth-email'
 import { safeInternalReturnPath } from '@/lib/auth-return-path'
+import {
+  buildMemoryMapCreatePasswordHref,
+  isMemoryMapInvitePath,
+} from '@/lib/memory-map/auth-routes'
 import { getPublicSiteUrl } from '@/lib/site-url'
 
 function normalizeBaseUrl(raw: string): string {
@@ -41,11 +45,11 @@ export function buildAuthCallbackUrl(nextPath: string): string {
   return `${base}/auth/callback?next=${encodeURIComponent(safeNext)}`
 }
 
-/** Memory Map sign-up / invite: confirm email, then sign in inside Memory Map. */
+/** Memory Map sign-up / invite: confirm email, then choose a password. */
 export function buildMemoryMapEmailConfirmCallbackUrl(memoryMapReturnPath: string): string {
   const safeReturn = safeInternalReturnPath(memoryMapReturnPath) ?? '/memory-map'
-  const signInPath = `/memory-map/auth/sign-in?next=${encodeURIComponent(safeReturn)}`
-  return buildAuthCallbackUrl(signInPath)
+  const postConfirmPath = buildMemoryMapCreatePasswordHref(safeReturn)
+  return buildAuthCallbackUrl(postConfirmPath)
 }
 
 /** Supabase `redirectTo` for password reset emails. */
@@ -66,8 +70,14 @@ function decodeNextParam(nextParam: string | null | undefined): string | null {
 }
 
 /**
- * Where to send the user after `/auth/callback` finishes (session is cleared; user signs in again).
+ * Where to send the user after `/auth/callback` finishes.
+ * Memory Map create-password keeps the session so `updateUser({ password })` works.
  */
+export function shouldRetainSessionAfterEmailConfirm(redirectPath: string): boolean {
+  const base = redirectPath.split('?')[0]?.split('#')[0] ?? redirectPath
+  return base === '/memory-map/auth/create-password'
+}
+
 export function resolveEmailConfirmRedirect(
   nextParam: string | null | undefined,
   user?: User | null
@@ -84,7 +94,7 @@ export function resolveEmailConfirmRedirect(
   }
 
   if (user && isMemoryMapSignup(user)) {
-    return '/memory-map/auth/sign-in?confirmed=1'
+    return buildMemoryMapCreatePasswordHref('/memory-map')
   }
 
   return '/login?confirmed=1'
@@ -93,6 +103,26 @@ export function resolveEmailConfirmRedirect(
 /** Fallback when email confirmation fails. */
 export function resolveEmailConfirmErrorRedirect(nextParam: string | null | undefined): string {
   const safe = safeInternalReturnPath(decodeNextParam(nextParam))
-  if (safe?.startsWith('/memory-map')) return '/memory-map/auth/sign-in'
+  if (safe?.startsWith('/memory-map')) {
+    if (safe.startsWith('/memory-map/auth/sign-in') && isMemoryMapInvitePath(extractInvitePathFromSignInNext(safe) ?? '')) {
+      const invitePath = extractInvitePathFromSignInNext(safe)
+      if (invitePath) return buildMemoryMapCreatePasswordHref(invitePath)
+    }
+    return '/memory-map/auth/sign-in'
+  }
   return '/login'
+}
+
+function extractInvitePathFromSignInNext(signInPath: string): string | null {
+  try {
+    const query = signInPath.split('?')[1]
+    if (!query) return null
+    const params = new URLSearchParams(query)
+    const nested = params.get('next')
+    if (!nested) return null
+    const decoded = decodeURIComponent(nested)
+    return isMemoryMapInvitePath(decoded) ? decoded : null
+  } catch {
+    return null
+  }
 }

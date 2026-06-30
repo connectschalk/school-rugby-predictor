@@ -5,20 +5,27 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense, useEffect, useState } from 'react'
 import { ensureMemoryMapProfileExists } from '@/lib/memory-map/user-profile'
 import {
+  buildMemoryMapCreatePasswordHref,
   buildMemoryMapSignUpHref,
   resolveMemoryMapPostAuthRedirect,
   safeMemoryMapReturnPath,
 } from '@/lib/memory-map/auth-routes'
 import { supabase } from '@/lib/supabase'
 
+function isInvalidLoginError(message: string): boolean {
+  return message.toLowerCase().includes('invalid login credentials')
+}
+
 function SignInFormInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const nextAfterLogin = safeMemoryMapReturnPath(searchParams.get('next'))
+  const emailConfirmed = searchParams.get('confirmed') === '1'
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [showCreatePasswordHint, setShowCreatePasswordHint] = useState(false)
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
@@ -32,6 +39,7 @@ function SignInFormInner() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
+    setShowCreatePasswordHint(false)
     setLoading(true)
 
     const { data, error: signErr } = await supabase.auth.signInWithPassword({
@@ -40,7 +48,12 @@ function SignInFormInner() {
     })
 
     if (signErr) {
-      setError(signErr.message)
+      if (isInvalidLoginError(signErr.message)) {
+        setError('That email and password combination did not work.')
+        setShowCreatePasswordHint(true)
+      } else {
+        setError(signErr.message)
+      }
       setLoading(false)
       return
     }
@@ -53,11 +66,21 @@ function SignInFormInner() {
   }
 
   const returnPath = nextAfterLogin ?? '/memory-map'
+  const createPasswordHref = buildMemoryMapCreatePasswordHref(returnPath)
 
   return (
     <>
       <h1 className="text-xl font-black">Sign in</h1>
       <p className="mm-muted mt-2 text-sm">Use your NextPlay account to add memories or manage maps.</p>
+      {emailConfirmed ? (
+        <p className="mt-4 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white/90">
+          Email confirmed.{' '}
+          <Link href={createPasswordHref} className="font-bold underline underline-offset-4">
+            Create your password
+          </Link>{' '}
+          to continue.
+        </p>
+      ) : null}
       <form onSubmit={(e) => void handleSubmit(e)} className="mt-6 space-y-4">
         <div>
           <label htmlFor="mm-sign-in-email" className="mb-1 block text-xs font-bold uppercase tracking-wide text-white/70">
@@ -88,6 +111,15 @@ function SignInFormInner() {
           />
         </div>
         {error ? <p className="text-sm text-red-300">{error}</p> : null}
+        {showCreatePasswordHint ? (
+          <p className="text-sm text-white/85">
+            Just verified your email?{' '}
+            <Link href={createPasswordHref} className="font-bold underline underline-offset-4">
+              Create your password
+            </Link>{' '}
+            first, then return here to sign in.
+          </p>
+        ) : null}
         <button type="submit" disabled={loading} className="mm-btn-primary w-full rounded-2xl px-4 py-3 text-sm font-black disabled:opacity-50">
           {loading ? 'Signing in…' : 'Sign in'}
         </button>

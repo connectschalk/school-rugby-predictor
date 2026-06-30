@@ -14,6 +14,7 @@ import { isMemoryMapSignup } from '@/lib/auth-email'
 import {
   resolveEmailConfirmErrorRedirect,
   resolveEmailConfirmRedirect,
+  shouldRetainSessionAfterEmailConfirm,
 } from '@/lib/auth-redirect'
 import { upsertMemoryMapProfileFromSignupMetadata } from '@/lib/memory-map/user-profile'
 import { supabase } from '@/lib/supabase'
@@ -62,7 +63,9 @@ function AuthCallbackInner() {
           stashPostConfirmProfilePreview(data.session.user)
         }
         const dest = resolveEmailConfirmRedirect(nextParam, data.session.user)
-        await supabase.auth.signOut()
+        if (!shouldRetainSessionAfterEmailConfirm(dest)) {
+          await supabase.auth.signOut()
+        }
         router.replace(dest)
         return
       }
@@ -80,7 +83,9 @@ function AuthCallbackInner() {
           stashPostConfirmProfilePreview(session.user)
         }
         const dest = resolveEmailConfirmRedirect(nextParam, session.user)
-        await supabase.auth.signOut()
+        if (!shouldRetainSessionAfterEmailConfirm(dest)) {
+          await supabase.auth.signOut()
+        }
         router.replace(dest)
         return
       }

@@ -3,6 +3,7 @@
 import type { ChangeEvent } from 'react'
 import Link from 'next/link'
 import CompetitionTeamLogo from '@/components/CompetitionTeamLogo'
+import { getMobileTeamName } from '@/lib/soccer-mobile-team-name'
 import { SOCCER_GOALS_MAX } from '@/lib/predict-score-common'
 import { PREDICTION_KICKOFF_LOCK_MESSAGE } from '@/lib/prediction-cutoff'
 
@@ -86,7 +87,7 @@ function ScoreInput({
       }}
       className={
         compact
-          ? 'h-9 w-10 rounded-md border border-slate-200 bg-white text-center text-sm font-black tabular-nums text-slate-900 outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-50'
+          ? 'h-12 w-14 shrink-0 rounded-md border border-slate-200 bg-white text-center text-base font-black tabular-nums text-slate-900 outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-50'
           : 'h-11 w-12 rounded-lg border border-slate-200 bg-white text-center text-lg font-black tabular-nums text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:opacity-50 sm:h-12 sm:w-14 sm:text-xl'
       }
     />
@@ -108,21 +109,43 @@ function TeamCell({
   compact?: boolean
 }) {
   if (compact) {
+    const displayName = getMobileTeamName(name)
+    if (align === 'right') {
+      return (
+        <div className="flex min-w-0 items-center justify-end gap-2 text-right">
+          <span
+            className="min-w-0 truncate text-sm font-bold leading-tight text-slate-900"
+            title={name}
+            aria-label={`${label}: ${name}`}
+          >
+            {displayName}
+          </span>
+          <CompetitionTeamLogo
+            competitionSlug={competitionSlug}
+            teamName={name}
+            size={28}
+            variant="badge"
+            className="h-7 w-7 shrink-0 border-0"
+          />
+        </div>
+      )
+    }
+
     return (
-      <div
-        className={`flex min-w-0 items-center gap-1.5 ${
-          align === 'right' ? 'flex-row-reverse justify-end text-right' : 'justify-start text-left'
-        }`}
-      >
+      <div className="flex min-w-0 items-center gap-2 text-left">
         <CompetitionTeamLogo
           competitionSlug={competitionSlug}
           teamName={name}
           size={28}
           variant="badge"
-          className="shrink-0 border-0"
+          className="h-7 w-7 shrink-0 border-0"
         />
-        <span className="min-w-0 truncate text-[11px] font-bold leading-tight text-slate-900" title={name}>
-          {name}
+        <span
+          className="min-w-0 truncate text-sm font-bold leading-tight text-slate-900"
+          title={name}
+          aria-label={`${label}: ${name}`}
+        >
+          {displayName}
         </span>
       </div>
     )
@@ -347,8 +370,8 @@ export default function SoccerMatchCard({
             <div className="mt-0.5 break-words font-medium text-slate-700">{formatKickoffShort(kickoffTime)}</div>
           </div>
 
-          <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5 md:contents">
-            <div className="min-w-0 justify-self-start">
+          <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 md:contents">
+            <div className="min-w-0 justify-self-stretch md:justify-self-start">
               <div className="md:hidden">
                 <TeamCell label="Home" name={homeTeam} competitionSlug={competitionSlug} compact />
               </div>
@@ -357,7 +380,7 @@ export default function SoccerMatchCard({
               </div>
             </div>
 
-            <div className="flex min-w-0 justify-center md:min-w-0">
+            <div className="flex shrink-0 items-center justify-center">
               <ScoreRow
                 homeTeam={homeTeam}
                 awayTeam={awayTeam}
@@ -373,7 +396,7 @@ export default function SoccerMatchCard({
               />
             </div>
 
-            <div className="min-w-0 justify-self-end">
+            <div className="min-w-0 justify-self-stretch md:justify-self-end">
               <div className="md:hidden">
                 <TeamCell
                   label="Away"

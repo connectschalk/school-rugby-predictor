@@ -2,6 +2,7 @@ import { safeInternalReturnPath } from '@/lib/auth-return-path'
 
 export const MEMORY_MAP_AUTH_DEFAULT = '/memory-map' as const
 export const MEMORY_MAP_ACCOUNT_PATH = '/memory-map/account' as const
+export const MEMORY_MAP_CREATE_PASSWORD_PATH = '/memory-map/auth/create-password' as const
 
 const MEMORY_MAP_AUTH_PREFIX = '/memory-map/auth/'
 
@@ -37,6 +38,16 @@ export function buildMemoryMapSignUpHref(returnPath?: string | null): string {
     return `/memory-map/auth/sign-up?next=${encodeURIComponent(safe)}`
   }
   return '/memory-map/auth/sign-up'
+}
+
+export function isMemoryMapInvitePath(path: string): boolean {
+  const base = path.split('?')[0]?.split('#')[0] ?? path
+  return base.startsWith('/memory-map/invite/')
+}
+
+export function buildMemoryMapCreatePasswordHref(returnPath?: string | null): string {
+  const safe = safeMemoryMapReturnPath(returnPath) ?? MEMORY_MAP_AUTH_DEFAULT
+  return `${MEMORY_MAP_CREATE_PASSWORD_PATH}?next=${encodeURIComponent(safe)}`
 }
 
 export function parseMemoryMapSlugFromPath(pathname: string): string | null {

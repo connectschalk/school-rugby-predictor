@@ -5,9 +5,8 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { signupProductMetadata } from '@/lib/auth-email'
 import { buildMemoryMapEmailConfirmCallbackUrl } from '@/lib/auth-redirect'
-import {
-  buildMemoryMapSignInHref,
-} from '@/lib/memory-map/auth-routes'
+import { createSignupPlaceholderPassword } from '@/lib/auth-signup-placeholder'
+import { buildMemoryMapSignInHref } from '@/lib/memory-map/auth-routes'
 import {
   acceptOrganisationAdminInvite,
   organisationAdminInvitePath,
@@ -16,8 +15,6 @@ import {
 } from '@/lib/memory-map/organisations'
 import { ensureMemoryMapProfileExists } from '@/lib/memory-map/user-profile'
 import { supabase } from '@/lib/supabase'
-
-const PASSWORD_MIN = 8
 
 type Props = {
   token: string
@@ -28,10 +25,10 @@ export default function OrganisationAdminInviteClient({ token, invite }: Props) 
   const router = useRouter()
   const returnPath = organisationAdminInvitePath(token)
   const [sessionEmail, setSessionEmail] = useState<string | null>(null)
-  const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
+  const [displayName, setDisplayName] = useState(invite.invitedDisplayName ?? '')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [emailConfirmSent, setEmailConfirmSent] = useState(false)
   const [done, setDone] = useState(false)
   const [organisationSlug, setOrganisationSlug] = useState<string | null>(null)
 
@@ -51,9 +48,10 @@ export default function OrganisationAdminInviteClient({ token, invite }: Props) 
     setBusy(true)
     const { data: userData } = await supabase.auth.getUser()
     if (userData.user) {
+      const resolvedName = invite.invitedDisplayName ?? (displayName.trim() || undefined)
       await ensureMemoryMapProfileExists(supabase, userData.user, {
-        displayName: invite.invitedDisplayName ?? undefined,
-        contributorName: invite.invitedDisplayName ?? undefined,
+        displayName: resolvedName,
+        contributorName: resolvedName,
       })
     }
     const result = await acceptOrganisationAdminInvite(supabase, token)
@@ -66,28 +64,21 @@ export default function OrganisationAdminInviteClient({ token, invite }: Props) 
     setDone(true)
   }
 
-  async function onSignUp(e: React.FormEvent) {
+  async function onCreateAccount(e: React.FormEvent) {
     e.preventDefault()
     setError('')
-    if (password.length < PASSWORD_MIN) {
-      setError(`Password must be at least ${PASSWORD_MIN} characters.`)
-      return
-    }
-    if (password !== confirmPassword) {
-      setError('Passwords do not match.')
-      return
-    }
+    const name = displayName.trim() || invite.email.split('@')[0] || 'Memory Map user'
 
     setBusy(true)
     const { data, error: signErr } = await supabase.auth.signUp({
       email: invite.email,
-      password,
+      password: createSignupPlaceholderPassword(),
       options: {
         emailRedirectTo: buildMemoryMapEmailConfirmCallbackUrl(returnPath),
         data: {
           ...signupProductMetadata('memory_map'),
-          memory_map_display_name: invite.invitedDisplayName ?? invite.email.split('@')[0],
-          memory_map_contributor_name: invite.invitedDisplayName ?? invite.email.split('@')[0],
+          memory_map_display_name: name,
+          memory_map_contributor_name: name,
         },
       },
     })
@@ -100,15 +91,15 @@ export default function OrganisationAdminInviteClient({ token, invite }: Props) 
 
     if (data.session && data.user) {
       await ensureMemoryMapProfileExists(supabase, data.user, {
-        displayName: invite.invitedDisplayName ?? undefined,
-        contributorName: invite.invitedDisplayName ?? undefined,
+        displayName: name,
+        contributorName: name,
       })
       await acceptInvite()
       return
     }
 
     setBusy(false)
-    setError('Check your email to confirm your account, then sign in to accept this invite.')
+    setEmailConfirmSent(true)
   }
 
   if (isInvalid) {
@@ -141,13 +132,26 @@ export default function OrganisationAdminInviteClient({ token, invite }: Props) 
     )
   }
 
+  if (emailConfirmSent) {
+    return (
+      <main className="mx-auto max-w-lg px-5 py-10">
+        <h1 className="text-2xl font-black">Check your email</h1>
+        <p className="mm-muted mt-3 text-sm leading-relaxed">
+          We sent a verification link to <span className="font-bold text-white">{invite.email}</span>. After you
+          confirm, you&apos;ll choose a password and return here to accept the invite for{' '}
+          <strong className="text-white">{invite.organisationName}</strong>.
+        </p>
+      </main>
+    )
+  }
+
   return (
     <main className="mx-auto max-w-lg px-5 py-10">
       <p className="mm-text-accent text-xs font-bold uppercase tracking-[0.25em]">NextPlay Memory Map</p>
       <h1 className="mt-3 text-2xl font-black">Organisation admin invite</h1>
       <p className="mm-muted mt-3 text-sm leading-relaxed">
         You have been invited to help manage <strong className="text-white">{invite.organisationName}</strong> on
-        NextPlay Memory Map. Create your password or sign in to accept.
+        NextPlay Memory Map. Create your account or sign in to accept.
       </p>
       <p className="mt-3 text-sm">
         Invited email: <span className="font-bold text-white">{invite.email}</span>
@@ -183,9 +187,11 @@ export default function OrganisationAdminInviteClient({ token, invite }: Props) 
       ) : !sessionEmail ? (
         <div className="mt-6 space-y-6">
           <section>
-            <h2 className="text-sm font-black">Create your password</h2>
-            <p className="mm-muted mt-1 text-xs">For new Memory Map accounts at this email address.</p>
-            <form onSubmit={(e) => void onSignUp(e)} className="mt-3 space-y-3">
+            <h2 className="text-sm font-black">Create your account</h2>
+            <p className="mm-muted mt-1 text-xs">
+              We&apos;ll email you a verification link. After confirming, you choose a password and accept this invite.
+            </p>
+            <form onSubmit={(e) => void onCreateAccount(e)} className="mt-3 space-y-3">
               <input
                 type="email"
                 value={invite.email}
@@ -193,23 +199,13 @@ export default function OrganisationAdminInviteClient({ token, invite }: Props) 
                 className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-3 text-sm opacity-80"
               />
               <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Password"
-                className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-3 text-sm"
-              />
-              <input
-                type="password"
-                required
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Confirm password"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="Display name"
                 className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-3 text-sm"
               />
               <button type="submit" disabled={busy} className="mm-btn-primary w-full rounded-xl py-3 text-sm font-black disabled:opacity-50">
-                {busy ? 'Creating account…' : 'Create password and accept invite'}
+                {busy ? 'Sending verification…' : 'Send verification email'}
               </button>
             </form>
           </section>

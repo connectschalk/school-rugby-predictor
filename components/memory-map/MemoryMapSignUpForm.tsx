@@ -10,6 +10,7 @@ import {
 } from '@/lib/display-name-filter'
 import { signupProductMetadata } from '@/lib/auth-email'
 import { buildMemoryMapEmailConfirmCallbackUrl } from '@/lib/auth-redirect'
+import { createSignupPlaceholderPassword } from '@/lib/auth-signup-placeholder'
 import { ensureMemoryMapProfileExists } from '@/lib/memory-map/user-profile'
 import {
   buildMemoryMapSignInHref,
@@ -18,7 +19,6 @@ import {
 } from '@/lib/memory-map/auth-routes'
 import { supabase } from '@/lib/supabase'
 
-const PASSWORD_MIN = 8
 const DISPLAY_MAX = 60
 
 function SignUpFormInner() {
@@ -28,8 +28,6 @@ function SignUpFormInner() {
 
   const [displayName, setDisplayName] = useState('')
   const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [emailConfirmSent, setEmailConfirmSent] = useState(false)
@@ -60,21 +58,13 @@ function SignUpFormInner() {
       setError(displayCheck.message)
       return
     }
-    if (password.length < PASSWORD_MIN) {
-      setError(`Password must be at least ${PASSWORD_MIN} characters.`)
-      return
-    }
-    if (password !== confirmPassword) {
-      setError('Passwords do not match.')
-      return
-    }
 
     setLoading(true)
     const returnPath = nextAfterSignup ?? '/memory-map'
 
     const { data, error: signErr } = await supabase.auth.signUp({
       email: email.trim(),
-      password,
+      password: createSignupPlaceholderPassword(),
       options: {
         emailRedirectTo: buildMemoryMapEmailConfirmCallbackUrl(returnPath),
         data: {
@@ -122,15 +112,9 @@ function SignUpFormInner() {
       <>
         <h1 className="text-xl font-black">Check your email</h1>
         <p className="mm-muted mt-3 text-sm leading-relaxed">
-          We sent a confirmation link to <span className="text-white">{email.trim()}</span>. Open it to verify your
-          Memory Map account, then sign in to continue.
+          We sent a confirmation link to <span className="text-white">{email.trim()}</span>. After you verify your
+          email, you&apos;ll choose a password to finish setting up your Memory Map account.
         </p>
-        <Link
-          href={buildMemoryMapSignInHref(returnPath)}
-          className="mm-btn-primary mt-6 block rounded-2xl px-4 py-3 text-center text-sm font-black"
-        >
-          Go to sign in
-        </Link>
       </>
     )
   }
@@ -168,37 +152,9 @@ function SignUpFormInner() {
             className="mm-input w-full rounded-xl border border-white/15 bg-white/5 px-3 py-3 text-sm"
           />
         </div>
-        <div>
-          <label htmlFor="mm-sign-up-password" className="mb-1 block text-xs font-bold uppercase tracking-wide text-white/70">
-            Password
-          </label>
-          <input
-            id="mm-sign-up-password"
-            type="password"
-            autoComplete="new-password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="mm-input w-full rounded-xl border border-white/15 bg-white/5 px-3 py-3 text-sm"
-          />
-        </div>
-        <div>
-          <label htmlFor="mm-sign-up-confirm" className="mb-1 block text-xs font-bold uppercase tracking-wide text-white/70">
-            Confirm password
-          </label>
-          <input
-            id="mm-sign-up-confirm"
-            type="password"
-            autoComplete="new-password"
-            required
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            className="mm-input w-full rounded-xl border border-white/15 bg-white/5 px-3 py-3 text-sm"
-          />
-        </div>
         {error ? <p className="text-sm text-red-300">{error}</p> : null}
         <button type="submit" disabled={loading} className="mm-btn-primary w-full rounded-2xl px-4 py-3 text-sm font-black disabled:opacity-50">
-          {loading ? 'Creating account…' : 'Create account'}
+          {loading ? 'Sending verification…' : 'Send verification email'}
         </button>
       </form>
       <p className="mm-muted mt-4 text-center text-sm">
