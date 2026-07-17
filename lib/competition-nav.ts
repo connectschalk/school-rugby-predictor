@@ -1,4 +1,9 @@
-import { SCHOOLS_COMPETITION_SLUG } from '@/lib/competitions'
+import {
+  getActiveSwitcherEvents,
+  PAST_EVENT_COMPETITIONS,
+  SCHOOLS_COMPETITION_SLUG,
+  isPastEventCompetitionSlug,
+} from '@/lib/competitions'
 
 export type CompetitionNavTarget =
   | 'predict'
@@ -16,11 +21,26 @@ const TARGET_SEGMENTS: Record<Exclude<CompetitionNavTarget, 'home'>, string> = {
   fixtures: 'fixtures',
 }
 
+/** Current / featured competitions in the header switcher (derived from COMPETITION_EVENT_VISIBILITY). */
+export const ACTIVE_COMPETITION_SWITCHER_OPTIONS = getActiveSwitcherEvents().map((e) => ({
+  slug: e.slug,
+  label: e.label,
+}))
+
+/** Completed events under burger / competition menu → Past events. */
+export const PAST_EVENT_SWITCHER_OPTIONS = PAST_EVENT_COMPETITIONS.map((e) => ({
+  slug: e.slug,
+  label: e.label,
+  statusLabel: e.statusLabel,
+}))
+
+/** All known competitions for label lookup (includes past events). */
 export const COMPETITION_SWITCHER_OPTIONS = [
-  { slug: 'nextplay-schools', label: 'School Rugby' },
-  { slug: 'craven-week', label: 'Craven Week' },
-  { slug: 'soccer-world-cup', label: 'Soccer World Cup' },
+  ...ACTIVE_COMPETITION_SWITCHER_OPTIONS,
+  ...PAST_EVENT_SWITCHER_OPTIONS.map(({ slug, label }) => ({ slug, label })),
 ] as const
+
+export { isPastEventCompetitionSlug }
 
 export function parseCompetitionSlugFromPathname(
   pathname: string | null | undefined

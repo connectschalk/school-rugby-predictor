@@ -14,13 +14,29 @@ import {
 } from '@/lib/platform-branding'
 import {
   competitionCardTitle,
-  getActiveCompetitions,
+  filterLandingFeaturedCompetitions,
+  getLandingFeaturedCompetitions,
+  landingFeaturedGridClassName,
   type Competition,
 } from '@/lib/competitions'
 import { supabase } from '@/lib/supabase'
 import { trackEvent } from '@/lib/trackEvent'
 
-const FALLBACK_COMPETITIONS: Competition[] = [
+const FALLBACK_COMPETITIONS: Competition[] = filterLandingFeaturedCompetitions([
+  {
+    id: 'fallback-soccer',
+    slug: 'soccer-world-cup',
+    name: 'NextPlay Soccer World Cup',
+    description:
+      'Create your World Cup pool and predict every match with your friends.',
+    logo_url: '/competition-logos/soccer-world-cup-predictor.png',
+    hero_image_url: null,
+    sport_type: 'soccer',
+    competition_mode: 'official_fixed_fixtures',
+    scoring_mode: 'soccer_exact_score',
+    is_active: true,
+    display_order: 1,
+  },
   {
     id: 'fallback-schools',
     slug: 'nextplay-schools',
@@ -33,7 +49,7 @@ const FALLBACK_COMPETITIONS: Competition[] = [
     competition_mode: 'custom_pool_fixtures',
     scoring_mode: 'rugby_margin',
     is_active: true,
-    display_order: 1,
+    display_order: 2,
   },
   {
     id: 'fallback-craven',
@@ -47,23 +63,9 @@ const FALLBACK_COMPETITIONS: Competition[] = [
     competition_mode: 'official_fixed_fixtures',
     scoring_mode: 'rugby_margin',
     is_active: true,
-    display_order: 2,
-  },
-  {
-    id: 'fallback-soccer',
-    slug: 'soccer-world-cup',
-    name: 'NextPlay Soccer World Cup',
-    description:
-      'Create your World Cup pool and predict every match with your friends.',
-    logo_url: '/competition-logos/soccer-world-cup-predictor.png',
-    hero_image_url: null,
-    sport_type: 'soccer',
-    competition_mode: 'official_fixed_fixtures',
-    scoring_mode: 'soccer_exact_score',
-    is_active: true,
     display_order: 3,
   },
-]
+])
 
 function CompetitionCard({ competition }: { competition: Competition }) {
   const title = competitionCardTitle(competition.slug, competition.name)
@@ -137,7 +139,7 @@ export default function HomePage() {
 
   useEffect(() => {
     let cancelled = false
-    void getActiveCompetitions(supabase).then(({ competitions: rows, error }) => {
+    void getLandingFeaturedCompetitions(supabase).then(({ competitions: rows, error }) => {
       if (cancelled) return
       if (error) {
         setLoadError(error)
@@ -167,11 +169,11 @@ export default function HomePage() {
             Choose your NextPlay environment
           </h1>
           <p className="mt-4 max-w-xl text-sm text-gray-400 sm:text-base">
-            Three competitions. Three doors. Pick yours, create a pool, and predict every margin.
+            Pick a competition, create a pool, and predict every match.
           </p>
         </header>
 
-        <section className="mt-12 grid flex-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 lg:gap-6">
+        <section className={landingFeaturedGridClassName(competitions.length)}>
           {competitions.map((c) => (
             <CompetitionCard key={c.id} competition={c} />
           ))}

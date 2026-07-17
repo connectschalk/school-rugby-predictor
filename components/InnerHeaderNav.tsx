@@ -9,7 +9,8 @@ import {
   resolveProfileAvatarUrl,
 } from '@/lib/platform-branding'
 import {
-  COMPETITION_SWITCHER_OPTIONS,
+  ACTIVE_COMPETITION_SWITCHER_OPTIONS,
+  PAST_EVENT_SWITCHER_OPTIONS,
   competitionSwitcherLabel,
   getCompetitionScopedHref,
   getEquivalentCompetitionPath,
@@ -282,7 +283,7 @@ export default function InnerHeaderNav() {
               aria-label="Choose competition"
               className="absolute left-0 z-50 mt-2 w-56 rounded-xl border border-gray-200 bg-white py-1 shadow-lg shadow-black/10"
             >
-              {COMPETITION_SWITCHER_OPTIONS.map((option) => {
+              {ACTIVE_COMPETITION_SWITCHER_OPTIONS.map((option) => {
                 const selected = option.slug === competitionSlug
                 return (
                   <button
@@ -304,6 +305,39 @@ export default function InnerHeaderNav() {
                   </button>
                 )
               })}
+              {PAST_EVENT_SWITCHER_OPTIONS.length > 0 ? (
+                <>
+                  <div className="my-1 border-t border-gray-100" />
+                  <p className="px-4 pb-1 pt-1.5 text-[10px] font-bold uppercase tracking-wide text-gray-500">
+                    Past events
+                  </p>
+                  {PAST_EVENT_SWITCHER_OPTIONS.map((option) => {
+                    const selected = option.slug === competitionSlug
+                    return (
+                      <button
+                        key={option.slug}
+                        type="button"
+                        role="option"
+                        aria-selected={selected}
+                        onClick={() => {
+                          closeCompetitionMenu()
+                          router.push(getEquivalentCompetitionPath(pathname, option.slug))
+                        }}
+                        className={`flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left text-sm ${
+                          selected
+                            ? 'bg-gray-100 font-bold text-gray-900'
+                            : 'font-medium text-gray-800 hover:bg-gray-50'
+                        }`}
+                      >
+                        <span>{option.label}</span>
+                        <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                          {option.statusLabel}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -352,7 +386,7 @@ export default function InnerHeaderNav() {
                 Competition
               </p>
               <div className="space-y-0.5 sm:hidden">
-                {COMPETITION_SWITCHER_OPTIONS.map((option) => (
+                {ACTIVE_COMPETITION_SWITCHER_OPTIONS.map((option) => (
                   <button
                     key={option.slug}
                     type="button"
@@ -370,6 +404,35 @@ export default function InnerHeaderNav() {
                   </button>
                 ))}
               </div>
+              {PAST_EVENT_SWITCHER_OPTIONS.length > 0 ? (
+                <div className="sm:hidden">
+                  <p className="px-4 pb-1 pt-2 text-[10px] font-bold uppercase tracking-wide text-gray-500">
+                    Past events
+                  </p>
+                  <div className="space-y-0.5">
+                    {PAST_EVENT_SWITCHER_OPTIONS.map((option) => (
+                      <button
+                        key={option.slug}
+                        type="button"
+                        onClick={() => {
+                          closeMobileMore()
+                          router.push(getEquivalentCompetitionPath(pathname, option.slug))
+                        }}
+                        className={`mx-2 flex w-[calc(100%-1rem)] items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm ${
+                          option.slug === competitionSlug
+                            ? 'bg-gray-100 font-bold text-gray-900'
+                            : 'font-medium text-gray-800 hover:bg-gray-50'
+                        }`}
+                      >
+                        <span>{option.label}</span>
+                        <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                          {option.statusLabel}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
               <div className="my-1 border-t border-gray-100 sm:hidden" />
               <p className="px-4 pb-1 pt-1 text-[10px] font-bold uppercase tracking-wide text-gray-500">
                 Menu
