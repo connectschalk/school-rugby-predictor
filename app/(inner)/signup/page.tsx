@@ -19,6 +19,7 @@ import {
 } from '@/lib/display-name-filter'
 import { signupProductMetadata } from '@/lib/auth-email'
 import { supabase } from '@/lib/supabase'
+import { trackAnalyticsEvent, getAnalyticsDeviceType } from '@/lib/analytics/events'
 
 const DISPLAY_MAX = 60
 const PASSWORD_MIN = 8
@@ -144,6 +145,11 @@ function SignupPageContent() {
   const [emailConfirmModalOpen, setEmailConfirmModalOpen] = useState(false)
 
   useEffect(() => {
+    trackAnalyticsEvent('predictor_registration_started', {
+      page_type: 'signup',
+      device_type: getAnalyticsDeviceType(),
+      logged_in: false,
+    })
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
         router.replace(resolvePostAuthRedirect(nextAfterSignup))
@@ -249,6 +255,11 @@ function SignupPageContent() {
         return
       }
       setLoading(false)
+      trackAnalyticsEvent('predictor_registration_completed', {
+        page_type: 'signup',
+        device_type: getAnalyticsDeviceType(),
+        logged_in: true,
+      })
       router.push(resolvePostAuthRedirect(nextAfterSignup))
       return
     }
@@ -256,6 +267,11 @@ function SignupPageContent() {
     if (data.user && !data.session) {
       setPendingEmailConfirm(true)
       setEmailConfirmModalOpen(true)
+      trackAnalyticsEvent('predictor_registration_completed', {
+        page_type: 'signup',
+        device_type: getAnalyticsDeviceType(),
+        logged_in: false,
+      })
     }
     setLoading(false)
   }

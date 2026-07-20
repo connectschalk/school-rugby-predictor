@@ -21,6 +21,10 @@ import {
 } from '@/lib/competitions'
 import { supabase } from '@/lib/supabase'
 import { trackEvent } from '@/lib/trackEvent'
+import AdSlot from '@/components/advertising/AdSlot'
+import AdvertisingDemoBadge from '@/components/advertising/AdvertisingDemoBadge'
+import { useNovaDemo } from '@/components/advertising/NovaDemoProvider'
+import { withNovaDemoParam } from '@/lib/nova-demo'
 
 const FALLBACK_COMPETITIONS: Competition[] = filterLandingFeaturedCompetitions([
   {
@@ -67,16 +71,23 @@ const FALLBACK_COMPETITIONS: Competition[] = filterLandingFeaturedCompetitions([
   },
 ])
 
-function CompetitionCard({ competition }: { competition: Competition }) {
+function CompetitionCard({
+  competition,
+  demoActive,
+}: {
+  competition: Competition
+  demoActive: boolean
+}) {
   const title = competitionCardTitle(competition.slug, competition.name)
   const logoSrc = competitionLogoSrc(competition)
   const tagline = competitionTagline(competition.slug)
   const modeBadge = competitionModeBadge(competition.competition_mode)
   const isOfficial = competition.competition_mode === 'official_fixed_fixtures'
+  const href = withNovaDemoParam(`/competitions/${competition.slug}`, demoActive)
 
   return (
     <Link
-      href={`/competitions/${competition.slug}`}
+      href={href}
       onClick={() =>
         trackEvent('navigation_click', 'landing', {
           destination: `/competitions/${competition.slug}`,
@@ -132,6 +143,7 @@ function CompetitionCard({ competition }: { competition: Competition }) {
 export default function HomePage() {
   const [competitions, setCompetitions] = useState<Competition[]>(FALLBACK_COMPETITIONS)
   const [loadError, setLoadError] = useState('')
+  const { enabled: novaDemo, branding } = useNovaDemo()
 
   useEffect(() => {
     trackEvent('page_view', 'landing')
@@ -156,26 +168,48 @@ export default function HomePage() {
     <main className="min-h-screen bg-[#0a0a0b] text-white">
       <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-4 py-10 sm:px-6">
         <header className="flex flex-col items-center text-center">
-          <Image
-            src={PLATFORM_LOGO_LANDING_DARK_SRC}
-            alt={PLATFORM_NAME}
-            width={1024}
-            height={467}
-            priority
-            sizes="(max-width: 640px) 280px, (max-width: 1024px) 320px, 360px"
-            className="mx-auto h-auto w-full max-w-[280px] object-contain py-8 sm:max-w-[320px] sm:py-10 lg:max-w-[360px]"
-          />
+          {novaDemo ? (
+            <div className="flex flex-col items-center gap-3 py-8 sm:py-10">
+              <AdvertisingDemoBadge className="border-amber-400/40 bg-amber-400/10 text-amber-100" />
+              <p className="text-4xl font-black tracking-tight text-white sm:text-5xl">
+                {branding.productName}
+              </p>
+              <p className="text-sm text-gray-400">{branding.poweredBy}</p>
+            </div>
+          ) : (
+            <Image
+              src={PLATFORM_LOGO_LANDING_DARK_SRC}
+              alt={PLATFORM_NAME}
+              width={1024}
+              height={467}
+              priority
+              sizes="(max-width: 640px) 280px, (max-width: 1024px) 320px, 360px"
+              className="mx-auto h-auto w-full max-w-[280px] object-contain py-8 sm:max-w-[320px] sm:py-10 lg:max-w-[360px]"
+            />
+          )}
           <h1 className="max-w-2xl text-3xl font-black tracking-tight text-white sm:text-4xl md:text-5xl">
-            Choose your NextPlay environment
+            {novaDemo
+              ? 'Schools rugby. Local pride. Every prediction counts.'
+              : 'Choose your NextPlay environment'}
           </h1>
           <p className="mt-4 max-w-xl text-sm text-gray-400 sm:text-base">
-            Pick a competition, create a pool, and predict every match.
+            {novaDemo
+              ? 'A Nova News advertising demonstration powered by NextPlay Predictor.'
+              : 'Pick a competition, create a pool, and predict every match.'}
           </p>
         </header>
 
+        <div className="mt-8 w-full">
+          <AdSlot
+            placement="nova_predictor_home_takeover"
+            context={{ pageType: 'landing' }}
+            variant="takeover"
+          />
+        </div>
+
         <section className={landingFeaturedGridClassName(competitions.length)}>
           {competitions.map((c) => (
-            <CompetitionCard key={c.id} competition={c} />
+            <CompetitionCard key={c.id} competition={c} demoActive={novaDemo} />
           ))}
         </section>
 

@@ -1,5 +1,6 @@
 import InnerHeaderNav from '@/components/InnerHeaderNav'
 import CompetitionSubNav from '@/components/competitions/CompetitionSubNav'
+import CompetitionDemoChrome from '@/components/advertising/CompetitionDemoChrome'
 import { requireCompetition } from '@/lib/competition-page-server'
 import { SCHOOLS_COMPETITION_SLUG } from '@/lib/competitions'
 import { isNotFoundError } from '@/lib/next-errors'
@@ -28,7 +29,9 @@ export default async function CompetitionLayout({ children, params }: Props) {
           variant={isSchools ? 'light' : 'dark'}
         />
 
-        {children}
+        <CompetitionDemoChrome competitionSlug={competition.slug} competitionName={title}>
+          {children}
+        </CompetitionDemoChrome>
 
         {isSchools ? (
           <footer className="mt-20 border-t border-gray-200">

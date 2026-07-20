@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { usePathname, useSearchParams } from 'next/navigation'
 import type { User } from '@supabase/supabase-js'
 import MatchCard, { MATCH_CARD_MARGIN_MAX } from '@/components/MatchCard'
@@ -51,6 +51,10 @@ import {
 } from '@/lib/province-logos'
 import { supabase } from '@/lib/supabase'
 import { trackEvent } from '@/lib/trackEvent'
+import { trackAnalyticsEvent, getAnalyticsDeviceType } from '@/lib/analytics/events'
+import InlineAdList from '@/components/advertising/InlineAdList'
+import SponsoredMatchShell from '@/components/advertising/SponsoredMatchShell'
+import { useNovaDemo } from '@/components/advertising/NovaDemoProvider'
 
 export type PredictScorePanelProps = {
   competitionId: string
@@ -98,6 +102,7 @@ export default function PredictScorePanel({
   const [submittingMatchId, setSubmittingMatchId] = useState<string | null>(null)
   const [lockingMatchId, setLockingMatchId] = useState<string | null>(null)
   const [flashSubmittedId, setFlashSubmittedId] = useState<string | null>(null)
+  const { enabled: novaDemoEnabled } = useNovaDemo()
   const [authModalOpen, setAuthModalOpen] = useState(false)
   const [nowTick, setNowTick] = useState(() => Date.now())
   const [teamSearch, setTeamSearch] = useState('')
@@ -109,6 +114,7 @@ export default function PredictScorePanel({
   const [selectedProvinceCode, setSelectedProvinceCode] = useState<ProvinceLogoCode | null>(null)
   const [isUserAdmin, setIsUserAdmin] = useState(false)
   const [marginModalMatch, setMarginModalMatch] = useState<GameMatch | null>(null)
+  const inlineAdRefreshKey = `${selectedPoolId ?? ''}|${selectedProvinceCode ?? ''}|${teamSearch}`
 
   const signedIn = !!user
   const atDate = useMemo(() => new Date(nowTick), [nowTick])
@@ -305,6 +311,41 @@ export default function PredictScorePanel({
     [selectedProvinceCode, filteredMatches]
   )
 
+  const firstFilteredMatchId = filteredMatches[0]?.id
+  useEffect(() => {
+    if (!firstFilteredMatchId) return
+    trackAnalyticsEvent('match_viewed', {
+      competition_slug: competitionSlug,
+      match_id: firstFilteredMatchId,
+      page_type: 'predict',
+      device_type: getAnalyticsDeviceType(),
+      logged_in: signedIn,
+    })
+  }, [competitionSlug, firstFilteredMatchId, signedIn])
+
+  const adContext = useMemo(
+    () => ({
+      competitionSlug,
+      pageType: 'predict' as const,
+      loggedIn: signedIn,
+      province: selectedProvinceCode,
+    }),
+    [competitionSlug, signedIn, selectedProvinceCode]
+  )
+
+  const wrapSponsoredFirst = useCallback(
+    (m: GameMatch, node: ReactNode) => (
+      <SponsoredMatchShell
+        active={novaDemoEnabled}
+        matchId={m.id}
+        context={adContext}
+      >
+        {node}
+      </SponsoredMatchShell>
+    ),
+    [novaDemoEnabled, adContext]
+  )
+
   const setPick = useCallback((matchId: string, patch: Partial<PickState>) => {
     setPicksByMatch((prev) => {
       const cur = prev[matchId] ?? defaultPick()
@@ -390,6 +431,13 @@ export default function PredictScorePanel({
       await reloadPredictions(user.id, matchIds.length ? matchIds : [matchId])
       setFlashSubmittedId(matchId)
       setSubmittingMatchId(null)
+      trackAnalyticsEvent('prediction_submitted', {
+        competition_slug: competitionSlug,
+        match_id: matchId,
+        page_type: 'predict',
+        device_type: getAnalyticsDeviceType(),
+        logged_in: true,
+      })
       return
     }
 
@@ -418,6 +466,13 @@ export default function PredictScorePanel({
     await reloadPredictions(user.id, matchIds.length ? matchIds : [matchId])
     setFlashSubmittedId(matchId)
     setSubmittingMatchId(null)
+    trackAnalyticsEvent('prediction_submitted', {
+      competition_slug: competitionSlug,
+      match_id: matchId,
+      page_type: 'predict',
+      device_type: getAnalyticsDeviceType(),
+      logged_in: true,
+    })
   }
 
   const handleLockOne = async (matchId: string) => {
@@ -741,7 +796,16 @@ export default function PredictScorePanel({
                   </div>
                 </div>
                 <div className="space-y-2">
-                  {day.matches.map((m) => renderPredictMatchRow(m))}
+                  <InlineAdList
+                    items={day.matches}
+                    getKey={(m) => m.id}
+                    renderItem={(m) => renderPredictMatchRow(m)}
+                    renderFirstWrapper={
+                      day === provinceFilterDayGroups[0] ? wrapSponsoredFirst : undefined
+                    }
+                    context={adContext}
+                    refreshKey={inlineAdRefreshKey}
+                  />
                 </div>
               </div>
             ))}
@@ -774,7 +838,19 @@ export default function PredictScorePanel({
                     </div>
                   </div>
                   <div className="space-y-2">
-                    {day.matches.map((m) => renderPredictMatchRow(m))}
+                    <InlineAdList
+                      items={day.matches}
+                      getKey={(m) => m.id}
+                      renderItem={(m) => renderPredictMatchRow(m)}
+                      renderFirstWrapper={
+                        block === groupedByProvince[0] && day === block.dates[0]
+                          ? wrapSponsoredFirst
+                          : undefined
+                      }
+                      context={adContext}
+                      refreshKey={inlineAdRefreshKey}
+                      interval={5}
+                    />
                   </div>
                 </div>
               ))}

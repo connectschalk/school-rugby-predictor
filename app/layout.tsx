@@ -1,6 +1,7 @@
 import './globals.css'
 import type { Metadata } from 'next'
 
+import AppProviders from '@/components/AppProviders'
 import { getPublicSiteUrl } from '@/lib/site-url'
 import { buildPlatformSiteMetadata } from '@/lib/platform-branding'
 
@@ -15,7 +16,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="bg-white text-black">{children}</body>
+      <body className="bg-white text-black">
+        <AppProviders>{children}</AppProviders>
+      </body>
     </html>
   )
 }

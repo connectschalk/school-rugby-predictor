@@ -38,6 +38,8 @@ import {
 } from '@/lib/pools'
 import { supabase } from '@/lib/supabase'
 import { SOCCER_SCORING_TOOLTIP_SUMMARY } from '@/lib/soccer-scoring-rules'
+import AdSlot from '@/components/advertising/AdSlot'
+import { trackAnalyticsEvent, getAnalyticsDeviceType } from '@/lib/analytics/events'
 
 const DEFAULT_SEASON = new Date().getFullYear()
 const TOOLTIP_POINTS_RUGBY =
@@ -329,6 +331,15 @@ export default function CompetitionLeaderboardPanel({
   }, [season, loadBoard])
 
   useEffect(() => {
+    trackAnalyticsEvent('leaderboard_viewed', {
+      competition_slug: competitionSlug,
+      page_type: 'leaderboard',
+      device_type: getAnalyticsDeviceType(),
+      logged_in: Boolean(user),
+    })
+  }, [competitionSlug, user])
+
+  useEffect(() => {
     if (section !== 'global') return
     let cancelled = false
     void (async () => {
@@ -427,6 +438,18 @@ export default function CompetitionLeaderboardPanel({
             How it works
           </button>
         ) : null}
+      </div>
+
+      <div className="mt-3">
+        <AdSlot
+          placement="nova_predictor_leaderboard_sponsor"
+          context={{
+            competitionSlug,
+            pageType: 'leaderboard',
+            loggedIn: Boolean(user),
+          }}
+          variant="sponsor_strip"
+        />
       </div>
 
       <div className="mt-1.5 flex justify-center sm:justify-start">

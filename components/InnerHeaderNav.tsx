@@ -29,6 +29,8 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import LetterAvatar from '@/components/LetterAvatar'
+import AdvertisingDemoBadge from '@/components/advertising/AdvertisingDemoBadge'
+import { useNovaDemo } from '@/components/advertising/NovaDemoProvider'
 import { fetchPredictorPlatformAdmin } from '@/lib/admin-access'
 import { supabase } from '@/lib/supabase'
 
@@ -55,6 +57,7 @@ function mobileNavLinkClasses(active: boolean) {
 export default function InnerHeaderNav() {
   const router = useRouter()
   const pathname = usePathname()
+  const { enabled: novaDemo, branding } = useNovaDemo()
   const [user, setUser] = useState<User | null>(null)
   const [authReady, setAuthReady] = useState(false)
   const [profile, setProfile] = useState<{
@@ -246,15 +249,23 @@ export default function InnerHeaderNav() {
           closeCompetitionMenu()
         }}
       >
-        <Image
-          src={PLATFORM_LOGO_SRC}
-          alt={PLATFORM_LOGO_ALT}
-          width={192}
-          height={64}
-          className="h-11 w-auto origin-left scale-[1.14]"
-          priority
-        />
+        {novaDemo ? (
+          <span className="flex flex-col leading-tight">
+            <span className="text-sm font-black text-gray-900 sm:text-base">{branding.productName}</span>
+            <span className="text-[10px] font-medium text-gray-500">{branding.poweredBy}</span>
+          </span>
+        ) : (
+          <Image
+            src={PLATFORM_LOGO_SRC}
+            alt={PLATFORM_LOGO_ALT}
+            width={192}
+            height={64}
+            className="h-11 w-auto origin-left scale-[1.14]"
+            priority
+          />
+        )}
       </Link>
+      {novaDemo ? <AdvertisingDemoBadge className="hidden sm:inline-flex" /> : null}
 
       <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
         <div

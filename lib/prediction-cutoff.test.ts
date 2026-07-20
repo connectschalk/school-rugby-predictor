@@ -95,7 +95,11 @@ describe('soccer pick state', () => {
   })
 
   it('shows saved scores after kickoff when a prediction exists', () => {
-    expect(soccerPickFromPrediction(pred, true)).toEqual({ homeGoals: '2', awayGoals: '1' })
+    expect(soccerPickFromPrediction(pred, true)).toEqual({
+      homeGoals: '2',
+      awayGoals: '1',
+      penaltyWinner: null,
+    })
     expect(hasSoccerPredictionSubmission(pred)).toBe(true)
   })
 

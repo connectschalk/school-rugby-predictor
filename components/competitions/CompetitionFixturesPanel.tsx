@@ -15,6 +15,9 @@ import {
 import { supabase } from '@/lib/supabase'
 
 import CompetitionTeamLogo from '@/components/CompetitionTeamLogo'
+import InlineAdList from '@/components/advertising/InlineAdList'
+import AdSlot from '@/components/advertising/AdSlot'
+import { useNovaDemo } from '@/components/advertising/NovaDemoProvider'
 
 export type CompetitionFixturesPanelProps = {
   competitionId: string
@@ -82,6 +85,8 @@ export default function CompetitionFixturesPanel({
   const [loadError, setLoadError] = useState('')
   const [teamSearch, setTeamSearch] = useState('')
   const [selectedProvinceCode, setSelectedProvinceCode] = useState<ProvinceLogoCode | null>(null)
+  const { enabled: novaDemoEnabled } = useNovaDemo()
+  const inlineAdRefreshKey = `${selectedProvinceCode ?? ''}|${teamSearch}`
 
   const loadMatches = useCallback(async () => {
     setLoading(true)
@@ -120,6 +125,19 @@ export default function CompetitionFixturesPanel({
   const provinceFilterDayGroups = useMemo(
     () => (selectedProvinceCode ? groupByDateOnly(filteredMatches) : null),
     [selectedProvinceCode, filteredMatches]
+  )
+
+  const adContext = useMemo(
+    () => ({
+      competitionSlug,
+      pageType: 'fixtures' as const,
+    }),
+    [competitionSlug]
+  )
+
+  const completedMatches = useMemo(
+    () => filteredMatches.filter((m) => m.status === 'completed'),
+    [filteredMatches]
   )
 
   return (
@@ -212,9 +230,16 @@ export default function CompetitionFixturesPanel({
               <div key={day.dateKey} className="min-w-0 max-w-full space-y-3">
                 <h3 className="min-w-0 break-words text-sm font-semibold text-slate-500">{day.label}</h3>
                 <div className="space-y-2">
-                  {day.matches.map((m) => (
-                    <FixtureRow key={m.id} match={m} competitionSlug={competitionSlug} />
-                  ))}
+                  <InlineAdList
+                    items={day.matches}
+                    getKey={(m) => m.id}
+                    renderItem={(m) => (
+                      <FixtureRow match={m} competitionSlug={competitionSlug} />
+                    )}
+                    context={adContext}
+                    refreshKey={inlineAdRefreshKey}
+                    placement="nova_predictor_fixture_inline"
+                  />
                 </div>
               </div>
             ))}
@@ -230,15 +255,32 @@ export default function CompetitionFixturesPanel({
                 <div key={day.dateKey} className="min-w-0 max-w-full space-y-3">
                   <h3 className="min-w-0 break-words text-sm font-semibold text-slate-500">{day.label}</h3>
                   <div className="space-y-2">
-                    {day.matches.map((m) => (
-                      <FixtureRow key={m.id} match={m} competitionSlug={competitionSlug} />
-                    ))}
+                    <InlineAdList
+                      items={day.matches}
+                      getKey={(m) => m.id}
+                      renderItem={(m) => (
+                        <FixtureRow match={m} competitionSlug={competitionSlug} />
+                      )}
+                      context={adContext}
+                      refreshKey={inlineAdRefreshKey}
+                      placement="nova_predictor_fixture_inline"
+                    />
                   </div>
                 </div>
               ))}
             </section>
           ))
         )}
+
+        {novaDemoEnabled && completedMatches.length >= 5 ? (
+          <div className="pt-2">
+            <AdSlot
+              placement="nova_predictor_results_inline"
+              context={{ ...adContext, pageType: 'results' }}
+              refreshKey={inlineAdRefreshKey}
+            />
+          </div>
+        ) : null}
       </div>
     </main>
   )
