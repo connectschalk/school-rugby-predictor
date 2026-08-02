@@ -208,6 +208,25 @@ export async function fetchCompetitionFixtures(client: SupabaseClient, competiti
   return { data: (data as GameMatch[] | null) ?? [], error }
 }
 
+/**
+ * PostgREST `.in()` filters go on the query string. Too many UUIDs → gateway 400 "Bad Request".
+ * Keep chunks small enough for typical CDN/URL limits (same pattern as season score fetches).
+ */
+export const USER_PREDICTIONS_MATCH_ID_CHUNK = 150
+
+const USER_PREDICTION_SELECT =
+  'id, match_id, user_id, predicted_winner, predicted_margin, predicted_home_score, predicted_away_score, predicted_penalty_winner, submitted_at, is_locked, locked_at'
+
+export function chunkIds<T>(ids: T[], chunkSize: number = USER_PREDICTIONS_MATCH_ID_CHUNK): T[][] {
+  const size = Math.max(1, Math.floor(chunkSize))
+  if (ids.length === 0) return []
+  const out: T[][] = []
+  for (let i = 0; i < ids.length; i += size) {
+    out.push(ids.slice(i, i + size))
+  }
+  return out
+}
+
 export async function fetchUserPredictionsForMatches(
   client: SupabaseClient,
   userId: string,
@@ -217,21 +236,30 @@ export async function fetchUserPredictionsForMatches(
     return { data: [] as UserPredictionRow[], error: null }
   }
 
-  const { data, error } = await client
-    .from('user_predictions')
-    .select(
-      'id, match_id, user_id, predicted_winner, predicted_margin, predicted_home_score, predicted_away_score, predicted_penalty_winner, submitted_at, is_locked, locked_at'
-    )
-    .eq('user_id', userId)
-    .in('match_id', matchIds)
+  const uniqueIds = [...new Set(matchIds.filter(Boolean))]
+  const chunks = chunkIds(uniqueIds, USER_PREDICTIONS_MATCH_ID_CHUNK)
+  const all: UserPredictionRow[] = []
 
-  return { data: (data as UserPredictionRow[] | null) ?? [], error }
+  for (const chunk of chunks) {
+    const { data, error } = await client
+      .from('user_predictions')
+      .select(USER_PREDICTION_SELECT)
+      .eq('user_id', userId)
+      .in('match_id', chunk)
+
+    if (error) {
+      return { data: [] as UserPredictionRow[], error }
+    }
+    all.push(...((data as UserPredictionRow[] | null) ?? []))
+  }
+
+  return { data: all, error: null }
 }
 
 /** All public fixtures for community hub (upcoming, locked, completed). */
 export async function fetchGameMatchesForCommunityHub(
   client: SupabaseClient,
-  limit = 200,
+  limit = 1000,
   competitionId?: string
 ) {
   let query = client

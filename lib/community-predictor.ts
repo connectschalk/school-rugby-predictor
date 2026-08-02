@@ -338,6 +338,18 @@ export type CommunityStatsOk = CommunityStatsOkRugby | CommunityStatsOkSoccer
 
 export type CommunityStatsResponse = CommunityStatsDenied | CommunityStatsOk
 
+/** HTML `<input type="date">` values are YYYY-MM-DD; ignore empty/placeholder/invalid values. */
+export function parseValidCommunityDateFilter(raw: string): string | null {
+  const value = raw.trim()
+  if (!value) return null
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
+  const [y, m, d] = value.split('-').map(Number)
+  if (!y || !m || !d) return null
+  const dt = new Date(y, m - 1, d)
+  if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) return null
+  return value
+}
+
 /** Kickoff display for Community Picks (SAST). */
 export const COMMUNITY_PICKS_TIMEZONE = 'Africa/Johannesburg'
 

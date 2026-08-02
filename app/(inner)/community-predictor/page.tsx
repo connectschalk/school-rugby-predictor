@@ -11,12 +11,14 @@ import {
   formatCommunityMatchScheduleLine,
   isCommunityStatsAccessDenied,
   isCommunityStatsRpcFailure,
+  parseValidCommunityDateFilter,
   type CommunityStatsOk,
   type CommunityStatsResponse,
 } from '@/lib/community-predictor'
 import { lockAllUnlockedSavedForEditableMatches, LOCK_ALL_NO_CANDIDATES } from '@/lib/lock-user-predictions'
 import { predictionCutoffPassed } from '@/lib/prediction-cutoff'
 import {
+  fetchGameMatchesForCommunityHub,
   fetchUserPredictionsForMatches,
   type GameMatch,
   type UserPredictionRow,
@@ -60,6 +62,21 @@ function localYmd(iso: string): string {
   if (Number.isNaN(d.getTime())) return ''
   const p = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
+function publicLoadErrorMessage(err: { message?: string } | null | undefined): string {
+  const msg = (err?.message ?? '').trim()
+  if (!msg) return 'Could not load community picks right now.'
+  // Gateways often return bare "Bad Request" when a PostgREST URL is too long.
+  if (/^bad request$/i.test(msg) || /uri too long|request.?line/i.test(msg)) {
+    return 'Could not load community picks right now. Please refresh and try again.'
+  }
+  if (/permission denied|row-level security|jwt/i.test(msg)) {
+    return 'Could not load community picks right now.'
+  }
+  // Keep short, non-sensitive PostgREST hints; never dump SQL/RLS internals.
+  if (msg.length <= 120 && !/password|secret|token|key/i.test(msg)) return msg
+  return 'Could not load community picks right now.'
 }
 
 function sortUpcomingAsc(list: GameMatch[]): GameMatch[] {
@@ -316,34 +333,39 @@ export default function CommunityPicksPage() {
     try {
       const routeSlug = parseCompetitionSlugFromPathname(pathname)
       const slugForFilter = routeSlug ?? SCHOOLS_COMPETITION_SLUG
-      const { competition } = await getCompetitionBySlug(supabase, slugForFilter)
+      const { competition, error: competitionError } = await getCompetitionBySlug(supabase, slugForFilter)
+      if (competitionError) {
+        console.error('[community-picks] competition lookup failed', {
+          slug: slugForFilter,
+          error: competitionError,
+        })
+      }
       setCompetitionScoringMode(competition?.scoring_mode ?? 'rugby_margin')
       const competitionId = competition?.id
-
-      let matchQuery = supabase
-        .from(SUPABASE_PUBLIC.gameMatches)
-        .select(
-          'id, home_team, away_team, kickoff_time, status, home_score, away_score, created_at, is_featured, featured_order'
-        )
-        .in('status', ['upcoming', 'locked', 'completed'])
-        .neq('status', 'cancelled')
-        .order('kickoff_time', { ascending: false })
-        .limit(1000)
-
-      if (competitionId) {
-        matchQuery = matchQuery.eq('competition_id', competitionId)
+      if (routeSlug && !competitionId) {
+        console.error('[community-picks] competition not found for slug', { slug: slugForFilter })
+        setLoadError('This competition could not be loaded for community picks.')
+        setMatches([])
+        setAliasRows([])
+        setTeams([])
+        return
       }
 
       const [gmRes, aliasRes, teamsRes] = await Promise.all([
-        matchQuery,
+        fetchGameMatchesForCommunityHub(supabase, 1000, competitionId),
         supabase.from('team_aliases').select('*'),
         supabase.from('teams').select('id, name'),
       ])
       if (gmRes.error) {
-        setLoadError(gmRes.error.message)
+        console.error('[community-picks] matches load failed', {
+          slug: slugForFilter,
+          competition_id: competitionId ?? null,
+          error: gmRes.error.message,
+        })
+        setLoadError(publicLoadErrorMessage(gmRes.error))
         setMatches([])
       } else {
-        const rows = (gmRes.data as GameMatch[] | null) ?? []
+        const rows = gmRes.data
         setMatches(rows)
         const statusCount = rows.reduce<Record<string, number>>((acc, row) => {
           acc[row.status] = (acc[row.status] ?? 0) + 1
@@ -351,10 +373,16 @@ export default function CommunityPicksPage() {
         }, {})
         console.log('loadedCommunityMatches', rows.length, statusCount)
       }
+      if (aliasRes.error) {
+        console.error('[community-picks] team_aliases load failed', aliasRes.error.message)
+      }
+      if (teamsRes.error) {
+        console.error('[community-picks] teams load failed', teamsRes.error.message)
+      }
       setAliasRows((aliasRes.data as Record<string, unknown>[]) ?? [])
       setTeams((teamsRes.data as TeamRow[]) ?? [])
     } catch (err) {
-      console.error('Community loadBase failed:', err)
+      console.error('[community-picks] loadBase failed', err)
       setLoadError('Could not load community picks right now.')
       setMatches([])
       setAliasRows([])
@@ -375,7 +403,13 @@ export default function CommunityPicksPage() {
     }
     const { data, error } = await fetchUserPredictionsForMatches(supabase, uid, ids)
     if (error) {
-      setLoadError(error.message)
+      // Predictions unlock pre-kickoff community views; do not replace the fixture list with a raw API error.
+      console.error('[community-picks] user predictions load failed', {
+        user_id: uid,
+        match_count: ids.length,
+        error: error.message,
+      })
+      setPredictions(new Map())
       return new Map<string, UserPredictionRow>()
     }
     const map = predictionMap(data)
@@ -489,22 +523,24 @@ export default function CommunityPicksPage() {
 
   const searchTrim = teamSearch.trim()
 
+  const validDateFilter = useMemo(() => parseValidCommunityDateFilter(dateFilter), [dateFilter])
+
   const filteredByControls = useMemo(() => {
     let list = matches
     if (searchTrim) {
       list = list.filter((m) => matchGameAgainstTeamSearch(m, searchTrim, aliasRows, teams))
     }
-    if (dateFilter) {
-      list = list.filter((m) => localYmd(m.kickoff_time) === dateFilter)
+    if (validDateFilter) {
+      list = list.filter((m) => localYmd(m.kickoff_time) === validDateFilter)
     }
     return list
-  }, [matches, searchTrim, dateFilter, aliasRows, teams])
+  }, [matches, searchTrim, validDateFilter, aliasRows, teams])
 
   const orderedList = useMemo(() => {
     return getOrderedMatchesForTab(filterTab, filteredByControls, at)
   }, [filteredByControls, filterTab, at])
   const noDateResultsInPast =
-    filterTab === 'past' && !!dateFilter && !searchTrim && orderedList.length === 0 && matches.length > 0
+    filterTab === 'past' && !!validDateFilter && !searchTrim && orderedList.length === 0 && matches.length > 0
 
   useEffect(() => {
     setIndex((i) => {
@@ -645,7 +681,8 @@ export default function CommunityPicksPage() {
                 type="date"
                 value={dateFilter}
                 onChange={(e) => {
-                  setDateFilter(e.target.value)
+                  const next = e.target.value
+                  setDateFilter(next ? parseValidCommunityDateFilter(next) ?? '' : '')
                 }}
                 className="w-full min-w-0 appearance-none rounded-xl border border-gray-300 bg-white px-3 py-2.5 pr-10 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
               />
