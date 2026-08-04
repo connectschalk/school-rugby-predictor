@@ -5,7 +5,10 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 import { competitionLogoSrc, competitionModeBadge } from '@/lib/competition-branding'
-import type { Competition } from '@/lib/competitions'
+import {
+  isPastEventCompetitionSlug,
+  type Competition,
+} from '@/lib/competitions'
 import {
   fetchAllCompetitionsForAdmin,
   fetchCompetitionAdminStats,
@@ -106,13 +109,20 @@ export default function AdminCompetitionsPage() {
                 <div className="min-w-0 flex-1">
                   <h2 className="truncate text-base font-bold text-gray-900">{c.name}</h2>
                   <p className="mt-1 text-xs font-medium text-gray-500">{competitionModeBadge(c.competition_mode)}</p>
-                  <span
-                    className={`mt-2 inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-                      c.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-200 text-gray-700'
-                    }`}
-                  >
-                    {c.is_active ? 'Active' : 'Draft'}
-                  </span>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <span
+                      className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                        c.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-200 text-gray-700'
+                      }`}
+                    >
+                      {c.is_active ? 'Active' : 'Draft'}
+                    </span>
+                    {isPastEventCompetitionSlug(c.slug) ? (
+                      <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900">
+                        Archived
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
               </div>
               <dl className="mt-4 grid grid-cols-2 gap-3 text-xs text-gray-600">

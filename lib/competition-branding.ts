@@ -23,7 +23,7 @@ export function competitionHeroSrc(competition: Pick<Competition, 'slug' | 'hero
 /** Short landing-card copy (product door taglines). */
 export function competitionTagline(slug: string): string {
   const taglines: Record<string, string> = {
-    'nextplay-schools': 'Build your own school rugby pool.',
+    'nextplay-schools': 'School rugby pools and leaderboards.',
     'craven-week': 'Predict the official Craven Week fixtures.',
     'soccer-world-cup': 'Create your World Cup pool and predict every match.',
   }

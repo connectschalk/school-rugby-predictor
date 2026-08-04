@@ -31,18 +31,16 @@ export const CRAVEN_WEEK_SLUG = 'craven-week'
  * - `past`     → burger/menu → Past events only (routes/data stay intact)
  *
  * ---------------------------------------------------------------------------
- * CURRENT CONFIG (leave as-is until Soccer World Cup ends)
- * - nextplay-schools   = featured
- * - soccer-world-cup   = featured
+ * CURRENT CONFIG
+ * - nextplay-schools   = featured (public landing)
+ * - soccer-world-cup   = past (archived from public discovery)
  * - craven-week        = past
  *
- * AFTER SOCCER WORLD CUP IS COMPLETED — change only this object:
- * 1. Set soccer-world-cup `visibility` from `'featured'` to `'past'`
- * 2. Optionally bump its `order` within Past events (e.g. 1 = newest past)
- * Result:
- * - Landing cards: Schools only (safe fallback if featured list is empty)
- * - Past events: Soccer World Cup + Craven Week
- * - Routes `/competitions/soccer-world-cup` and `/competitions/craven-week` stay live
+ * Archived / past events:
+ * - Hidden from landing cards and the active competition switcher
+ * - Listed under burger → Past events
+ * - Direct routes (`/competitions/{slug}`) and admin stay live
+ * - Pools, predictions, and leaderboards are not deleted
  * ---------------------------------------------------------------------------
  */
 export type CompetitionEventVisibility = 'featured' | 'active' | 'past'
@@ -58,23 +56,23 @@ export type CompetitionEventConfig = {
 
 export const COMPETITION_EVENT_VISIBILITY: readonly CompetitionEventConfig[] = [
   {
-    slug: SOCCER_WORLD_CUP_SLUG,
-    label: 'Soccer World Cup',
-    // TODO after tournament: change visibility to 'past' (see comment block above).
+    slug: SCHOOLS_COMPETITION_SLUG,
+    label: 'School Rugby',
     visibility: 'featured',
     order: 1,
   },
   {
-    slug: SCHOOLS_COMPETITION_SLUG,
-    label: 'School Rugby',
-    visibility: 'featured',
-    order: 2,
+    slug: SOCCER_WORLD_CUP_SLUG,
+    label: 'Soccer World Cup',
+    visibility: 'past',
+    order: 1,
+    statusLabel: 'Completed',
   },
   {
     slug: CRAVEN_WEEK_SLUG,
     label: 'Craven Week',
     visibility: 'past',
-    order: 1,
+    order: 2,
     statusLabel: 'Completed',
   },
 ] as const

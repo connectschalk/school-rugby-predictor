@@ -39,7 +39,7 @@ export const PLATFORM_LOGO_ALT = 'NextPlay Predictor'
 export const PLATFORM_HOME_HREF = '/'
 
 export const PLATFORM_METADATA_DESCRIPTION =
-  'Predict scores across school rugby, Craven Week, and the Soccer World Cup. Create pools and compete on every match.'
+  'NextPlay Schools — school sports predictions, rugby pools, and leaderboards for your school community.'
 
 export function platformOpenGraphImages(): NonNullable<Metadata['openGraph']>['images'] {
   return [

@@ -52,31 +52,34 @@ function pastSlugsFrom(events: readonly CompetitionEventConfig[]): string[] {
 }
 
 describe('landing event visibility', () => {
-  it('current state: landing features Soccer World Cup and Schools Rugby Predictor', () => {
-    expect([...LANDING_FEATURED_COMPETITION_SLUGS]).toEqual([
-      SOCCER_WORLD_CUP_SLUG,
-      SCHOOLS_COMPETITION_SLUG,
-    ])
-    expect(isLandingFeaturedCompetitionSlug(SOCCER_WORLD_CUP_SLUG)).toBe(true)
+  it('current state: landing features only NextPlay Schools', () => {
+    expect([...LANDING_FEATURED_COMPETITION_SLUGS]).toEqual([SCHOOLS_COMPETITION_SLUG])
     expect(isLandingFeaturedCompetitionSlug(SCHOOLS_COMPETITION_SLUG)).toBe(true)
+    expect(isLandingFeaturedCompetitionSlug(SOCCER_WORLD_CUP_SLUG)).toBe(false)
+    expect(isLandingFeaturedCompetitionSlug(CRAVEN_WEEK_SLUG)).toBe(false)
   })
 
-  it('current state: Craven Week is not a landing card', () => {
-    expect(isLandingFeaturedCompetitionSlug(CRAVEN_WEEK_SLUG)).toBe(false)
+  it('current state: Soccer World Cup and Craven Week are not landing cards', () => {
     const rows = [
       stubCompetition(SCHOOLS_COMPETITION_SLUG, 1),
       stubCompetition(CRAVEN_WEEK_SLUG, 2),
       stubCompetition(SOCCER_WORLD_CUP_SLUG, 3),
     ]
     expect(filterLandingFeaturedCompetitions(rows).map((c) => c.slug)).toEqual([
-      SOCCER_WORLD_CUP_SLUG,
       SCHOOLS_COMPETITION_SLUG,
     ])
   })
 
-  it('current state: Craven Week appears under Past events with route intact', () => {
+  it('current state: Soccer World Cup and Craven Week appear under Past events with routes intact', () => {
+    expect(isPastEventCompetitionSlug(SOCCER_WORLD_CUP_SLUG)).toBe(true)
     expect(isPastEventCompetitionSlug(CRAVEN_WEEK_SLUG)).toBe(true)
     expect(PAST_EVENT_COMPETITIONS).toEqual([
+      {
+        slug: SOCCER_WORLD_CUP_SLUG,
+        label: 'Soccer World Cup',
+        href: '/competitions/soccer-world-cup',
+        statusLabel: 'Completed',
+      },
       {
         slug: CRAVEN_WEEK_SLUG,
         label: 'Craven Week',
@@ -84,23 +87,23 @@ describe('landing event visibility', () => {
         statusLabel: 'Completed',
       },
     ])
-    expect(PAST_EVENT_SWITCHER_OPTIONS.map((o) => o.slug)).toEqual([CRAVEN_WEEK_SLUG])
-    expect(ACTIVE_COMPETITION_SWITCHER_OPTIONS.map((o) => o.slug)).not.toContain(CRAVEN_WEEK_SLUG)
+    expect(PAST_EVENT_SWITCHER_OPTIONS.map((o) => o.slug)).toEqual([
+      SOCCER_WORLD_CUP_SLUG,
+      CRAVEN_WEEK_SLUG,
+    ])
+    expect(ACTIVE_COMPETITION_SWITCHER_OPTIONS.map((o) => o.slug)).toEqual([
+      SCHOOLS_COMPETITION_SLUG,
+    ])
+    expect(ACTIVE_COMPETITION_SWITCHER_OPTIONS.map((o) => o.slug)).not.toContain(
+      SOCCER_WORLD_CUP_SLUG
+    )
   })
 
-  it('supports demoting Soccer World Cup to Past events without route deletion', () => {
-    const future = withEventDemotedToPast(COMPETITION_EVENT_VISIBILITY, SOCCER_WORLD_CUP_SLUG)
-    expect(featuredSlugsFrom(future)).toEqual([SCHOOLS_COMPETITION_SLUG])
-    expect(pastSlugsFrom(future)).toEqual([CRAVEN_WEEK_SLUG, SOCCER_WORLD_CUP_SLUG])
-
-    const worldCup = future.find((e) => e.slug === SOCCER_WORLD_CUP_SLUG)!
+  it('keeps Soccer World Cup direct routes available after archive', () => {
+    const worldCup = COMPETITION_EVENT_VISIBILITY.find((e) => e.slug === SOCCER_WORLD_CUP_SLUG)!
     expect(worldCup.visibility).toBe('past')
     expect(`/competitions/${worldCup.slug}`).toBe('/competitions/soccer-world-cup')
     expect(`/competitions/${CRAVEN_WEEK_SLUG}`).toBe('/competitions/craven-week')
-
-    // Live config is unchanged until the TODO edit is made.
-    expect(isLandingFeaturedCompetitionSlug(SOCCER_WORLD_CUP_SLUG)).toBe(true)
-    expect(isPastEventCompetitionSlug(SOCCER_WORLD_CUP_SLUG)).toBe(false)
   })
 
   it('falls back to Schools when featured list resolves to zero cards', () => {
@@ -112,16 +115,15 @@ describe('landing event visibility', () => {
       stubCompetition(SOCCER_WORLD_CUP_SLUG, 3),
     ]
 
-    // Simulate post–World Cup config: no featured slugs configured.
     const zeroFeatured = resolveLandingFeaturedCompetitions([], rows)
     expect(zeroFeatured.map((c) => c.slug)).toEqual([SCHOOLS_COMPETITION_SLUG])
+  })
 
-    // Simulate demoted World Cup: only Schools remains featured.
-    const future = withEventDemotedToPast(COMPETITION_EVENT_VISIBILITY, SOCCER_WORLD_CUP_SLUG)
-    const futureFeatured = featuredSlugsFrom(future)
-    expect(
-      resolveLandingFeaturedCompetitions(futureFeatured, rows).map((c) => c.slug)
-    ).toEqual([SCHOOLS_COMPETITION_SLUG])
+  it('withEventDemotedToPast keeps Schools featured when reapplied to an archived event', () => {
+    const again = withEventDemotedToPast(COMPETITION_EVENT_VISIBILITY, SOCCER_WORLD_CUP_SLUG)
+    expect(featuredSlugsFrom(again)).toEqual([SCHOOLS_COMPETITION_SLUG])
+    expect(pastSlugsFrom(again)).toContain(SOCCER_WORLD_CUP_SLUG)
+    expect(pastSlugsFrom(again)).toContain(CRAVEN_WEEK_SLUG)
   })
 
   it('uses a single-card-friendly landing grid when only one featured event remains', () => {

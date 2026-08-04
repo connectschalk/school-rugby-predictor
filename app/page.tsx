@@ -28,6 +28,20 @@ import { withNovaDemoParam } from '@/lib/nova-demo'
 
 const FALLBACK_COMPETITIONS: Competition[] = filterLandingFeaturedCompetitions([
   {
+    id: 'fallback-schools',
+    slug: 'nextplay-schools',
+    name: 'NextPlay Schools',
+    description:
+      'Build your own school rugby pool. Choose your teams, invite your community, and compete on the leaderboard.',
+    logo_url: '/competition-logos/school-rugby-predictor.png',
+    hero_image_url: null,
+    sport_type: 'rugby',
+    competition_mode: 'custom_pool_fixtures',
+    scoring_mode: 'rugby_margin',
+    is_active: true,
+    display_order: 1,
+  },
+  {
     id: 'fallback-soccer',
     slug: 'soccer-world-cup',
     name: 'NextPlay Soccer World Cup',
@@ -38,20 +52,6 @@ const FALLBACK_COMPETITIONS: Competition[] = filterLandingFeaturedCompetitions([
     sport_type: 'soccer',
     competition_mode: 'official_fixed_fixtures',
     scoring_mode: 'soccer_exact_score',
-    is_active: true,
-    display_order: 1,
-  },
-  {
-    id: 'fallback-schools',
-    slug: 'nextplay-schools',
-    name: 'NextPlay Schools',
-    description:
-      'Build your own school rugby pool. Choose your teams, invite your people, and follow the rankings.',
-    logo_url: '/competition-logos/school-rugby-predictor.png',
-    hero_image_url: null,
-    sport_type: 'rugby',
-    competition_mode: 'custom_pool_fixtures',
-    scoring_mode: 'rugby_margin',
     is_active: true,
     display_order: 2,
   },
@@ -133,7 +133,7 @@ function CompetitionCard({
         )}
 
         <span className="mt-6 inline-flex w-full items-center justify-center rounded-full bg-red-600 px-5 py-3 text-sm font-semibold text-white transition group-hover:bg-red-700 sm:w-auto sm:justify-start">
-          Enter {title.split(' ')[0]}
+          {competition.slug === 'nextplay-schools' ? 'Start predicting' : `Enter ${title}`}
         </span>
       </div>
     </Link>
@@ -190,12 +190,12 @@ export default function HomePage() {
           <h1 className="max-w-2xl text-3xl font-black tracking-tight text-white sm:text-4xl md:text-5xl">
             {novaDemo
               ? 'Schools rugby. Local pride. Every prediction counts.'
-              : 'Choose your NextPlay environment'}
+              : 'NextPlay Schools'}
           </h1>
           <p className="mt-4 max-w-xl text-sm text-gray-400 sm:text-base">
             {novaDemo
               ? 'A Nova News advertising demonstration powered by NextPlay Predictor.'
-              : 'Pick a competition, create a pool, and predict every match.'}
+              : 'School sports predictions, rugby pools, and leaderboards for your school community.'}
           </p>
         </header>
 
