@@ -7,8 +7,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import CommunityMarginDistributionChart from '@/components/community-predictor/CommunityMarginDistributionChart'
 import { OneMatchFinalResultSummary } from '@/components/one-match/OneMatchFinalResultSummary'
 import { OneMatchResultsRankedList } from '@/components/one-match/OneMatchResultsRankedList'
-import CompetitionTeamLogo from '@/components/CompetitionTeamLogo'
 import { RugbyBallIcon } from '@/components/export/team-logo'
+import { getCompetitionTeamLogo } from '@/lib/competition-team-logos'
 import {
   actualPointMargin,
   actualWinnerFromScores,
@@ -68,19 +68,31 @@ function winnerLabel(m: GameMatchEmbed, side: 'home' | 'away') {
   return side === 'home' ? m.home_team : m.away_team
 }
 
-function TeamCrestImg({ teamName, className = 'h-11 w-11' }: { teamName: string; className?: string }) {
-  const sizeMatch = className.match(/h-(\d+)/)
-  const size = sizeMatch ? Number(sizeMatch[1]) * 4 : 44
+function TeamCrestImg({ teamName }: { teamName: string }) {
+  const { src, initials } = getCompetitionTeamLogo({
+    competitionSlug: SCHOOLS_COMPETITION_SLUG,
+    teamName,
+  })
+  const [failed, setFailed] = useState(false)
+
   if (!teamName.trim()) {
-    return <RugbyBallIcon className={`shrink-0 text-gray-700 ${className}`} />
+    return <RugbyBallIcon className="h-[55%] w-[55%] shrink-0 text-gray-700" />
   }
+
+  if (!src || failed) {
+    return (
+      <span className="text-sm font-bold text-gray-600" aria-hidden>
+        {initials}
+      </span>
+    )
+  }
+
   return (
-    <CompetitionTeamLogo
-      competitionSlug={SCHOOLS_COMPETITION_SLUG}
-      teamName={teamName}
-      size={size}
-      variant="crest"
-      className={className}
+    <img
+      src={src}
+      alt=""
+      className="h-[160%] w-[160%] max-w-none object-contain"
+      onError={() => setFailed(true)}
     />
   )
 }
@@ -482,8 +494,8 @@ export default function OneMatchChallengePage() {
         <div className="mt-4 rounded-2xl border border-gray-200/80 bg-gradient-to-b from-white to-gray-50 p-5 shadow-md">
           <div className="flex items-start justify-center gap-2 sm:gap-4">
             <div className="flex min-w-0 flex-1 flex-col items-center gap-3">
-              <div className="flex h-[5.125rem] w-[5.125rem] items-center justify-center rounded-full border border-gray-200 bg-white/80 sm:h-[5.75rem] sm:w-[5.75rem]">
-                <TeamCrestImg teamName={match.home_team} className="h-[3.6rem] w-[3.6rem] sm:h-16 sm:w-16" />
+              <div className="flex h-[5.125rem] w-[5.125rem] items-center justify-center overflow-hidden rounded-full border border-gray-200 sm:h-[5.75rem] sm:w-[5.75rem]">
+                <TeamCrestImg teamName={match.home_team} />
               </div>
               <p className="w-full text-center text-xs font-bold leading-tight text-gray-900 sm:text-sm">{match.home_team}</p>
             </div>
@@ -491,8 +503,8 @@ export default function OneMatchChallengePage() {
               <span className="text-[10px] font-medium uppercase tracking-tight text-gray-400 sm:text-[11px]">vs</span>
             </div>
             <div className="flex min-w-0 flex-1 flex-col items-center gap-3">
-              <div className="flex h-[5.125rem] w-[5.125rem] items-center justify-center rounded-full border border-gray-200 bg-white/80 sm:h-[5.75rem] sm:w-[5.75rem]">
-                <TeamCrestImg teamName={match.away_team} className="h-[3.6rem] w-[3.6rem] sm:h-16 sm:w-16" />
+              <div className="flex h-[5.125rem] w-[5.125rem] items-center justify-center overflow-hidden rounded-full border border-gray-200 sm:h-[5.75rem] sm:w-[5.75rem]">
+                <TeamCrestImg teamName={match.away_team} />
               </div>
               <p className="w-full text-center text-xs font-bold leading-tight text-gray-900 sm:text-sm">{match.away_team}</p>
             </div>
@@ -569,7 +581,8 @@ export default function OneMatchChallengePage() {
             <div className={iLocked ? 'pointer-events-none opacity-60' : ''}>
               <label className="block text-sm font-semibold text-gray-800">Your name</label>
               <input
-                className="mt-1.5 w-full rounded-xl border-0 bg-gray-50 px-4 py-3 text-base transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-black"
+                className="mt-1.5 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-base text-gray-900 placeholder:text-gray-500 transition-all duration-150 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-black"
+                placeholder="Enter name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 maxLength={120}
@@ -590,8 +603,8 @@ export default function OneMatchChallengePage() {
                       : 'border-gray-200 bg-white'
                   } disabled:opacity-50`}
                 >
-                  <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-md border border-gray-200 bg-white">
-                    <TeamCrestImg teamName={match.home_team} className="h-9 w-9 border-0" />
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full sm:h-14 sm:w-14">
+                    <TeamCrestImg teamName={match.home_team} />
                   </span>
                   <span className="min-w-0 flex-1 leading-snug">{match.home_team}</span>
                 </button>
@@ -605,8 +618,8 @@ export default function OneMatchChallengePage() {
                       : 'border-gray-200 bg-white'
                   } disabled:opacity-50`}
                 >
-                  <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-md border border-gray-200 bg-white">
-                    <TeamCrestImg teamName={match.away_team} className="h-9 w-9 border-0" />
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full sm:h-14 sm:w-14">
+                    <TeamCrestImg teamName={match.away_team} />
                   </span>
                   <span className="min-w-0 flex-1 leading-snug">{match.away_team}</span>
                 </button>
@@ -618,7 +631,8 @@ export default function OneMatchChallengePage() {
                 type="number"
                 min={1}
                 max={200}
-                className="mt-1.5 w-full rounded-xl border-0 bg-gray-50 py-4 text-center text-2xl font-semibold tabular-nums transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-black"
+                className="mt-1.5 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-4 text-center text-2xl font-semibold tabular-nums text-gray-900 placeholder:text-base placeholder:font-medium placeholder:text-gray-500 transition-all duration-150 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-black"
+                placeholder="Enter winning margin"
                 value={margin}
                 onChange={(e) => setMargin(e.target.value)}
                 disabled={formDisabled}
