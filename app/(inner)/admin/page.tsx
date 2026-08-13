@@ -40,6 +40,7 @@ import {
 import { recalculateTeamConsistencyFromPredictionHistory } from '@/lib/team-consistency'
 import { matchTeamName, type TeamMatchResult } from '@/lib/team-name-match'
 import { fetchUserIsAdmin } from '@/lib/admin-access'
+import { getSchoolTeamLogoPath } from '@/lib/school-team-logos'
 
 function formatTeamMatchLabel(m: TeamMatchResult): string {
   const pct = m.matchConfidence != null ? ` ${Math.round(m.matchConfidence * 100)}%` : ''
@@ -1662,8 +1663,9 @@ export default function AdminPage() {
   }
 
   function getTeamLogoById(teamId: number): string | undefined {
-    const url = teams.find((team) => team.id === teamId)?.logo_url
-    return url || undefined
+    const team = teams.find((row) => row.id === teamId)
+    if (!team) return undefined
+    return getSchoolTeamLogoPath(team.name) ?? team.logo_url ?? undefined
   }
 
   function formatPvaFixtureLabel(row: PvaFixtureRow): string {

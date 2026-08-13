@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import RequireAdmin from '@/components/admin/RequireAdmin'
+import { getSchoolTeamLogoPath } from '@/lib/school-team-logos'
 
 type Team = { id: number; name: string }
 
@@ -56,6 +57,10 @@ function slugifyTeamName(name: string) {
         .replace(/&/g, 'and')
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-+|-+$/g, '')
+}
+
+function teamLogoSrc(name: string) {
+  return getSchoolTeamLogoPath(name) ?? `/team-logos/${slugifyTeamName(name)}.png`
 }
 
 function getBaselineLayoutData(matches: Match[], baselineTeamId: number, maxDepth: number) {
@@ -321,7 +326,7 @@ function NetworkPageContent() {
             return {
         margin: baselineReachability.marginMap.get(id) ?? 0,
         pinned: PINNED_TEAM_NAMES.has(name) || String(id) === baselineTeam,
-        logoSrc: `/team-logos/${slugifyTeamName(name)}.png`,
+        logoSrc: teamLogoSrc(name),
       }
     })
 
@@ -352,7 +357,7 @@ function NetworkPageContent() {
         depth: baselineReachability.depthMap.get(id) ?? 0,
         row: rowFromDepth(baselineReachability.depthMap.get(id) ?? 0),
         pinned: PINNED_TEAM_NAMES.has(name) || String(id) === baselineTeam,
-        logoSrc: `/team-logos/${slugifyTeamName(name)}.png`,
+        logoSrc: teamLogoSrc(name),
       }
     })
 
