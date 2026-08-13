@@ -127,7 +127,6 @@ const ExportPredictionCard = forwardRef<HTMLDivElement, ExportPredictionCardProp
                 teamName={homeTeamName}
                 logoUrl={homeTeamLogo}
                 sizeClassName="h-28 w-28 md:h-32 md:w-32"
-                imageSizeClassName="h-[84%] w-[84%]"
               />
               <p className="mt-3 max-w-[150px] text-sm font-semibold text-gray-900 md:text-base">
                 {homeTeamName || 'Home Team'}
@@ -141,7 +140,6 @@ const ExportPredictionCard = forwardRef<HTMLDivElement, ExportPredictionCardProp
                 teamName={awayTeamName}
                 logoUrl={awayTeamLogo}
                 sizeClassName="h-28 w-28 md:h-32 md:w-32"
-                imageSizeClassName="h-[84%] w-[84%]"
               />
               <p className="mt-3 max-w-[150px] text-sm font-semibold text-gray-900 md:text-base">
                 {awayTeamName || 'Away Team'}

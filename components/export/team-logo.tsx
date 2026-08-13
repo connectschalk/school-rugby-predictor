@@ -72,7 +72,7 @@ export function TeamLogoCircle({
   logoUrl,
   competitionSlug,
   sizeClassName = 'h-32 w-32 md:h-36 md:w-36',
-  imageSizeClassName = 'h-[82%] w-[82%]',
+  imageSizeClassName = 'h-full w-full',
 }: TeamLogoCircleProps) {
   const [failed, setFailed] = useState(false)
   const resolvedSrc = useMemo(
@@ -82,13 +82,13 @@ export function TeamLogoCircle({
 
   return (
     <div
-      className={`flex items-center justify-center rounded-full border border-gray-200 bg-white ${sizeClassName}`}
+      className={`flex items-center justify-center overflow-hidden rounded-full border border-gray-200 bg-white ${sizeClassName}`}
     >
       {!failed && teamName ? (
         <img
           src={resolvedSrc}
           alt={`${teamName} logo`}
-          className={`${imageSizeClassName} object-contain`}
+          className={`${imageSizeClassName} origin-center scale-[1.7] object-cover`}
           loading="eager"
           decoding="async"
           onError={() => setFailed(true)}
